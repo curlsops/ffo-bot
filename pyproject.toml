@@ -3,7 +3,7 @@ name = "ffo-bot"
 version = "0.1.0"
 description = "High-availability Discord bot for automated reactions, media archival, and community management"
 readme = "README.md"
-license = {text = "MIT"}
+license = {text = "CC-BY-NC-SA-4.0"}
 requires-python = ">=3.12"
 authors = [
     {name = "MrCurlsTTV", url = "https://github.com/MrCurlsTTV"}
