@@ -1,7 +1,7 @@
 # FFO Discord Bot
 
-[![CI](https://github.com/YOUR_ORG/ffobot/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR_ORG/ffobot/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/YOUR_ORG/ffobot/branch/main/graph/badge.svg)](https://codecov.io/gh/YOUR_ORG/ffobot)
+[![CI](https://github.com/MrCurlsTTV/ffo-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/MrCurlsTTV/ffo-bot/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/MrCurlsTTV/ffo-bot/branch/main/graph/badge.svg)](https://codecov.io/gh/MrCurlsTTV/ffo-bot)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
@@ -31,7 +31,7 @@ High-availability Discord bot for automated reactions, media archival, and commu
 
 1. **Clone the repository**
    ```bash
-   git clone https://github.com/YOUR_ORG/ffobot.git
+   git clone https://github.com/MrCurlsTTV/ffo-bot.git
    cd ffobot
    ```
 
@@ -149,7 +149,7 @@ git push --tags
 Pull the latest image from GitHub Container Registry:
 
 ```bash
-docker pull ghcr.io/YOUR_ORG/ffobot:latest
+docker pull ghcr.io/mrcurlsttv/ffo-bot:latest
 ```
 
 Or build locally:
