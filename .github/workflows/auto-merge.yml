@@ -4,22 +4,28 @@ on:
   pull_request:
     types: [opened, synchronize, reopened]
 
+permissions:
+  contents: write
+  pull-requests: write
+  checks: read
+  actions: read
+
 jobs:
   auto-merge:
-    runs-on: ubuntu-latest
+    runs-on: arc-runner-set
     if: github.actor == 'renovate[bot]'
-    permissions:
-      contents: write
-      pull-requests: write
 
     steps:
-      - name: Wait for CI to pass
-        uses: lewagon/wait-on-check-action@74049309dfeff245fe8009a0137eacf28136cb3c # v1.5.0
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Wait for CI checks to pass
+        uses: lewagon/wait-on-check-action@v1.3.4
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           repo-token: ${{ secrets.GITHUB_TOKEN }}
-          check-name: "test"
-          allowed-conclusions: success
+          wait-interval: 30
+          running-workflow-name: "Auto-merge Renovate PRs"
 
       - name: Enable auto-merge
         run: gh pr merge --auto --squash "$PR_URL"
