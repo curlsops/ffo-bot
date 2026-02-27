@@ -14,7 +14,7 @@ jobs:
 
     steps:
       - name: Wait for CI to pass
-        uses: lewagon/wait-on-check-action@v1.3.4
+        uses: lewagon/wait-on-check-action@74049309dfeff245fe8009a0137eacf28136cb3c # v1.5.0
         with:
           ref: ${{ github.event.pull_request.head.sha }}
           repo-token: ${{ secrets.GITHUB_TOKEN }}
