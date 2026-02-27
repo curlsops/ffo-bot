@@ -1,5 +1,10 @@
 # FFO Discord Bot
 
+[![CI](https://github.com/YOUR_ORG/ffobot/actions/workflows/ci.yml/badge.svg)](https://github.com/YOUR_ORG/ffobot/actions/workflows/ci.yml)
+[![codecov](https://codecov.io/gh/YOUR_ORG/ffobot/branch/main/graph/badge.svg)](https://codecov.io/gh/YOUR_ORG/ffobot)
+[![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
+[![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
+
 High-availability Discord bot for automated reactions, media archival, and community management.
 
 ## Features
@@ -17,8 +22,8 @@ High-availability Discord bot for automated reactions, media archival, and commu
 
 ### Prerequisites
 
-- Python 3.11+
-- PostgreSQL 15+
+- Python 3.12+
+- PostgreSQL 16+
 - Discord Bot Token
 - Docker (optional)
 
@@ -32,7 +37,7 @@ High-availability Discord bot for automated reactions, media archival, and commu
 
 2. **Create virtual environment**
    ```bash
-   python3.11 -m venv venv
+   python3.12 -m venv venv
    source venv/bin/activate  # On Windows: venv\Scripts\activate
    ```
 
@@ -99,36 +104,59 @@ ffobot/
 
 ## Testing
 
-Run the test suite:
+Run the test suite (196 tests, ~86% coverage):
 
 ```bash
-# Unit tests
+# Run all tests with coverage
+pytest tests/ -v --cov=bot --cov=config --cov=database --cov-report=html
+
+# Unit tests only
 pytest tests/unit/ -v
 
-# Integration tests
+# Integration tests only
 pytest tests/integration/ -v
 
-# All tests with coverage
-pytest -v --cov=bot --cov=config --cov=database --cov-report=html
+# Run build script (linting + tests + Docker build)
+./build.sh
 ```
 
 ## CI/CD
 
 The project uses GitHub Actions for continuous integration and deployment:
 
-- **CI Pipeline**: Runs on every push and pull request
+- **CI Pipeline** (`ci.yml`): Runs on every push and pull request
   - Linting (flake8, black, isort)
-  - Unit and integration tests
-  - Security scanning (bandit, safety, trivy)
-  - Docker image build and push
+  - Unit and integration tests with PostgreSQL
+  - Coverage reporting to Codecov
+  - Docker image build
 
-- **Daily Build**: Automatic daily Docker builds at 2 AM UTC
+- **Release** (`release.yml`): Triggered on version tags (e.g., `v1.0.0`)
+  - Runs full test suite
+  - Builds and pushes Docker image to GitHub Container Registry
+  - Creates GitHub Release with auto-generated notes
 
-- **Release**: Triggered on version tags (v*)
+- **Auto-merge** (`auto-merge.yml`): Automatically merges Renovate dependency PRs after CI passes
 
-## Kubernetes Deployment
+### Creating a Release
 
-See the [Discord Bot System Design Document](discord-bot-design.md) for comprehensive Kubernetes deployment instructions.
+```bash
+git tag v1.0.0
+git push --tags
+```
+
+## Docker
+
+Pull the latest image from GitHub Container Registry:
+
+```bash
+docker pull ghcr.io/YOUR_ORG/ffobot:latest
+```
+
+Or build locally:
+
+```bash
+docker buildx build -t ffobot:latest .
+```
 
 ## Configuration
 
@@ -174,9 +202,5 @@ The bot exposes Prometheus metrics on port 8080:
 
 ## License
 
-[Add your license here]
-
-## Support
-
-[Add support information here]
+MIT License - see [LICENSE](LICENSE) for details.
 
