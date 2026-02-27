@@ -1,0 +1,31 @@
+services:
+  ffo-bot:
+    image: ghcr.io/mrcurlsttv/ffo-bot:latest
+    container_name: ffo-bot
+    restart: unless-stopped
+    ports:
+      - "8080:8080"
+    environment:
+      # Required
+      DISCORD_BOT_TOKEN: ${DISCORD_BOT_TOKEN}
+      DISCORD_PUBLIC_KEY: ${DISCORD_PUBLIC_KEY}
+      DATABASE_URL: ${DATABASE_URL}
+
+      # Logging
+      LOG_LEVEL: INFO
+      LOG_FORMAT: json
+
+      # Features (set to "true" to enable)
+      FEATURE_MEDIA_DOWNLOAD: "false"
+      FEATURE_NOTIFIARR_MONITORING: "false"
+
+      # Optional: Media storage path (if FEATURE_MEDIA_DOWNLOAD is enabled)
+      # MEDIA_STORAGE_PATH: /media
+    # volumes:
+    #   - ./media:/media  # Uncomment if using media download feature
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/healthz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+      start_period: 10s

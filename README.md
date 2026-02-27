@@ -130,21 +130,33 @@ The project uses GitHub Actions for continuous integration and deployment:
   - Coverage reporting to Codecov
   - Docker image build
 
-- **Release** (`release.yml`): Triggered on version tags (e.g., `v1.0.0`)
-  - Runs full test suite
-  - Builds and pushes Docker image to GitHub Container Registry
-  - Creates GitHub Release with auto-generated notes
+- **Release Please** (`release-please.yml`): Automated semantic versioning
+  - Analyzes conventional commits to determine version bump
+  - Creates release PRs with changelog updates
+  - On merge: creates GitHub Release and pushes Docker image to GHCR
 
 - **Auto-merge** (`auto-merge.yml`): Automatically merges Renovate dependency PRs after CI passes
 
-### Creating a Release
+### Commit Convention
 
-```bash
-git tag v1.0.0
-git push --tags
-```
+Use [Conventional Commits](https://www.conventionalcommits.org/) for automatic versioning:
 
-## Docker
+| Commit Type | Version Bump | Example |
+|-------------|--------------|---------|
+| `fix:` | Patch (0.0.x) | `fix: resolve database timeout` |
+| `feat:` | Minor (0.x.0) | `feat: add new slash command` |
+| `feat!:` or `BREAKING CHANGE:` | Major (x.0.0) | `feat!: change API response format` |
+
+### Release Flow
+
+1. Push commits to `main` using conventional commit messages
+2. Release Please automatically creates/updates a release PR
+3. Merge the release PR to create the release
+4. Docker image is automatically built and pushed to `ghcr.io/mrcurlsttv/ffo-bot`
+
+## Deployment
+
+### Docker
 
 Pull the latest image from GitHub Container Registry:
 
@@ -155,8 +167,17 @@ docker pull ghcr.io/mrcurlsttv/ffo-bot:latest
 Or build locally:
 
 ```bash
-docker buildx build -t ffobot:latest .
+docker buildx build -t ffo-bot:latest .
 ```
+
+### Example Deployments
+
+We provide ready-to-use deployment examples:
+
+- **[Docker Compose](examples/docker-compose/)** - Simple single-host deployment
+- **[Kubernetes](examples/kubernetes/)** - Production Kubernetes manifests
+
+**Note:** The bot requires an external PostgreSQL database. The database is not bundled with the Docker image.
 
 ## Configuration
 

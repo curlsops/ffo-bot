@@ -1,0 +1,18 @@
+# Optional: ServiceMonitor for Prometheus Operator
+# Only apply if you have Prometheus Operator installed
+apiVersion: monitoring.coreos.com/v1
+kind: ServiceMonitor
+metadata:
+  name: ffo-bot
+  namespace: ffo-bot
+  labels:
+    app.kubernetes.io/name: ffo-bot
+spec:
+  selector:
+    matchLabels:
+      app.kubernetes.io/name: ffo-bot
+  endpoints:
+    - port: http
+      path: /metrics
+      interval: 30s
+      scrapeTimeout: 10s

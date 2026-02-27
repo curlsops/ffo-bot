@@ -1,3 +1,28 @@
+[project]
+name = "ffo-bot"
+version = "0.1.0"
+description = "High-availability Discord bot for automated reactions, media archival, and community management"
+readme = "README.md"
+license = {text = "MIT"}
+requires-python = ">=3.12"
+authors = [
+    {name = "MrCurlsTTV", url = "https://github.com/MrCurlsTTV"}
+]
+keywords = ["discord", "bot", "python", "asyncio"]
+classifiers = [
+    "Development Status :: 4 - Beta",
+    "Intended Audience :: Developers",
+    "License :: OSI Approved :: MIT License",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
+    "Programming Language :: Python :: 3.14",
+]
+
+[project.urls]
+Homepage = "https://github.com/MrCurlsTTV/ffo-bot"
+Repository = "https://github.com/MrCurlsTTV/ffo-bot"
+Issues = "https://github.com/MrCurlsTTV/ffo-bot/issues"
+
 [tool.black]
 line-length = 100
 target-version = ['py311']
