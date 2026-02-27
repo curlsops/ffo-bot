@@ -1,0 +1,10 @@
+repos:
+  - repo: local
+    hooks:
+      - id: sops-encrypt
+        name: SOPS encrypt sops files
+        entry: python scripts/sops_encrypt.py
+        language: system
+        files: \.sops\.ya?ml$
+        pass_filenames: true
+        stages: [commit]
