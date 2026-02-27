@@ -29,19 +29,29 @@ pip install -r requirements.txt
 pip install -r requirements-dev.txt
 echo "✓ Dependencies installed"
 
-# Run linters
+# Run linters and formatters
 echo ""
-echo "Running linters..."
-echo "- flake8"
-flake8 bot/ config/ database/ main.py --count --statistics
-
-echo "- black"
-black --check bot/ config/ database/ main.py
-
-echo "- isort"
-isort --check-only bot/ config/ database/ main.py
-
-echo "✓ All linters passed"
+if [ "$1" = "--fix" ] || [ "$1" = "-f" ]; then
+    echo "Formatting code..."
+    echo "- isort (fixing imports)"
+    isort bot/ config/ database/ main.py
+    echo "- black (formatting)"
+    black bot/ config/ database/ main.py
+    echo "✓ Code formatted"
+    echo ""
+    echo "Running flake8 check..."
+    flake8 bot/ config/ database/ main.py --count --statistics
+    echo "✓ Flake8 passed"
+else
+    echo "Running linters (use --fix to auto-format)..."
+    echo "- flake8"
+    flake8 bot/ config/ database/ main.py --count --statistics
+    echo "- black"
+    black --check bot/ config/ database/ main.py
+    echo "- isort"
+    isort --check-only bot/ config/ database/ main.py
+    echo "✓ All linters passed"
+fi
 
 # Run tests
 echo ""
