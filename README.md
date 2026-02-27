@@ -1,7 +1,7 @@
 # FFO Discord Bot
 
 [![CI](https://github.com/MrCurlsTTV/ffo-bot/actions/workflows/ci.yml/badge.svg)](https://github.com/MrCurlsTTV/ffo-bot/actions/workflows/ci.yml)
-[![codecov](https://codecov.io/gh/MrCurlsTTV/ffo-bot/branch/main/graph/badge.svg)](https://codecov.io/gh/MrCurlsTTV/ffo-bot)
+[![codecov](https://codecov.io/github/MrCurlsTTV/ffo-bot/graph/badge.svg?token=X4PwF9Boi9)](https://codecov.io/github/MrCurlsTTV/ffo-bot)
 [![Python 3.12+](https://img.shields.io/badge/python-3.12+-blue.svg)](https://www.python.org/downloads/)
 [![License](https://img.shields.io/badge/license-MIT-green.svg)](LICENSE)
 
