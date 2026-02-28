@@ -1,6 +1,6 @@
 # Multi-stage build for optimized Discord bot image
 # Stage 1: Builder
-FROM python:3.11-slim AS builder
+FROM python:3.14-slim AS builder
 
 WORKDIR /build
 
@@ -17,7 +17,7 @@ COPY requirements.txt .
 RUN pip install --user --no-cache-dir --no-warn-script-location -r requirements.txt
 
 # Stage 2: Runtime
-FROM python:3.11-slim
+FROM python:3.14-slim
 
 LABEL org.opencontainers.image.source="https://github.com/MrCurlsTTV/ffo-bot"
 LABEL org.opencontainers.image.description="FFO Discord Bot"
