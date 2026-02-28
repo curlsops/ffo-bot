@@ -1,7 +1,9 @@
 """Reactbot configuration commands."""
 
 import logging
+from typing import List
 
+import asyncpg
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -27,6 +29,24 @@ class ReactBotCommands(commands.Cog):
             return False
         return True
 
+    async def _validate_emoji_accessible(
+        self, interaction: discord.Interaction, emoji_str: str
+    ) -> tuple[bool, str]:
+        """Check if the bot can use the given emoji."""
+        if emoji_str.startswith("<") and emoji_str.endswith(">"):
+            parts = emoji_str.strip("<>").split(":")
+            if len(parts) >= 3:
+                try:
+                    emoji_id = int(parts[2])
+                    emoji_obj = self.bot.get_emoji(emoji_id)
+                    if emoji_obj is None:
+                        return False, f"❌ Cannot access emoji {emoji_str}. The bot must be in the server where this emoji exists."
+                    if not emoji_obj.is_usable():
+                        return False, f"❌ Emoji {emoji_str} is not usable by the bot."
+                except ValueError:
+                    pass
+        return True, ""
+
     @app_commands.command(name="reactbot_add", description="Add a phrase reaction (Admin only)")
     @app_commands.describe(
         phrase="Regex pattern to match (case-insensitive)", emoji="Emoji to react with"
@@ -47,6 +67,11 @@ class ReactBotCommands(commands.Cog):
             emoji = InputValidator.validate_emoji(emoji)
             await self.bot.phrase_matcher.validate_pattern(phrase)
 
+            emoji_valid, emoji_error = await self._validate_emoji_accessible(interaction, emoji)
+            if not emoji_valid:
+                await interaction.followup.send(emoji_error, ephemeral=True)
+                return
+
             async with self.bot.db_pool.acquire() as conn:
                 await conn.execute(
                     "INSERT INTO phrase_reactions (server_id, phrase, emoji, created_by) VALUES ($1, $2, $3, $4)",
@@ -63,6 +88,11 @@ class ReactBotCommands(commands.Cog):
                     server_id=str(interaction.guild_id),
                     status="success",
                 ).inc()
+        except asyncpg.UniqueViolationError:
+            await interaction.followup.send(
+                f"❌ This exact phrase + emoji combination already exists: `{phrase}` → {emoji}",
+                ephemeral=True,
+            )
         except (ValidationError, RegexValidationError) as e:
             await interaction.followup.send(f"❌ {e}", ephemeral=True)
         except Exception as e:
@@ -92,10 +122,37 @@ class ReactBotCommands(commands.Cog):
             logger.error(f"reactbot_list error: {e}", exc_info=True)
             await interaction.followup.send("❌ Error fetching reactions.", ephemeral=True)
 
+    async def phrase_autocomplete(
+        self, interaction: discord.Interaction, current: str
+    ) -> List[app_commands.Choice[str]]:
+        """Autocomplete for phrase patterns."""
+        try:
+            async with self.bot.db_pool.acquire() as conn:
+                rows = await conn.fetch(
+                    """SELECT phrase, emoji FROM phrase_reactions 
+                       WHERE server_id = $1 AND is_active = true 
+                       ORDER BY match_count DESC LIMIT 25""",
+                    interaction.guild_id,
+                )
+            choices = []
+            for row in rows:
+                phrase = row["phrase"]
+                emoji = row["emoji"]
+                if current.lower() in phrase.lower() or not current:
+                    display = f"{phrase} → {emoji}"
+                    if len(display) > 100:
+                        display = display[:97] + "..."
+                    choices.append(app_commands.Choice(name=display, value=phrase))
+            return choices[:25]
+        except Exception as e:
+            logger.error(f"phrase_autocomplete error: {e}", exc_info=True)
+            return []
+
     @app_commands.command(
         name="reactbot_remove", description="Remove a phrase reaction (Admin only)"
     )
-    @app_commands.describe(phrase="Exact phrase pattern to remove")
+    @app_commands.describe(phrase="Select phrase pattern to remove")
+    @app_commands.autocomplete(phrase=phrase_autocomplete)
     async def reactbot_remove(self, interaction: discord.Interaction, phrase: str):
         await interaction.response.defer(ephemeral=True)
         try:
