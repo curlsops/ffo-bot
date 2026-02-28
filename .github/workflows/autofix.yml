@@ -1,13 +1,14 @@
 name: Autofix
 
 on:
+  push:
+    branches: [main]
   pull_request:
     branches: [main]
 
 jobs:
   autofix:
     runs-on: ubuntu-latest
-    if: github.actor == 'renovate[bot]' || github.actor == 'dependabot[bot]'
 
     steps:
       - name: Generate GitHub App token
@@ -20,7 +21,7 @@ jobs:
       - name: Checkout
         uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
-          ref: ${{ github.head_ref }}
+          ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref }}
           token: ${{ steps.app-token.outputs.token }}
 
       - name: Set up Python
