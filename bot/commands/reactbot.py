@@ -41,7 +41,10 @@ class ReactBotCommands(commands.Cog):
                     emoji_id = int(parts[2])
                     emoji_obj = self.bot.get_emoji(emoji_id)
                     if emoji_obj is None:
-                        return False, f"❌ Cannot access emoji {emoji_str}. The bot must be in the server where this emoji exists."
+                        return (
+                            False,
+                            f"❌ Cannot access emoji {emoji_str}. The bot must be in the server where this emoji exists.",
+                        )
                     if not emoji_obj.is_usable():
                         return False, f"❌ Emoji {emoji_str} is not usable by the bot."
                 except ValueError:
