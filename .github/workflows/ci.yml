@@ -10,7 +10,10 @@ jobs:
   test:
     runs-on: arc-runner-set
     container:
-      image: python:3.12-slim
+      image: ghcr.io/curlsops/ffo-bot-ci:latest
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ secrets.GITHUB_TOKEN }}
 
     services:
       postgres:
@@ -27,11 +30,6 @@ jobs:
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-
-      - name: Install dependencies
-        run: |
-          apt-get update && apt-get install -y --no-install-recommends git libpq-dev gcc
-          pip install --no-cache-dir -r requirements-dev.txt
 
       - name: Run linters
         run: |
