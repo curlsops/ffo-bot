@@ -21,7 +21,6 @@
 |---------|-------------|
 | 🤖 **Automated Reactions** | Configure regex patterns to automatically react to messages |
 | 📁 **Media Archival** | Download and archive media from monitored channels |
-| 🔔 **Notifiarr Monitoring** | Monitor Notifiarr notifications and alert on failures |
 | 👥 **Reaction Roles** | Self-service role assignment via reactions |
 | 🔐 **Granular Permissions** | Role-based access control (super admin, admin, moderator) |
 | 📊 **Prometheus Metrics** | Comprehensive observability and monitoring |
@@ -129,7 +128,6 @@ python main.py
 | `LOG_FORMAT` | `json` | Log format (json, text) |
 | `HEALTH_CHECK_PORT` | `8080` | Health/metrics server port |
 | `FEATURE_MEDIA_DOWNLOAD` | `false` | Enable media archival |
-| `FEATURE_NOTIFIARR_MONITORING` | `false` | Enable Notifiarr monitoring |
 | `RATE_LIMIT_USER_CAPACITY` | `10` | Rate limit tokens per user |
 | `RATE_LIMIT_SERVER_CAPACITY` | `100` | Rate limit tokens per server |
 | `CACHE_MAX_SIZE` | `10000` | Maximum cache entries |

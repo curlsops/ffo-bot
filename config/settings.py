@@ -51,15 +51,11 @@ class Settings(BaseSettings):
 
     # Feature Flags
     feature_media_download: bool = Field(default=True, description="Enable media download")
-    feature_notifiarr_monitoring: bool = Field(
-        default=True, description="Enable Notifiarr monitoring"
-    )
     feature_reaction_roles: bool = Field(default=True, description="Enable reaction roles")
 
     @field_validator("log_level")
     @classmethod
     def validate_log_level(cls, v: str) -> str:
-        """Validate log level."""
         valid_levels = ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"]
         v_upper = v.upper()
         if v_upper not in valid_levels:
@@ -69,7 +65,6 @@ class Settings(BaseSettings):
     @field_validator("log_format")
     @classmethod
     def validate_log_format(cls, v: str) -> str:
-        """Validate log format."""
         valid_formats = ["json", "text"]
         v_lower = v.lower()
         if v_lower not in valid_formats:
@@ -79,7 +74,6 @@ class Settings(BaseSettings):
     @field_validator("media_storage_path")
     @classmethod
     def validate_storage_path(cls, v: str) -> str:
-        """Ensure storage path exists."""
         path = Path(v)
         path.mkdir(parents=True, exist_ok=True)
         return str(path.absolute())

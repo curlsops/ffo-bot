@@ -13,7 +13,6 @@ data:
 
   # Feature flags
   FEATURE_MEDIA_DOWNLOAD: "false"
-  FEATURE_NOTIFIARR_MONITORING: "false"
 
   # Rate limiting
   RATE_LIMIT_USER_CAPACITY: "10"

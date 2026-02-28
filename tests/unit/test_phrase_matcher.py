@@ -1,5 +1,4 @@
-"""Tests for phrase matcher functionality."""
-
+import asyncio
 import re
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -11,19 +10,9 @@ from bot.utils.regex_validator import RegexValidationError
 
 
 class TestPhrasePattern:
-    """Tests for PhrasePattern dataclass."""
-
     def test_phrase_pattern_creation(self):
-        """Test creating a PhrasePattern."""
         pattern = re.compile(r"hello", re.IGNORECASE)
-
-        phrase_pattern = PhrasePattern(
-            phrase_id="123",
-            pattern=pattern,
-            emoji="👋",
-            server_id=456,
-        )
-
+        phrase_pattern = PhrasePattern(phrase_id="123", pattern=pattern, emoji="👋", server_id=456)
         assert phrase_pattern.phrase_id == "123"
         assert phrase_pattern.pattern == pattern
         assert phrase_pattern.emoji == "👋"
@@ -31,12 +20,8 @@ class TestPhrasePattern:
 
 
 class TestPhraseMatcherInit:
-    """Tests for PhraseMatcher initialization."""
-
     def test_matcher_initialization(self, mock_db_pool, mock_cache):
-        """Test PhraseMatcher initialization."""
         matcher = PhraseMatcher(mock_db_pool, mock_cache)
-
         assert matcher.db_pool == mock_db_pool
         assert matcher.cache == mock_cache
         assert matcher.validator is not None
@@ -44,93 +29,54 @@ class TestPhraseMatcherInit:
 
 
 class TestPhraseMatcherNormalization:
-    """Tests for message normalization."""
-
     def test_normalize_message_basic(self, mock_db_pool, mock_cache):
-        """Test basic message normalization."""
         matcher = PhraseMatcher(mock_db_pool, mock_cache)
-
-        result = matcher._normalize_message("Hello World!")
-
-        assert result == "hello world"
+        assert matcher._normalize_message("Hello World!") == "hello world"
 
     def test_normalize_message_removes_punctuation(self, mock_db_pool, mock_cache):
-        """Test normalization removes punctuation."""
         matcher = PhraseMatcher(mock_db_pool, mock_cache)
-
-        result = matcher._normalize_message("Hello, World! How are you?")
-
-        assert result == "hello world how are you"
+        assert matcher._normalize_message("Hello, World! How are you?") == "hello world how are you"
 
     def test_normalize_message_removes_special_chars(self, mock_db_pool, mock_cache):
-        """Test normalization removes special characters."""
         matcher = PhraseMatcher(mock_db_pool, mock_cache)
-
-        result = matcher._normalize_message("Hello @user #channel $money")
-
-        assert result == "hello user channel money"
+        assert (
+            matcher._normalize_message("Hello @user #channel $money") == "hello user channel money"
+        )
 
     def test_normalize_message_preserves_numbers(self, mock_db_pool, mock_cache):
-        """Test normalization preserves numbers."""
         matcher = PhraseMatcher(mock_db_pool, mock_cache)
-
-        result = matcher._normalize_message("Test 123 Message")
-
-        assert result == "test 123 message"
+        assert matcher._normalize_message("Test 123 Message") == "test 123 message"
 
     def test_normalize_message_lowercase(self, mock_db_pool, mock_cache):
-        """Test normalization converts to lowercase."""
         matcher = PhraseMatcher(mock_db_pool, mock_cache)
-
-        result = matcher._normalize_message("UPPERCASE MESSAGE")
-
-        assert result == "uppercase message"
+        assert matcher._normalize_message("UPPERCASE MESSAGE") == "uppercase message"
 
 
 class TestPhraseMatcherCacheInvalidation:
-    """Tests for cache invalidation."""
-
     def test_invalidate_cache(self, mock_db_pool, mock_cache):
-        """Test cache invalidation clears patterns."""
         matcher = PhraseMatcher(mock_db_pool, mock_cache)
         matcher._patterns_by_server[123] = [MagicMock()]
-
         matcher.invalidate_cache(123)
-
         assert 123 not in matcher._patterns_by_server
 
     def test_invalidate_cache_nonexistent_server(self, mock_db_pool, mock_cache):
-        """Test cache invalidation for non-existent server."""
         matcher = PhraseMatcher(mock_db_pool, mock_cache)
-
         matcher.invalidate_cache(999)
 
 
 class TestPhraseMatcherAsync:
-    """Tests for async PhraseMatcher methods."""
-
     @pytest.mark.asyncio
     async def test_load_patterns_from_cache(self, mock_db_pool, mock_cache):
-        """Test loading patterns from cache."""
         cached_patterns = [
-            PhrasePattern(
-                phrase_id="1",
-                pattern=re.compile(r"hello"),
-                emoji="👋",
-                server_id=123,
-            )
+            PhrasePattern(phrase_id="1", pattern=re.compile(r"hello"), emoji="👋", server_id=123)
         ]
         mock_cache.set("phrase_patterns:123", cached_patterns)
-
         matcher = PhraseMatcher(mock_db_pool, mock_cache)
-
         await matcher.load_patterns(123)
-
         assert matcher._patterns_by_server[123] == cached_patterns
 
     @pytest.mark.asyncio
     async def test_load_patterns_from_database(self, mock_cache):
-        """Test loading patterns from database."""
         mock_conn = AsyncMock()
         mock_conn.fetch.return_value = [
             {"id": 1, "phrase": "hello", "emoji": "👋"},
@@ -143,16 +89,12 @@ class TestPhraseMatcherAsync:
 
         mock_db_pool = MagicMock()
         mock_db_pool.acquire = acquire
-
         matcher = PhraseMatcher(mock_db_pool, mock_cache)
-
         await matcher.load_patterns(456)
-
         assert len(matcher._patterns_by_server[456]) == 2
 
     @pytest.mark.asyncio
     async def test_load_patterns_skips_invalid_regex(self, mock_cache):
-        """Test loading patterns skips invalid regex."""
         mock_conn = AsyncMock()
         mock_conn.fetch.return_value = [
             {"id": 1, "phrase": "hello", "emoji": "👋"},
@@ -165,16 +107,12 @@ class TestPhraseMatcherAsync:
 
         mock_db_pool = MagicMock()
         mock_db_pool.acquire = acquire
-
         matcher = PhraseMatcher(mock_db_pool, mock_cache)
-
         await matcher.load_patterns(789)
-
         assert len(matcher._patterns_by_server[789]) == 1
 
     @pytest.mark.asyncio
     async def test_match_phrases_no_patterns(self, mock_cache):
-        """Test matching with no patterns."""
         mock_conn = AsyncMock()
         mock_conn.fetch.return_value = []
 
@@ -184,16 +122,11 @@ class TestPhraseMatcherAsync:
 
         mock_db_pool = MagicMock()
         mock_db_pool.acquire = acquire
-
         matcher = PhraseMatcher(mock_db_pool, mock_cache)
-
-        result = await matcher.match_phrases("hello world", 123)
-
-        assert result == []
+        assert await matcher.match_phrases("hello world", 123) == []
 
     @pytest.mark.asyncio
     async def test_match_phrases_with_match(self, mock_db_pool, mock_cache):
-        """Test matching with successful match."""
         matcher = PhraseMatcher(mock_db_pool, mock_cache)
         matcher._patterns_by_server[123] = [
             PhrasePattern(
@@ -203,15 +136,12 @@ class TestPhraseMatcherAsync:
                 server_id=123,
             )
         ]
-
         result = await matcher.match_phrases("Hello World!", 123)
-
         assert len(result) == 1
         assert result[0] == ("1", "👋")
 
     @pytest.mark.asyncio
     async def test_match_phrases_no_match(self, mock_db_pool, mock_cache):
-        """Test matching with no match."""
         matcher = PhraseMatcher(mock_db_pool, mock_cache)
         matcher._patterns_by_server[123] = [
             PhrasePattern(
@@ -221,14 +151,10 @@ class TestPhraseMatcherAsync:
                 server_id=123,
             )
         ]
-
-        result = await matcher.match_phrases("Hello World!", 123)
-
-        assert result == []
+        assert await matcher.match_phrases("Hello World!", 123) == []
 
     @pytest.mark.asyncio
     async def test_match_phrases_multiple_matches(self, mock_db_pool, mock_cache):
-        """Test matching with multiple matches."""
         matcher = PhraseMatcher(mock_db_pool, mock_cache)
         matcher._patterns_by_server[123] = [
             PhrasePattern(
@@ -244,35 +170,22 @@ class TestPhraseMatcherAsync:
                 server_id=123,
             ),
         ]
-
-        result = await matcher.match_phrases("Hello World!", 123)
-
-        assert len(result) == 2
+        assert len(await matcher.match_phrases("Hello World!", 123)) == 2
 
     @pytest.mark.asyncio
     async def test_match_with_timeout(self, mock_db_pool, mock_cache):
-        """Test _match_with_timeout executes regex."""
         matcher = PhraseMatcher(mock_db_pool, mock_cache)
-        pattern = re.compile(r"test")
-
-        result = await matcher._match_with_timeout(pattern, "this is a test")
-
+        result = await matcher._match_with_timeout(re.compile(r"test"), "this is a test")
         assert result is not None
         assert result.group() == "test"
 
     @pytest.mark.asyncio
     async def test_match_with_timeout_no_match(self, mock_db_pool, mock_cache):
-        """Test _match_with_timeout with no match."""
         matcher = PhraseMatcher(mock_db_pool, mock_cache)
-        pattern = re.compile(r"missing")
-
-        result = await matcher._match_with_timeout(pattern, "this is a test")
-
-        assert result is None
+        assert await matcher._match_with_timeout(re.compile(r"missing"), "this is a test") is None
 
     @pytest.mark.asyncio
     async def test_disable_pattern(self, mock_cache):
-        """Test disabling a pattern."""
         mock_conn = AsyncMock()
 
         @asynccontextmanager
@@ -281,16 +194,12 @@ class TestPhraseMatcherAsync:
 
         mock_db_pool = MagicMock()
         mock_db_pool.acquire = acquire
-
         matcher = PhraseMatcher(mock_db_pool, mock_cache)
-
         await matcher._disable_pattern("123")
-
         mock_conn.execute.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_disable_pattern_handles_error(self, mock_cache):
-        """Test disabling pattern handles errors."""
         mock_conn = AsyncMock()
         mock_conn.execute.side_effect = Exception("Database error")
 
@@ -300,64 +209,44 @@ class TestPhraseMatcherAsync:
 
         mock_db_pool = MagicMock()
         mock_db_pool.acquire = acquire
-
         matcher = PhraseMatcher(mock_db_pool, mock_cache)
-
         await matcher._disable_pattern("123")
 
 
 class TestPhraseMatcherValidation:
-    """Tests for pattern validation."""
-
     @pytest.mark.asyncio
     async def test_validate_pattern_valid(self, mock_db_pool, mock_cache):
-        """Test validating a valid pattern."""
         matcher = PhraseMatcher(mock_db_pool, mock_cache)
-
         with patch.object(matcher.validator, "validate", new_callable=AsyncMock):
             await matcher.validate_pattern("hello")
 
     @pytest.mark.asyncio
     async def test_validate_pattern_too_long(self, mock_db_pool, mock_cache):
-        """Test validating a pattern that's too long (caught by validator)."""
         matcher = PhraseMatcher(mock_db_pool, mock_cache)
-        long_pattern = "a" * 501
-
         with patch.object(matcher.validator, "validate", new_callable=AsyncMock) as mock_validate:
             mock_validate.side_effect = RegexValidationError("Pattern exceeds maximum length")
             with pytest.raises(RegexValidationError):
-                await matcher.validate_pattern(long_pattern)
+                await matcher.validate_pattern("a" * 501)
 
     @pytest.mark.asyncio
     async def test_validate_pattern_invalid_syntax(self, mock_db_pool, mock_cache):
-        """Test validating a pattern with invalid syntax."""
         matcher = PhraseMatcher(mock_db_pool, mock_cache)
-
         with patch.object(matcher.validator, "validate", new_callable=AsyncMock):
             with pytest.raises(RegexValidationError) as exc_info:
                 await matcher.validate_pattern("[invalid(")
-
             assert "Invalid regex" in str(exc_info.value)
 
     @pytest.mark.asyncio
     async def test_validate_pattern_redos_check(self, mock_db_pool, mock_cache):
-        """Test pattern validation calls ReDoS validator."""
         matcher = PhraseMatcher(mock_db_pool, mock_cache)
-
         with patch.object(matcher.validator, "validate", new_callable=AsyncMock) as mock_validate:
             await matcher.validate_pattern("hello")
-
             mock_validate.assert_called_once_with("hello")
 
 
 class TestPhraseMatcherTimeout:
-    """Tests for regex timeout handling."""
-
     @pytest.mark.asyncio
     async def test_match_phrases_timeout_disables_pattern(self, mock_cache):
-        """Test that timeout during matching disables the pattern."""
-        import asyncio
-
         mock_conn = AsyncMock()
 
         @asynccontextmanager
@@ -366,7 +255,6 @@ class TestPhraseMatcherTimeout:
 
         mock_db_pool = MagicMock()
         mock_db_pool.acquire = acquire
-
         matcher = PhraseMatcher(mock_db_pool, mock_cache)
         matcher._patterns_by_server[123] = [
             PhrasePattern(
@@ -377,14 +265,7 @@ class TestPhraseMatcherTimeout:
             )
         ]
 
-        # Mock _match_with_timeout to raise TimeoutError
         with patch.object(matcher, "_match_with_timeout", new_callable=AsyncMock) as mock_match:
             mock_match.side_effect = asyncio.TimeoutError()
-
-            result = await matcher.match_phrases("Hello World!", 123)
-
-            # Should return empty list due to timeout
-            assert result == []
-
-            # Should have called _disable_pattern
+            assert await matcher.match_phrases("Hello World!", 123) == []
             mock_conn.execute.assert_called_once()

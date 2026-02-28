@@ -46,14 +46,6 @@ component_management:
         - type: project
           target: 50%
           threshold: 5%
-    - component_id: notifiarr_monitor
-      name: Notifiarr Monitor
-      paths:
-        - bot/processors/notifiarr_monitor.py
-      statuses:
-        - type: project
-          target: 50%
-          threshold: 5%
     - component_id: client
       name: Bot Client
       paths:

@@ -17,7 +17,6 @@ services:
 
       # Features (set to "true" to enable)
       FEATURE_MEDIA_DOWNLOAD: "false"
-      FEATURE_NOTIFIARR_MONITORING: "false"
 
       # Optional: Media storage path (if FEATURE_MEDIA_DOWNLOAD is enabled)
       # MEDIA_STORAGE_PATH: /media

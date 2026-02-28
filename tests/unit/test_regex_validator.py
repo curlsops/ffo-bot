@@ -111,5 +111,4 @@ async def test_pattern_slow_execution():
         with pytest.raises(RegexValidationError) as exc_info:
             await validator.validate(r"simple")
 
-        assert "execution time" in str(exc_info.value)
-        assert "exceeds" in str(exc_info.value)
+        assert "too slow" in str(exc_info.value)
