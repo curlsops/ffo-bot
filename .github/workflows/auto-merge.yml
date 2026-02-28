@@ -7,8 +7,6 @@ on:
 permissions:
   contents: write
   pull-requests: write
-  checks: read
-  actions: read
 
 jobs:
   auto-merge:
@@ -16,17 +14,6 @@ jobs:
     if: github.actor == 'renovate[bot]'
 
     steps:
-      - name: Checkout
-        uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
-
-      - name: Wait for CI checks to pass
-        uses: lewagon/wait-on-check-action@v1.3.4
-        with:
-          ref: ${{ github.event.pull_request.head.sha }}
-          repo-token: ${{ secrets.GITHUB_TOKEN }}
-          wait-interval: 30
-          running-workflow-name: "Auto-merge Renovate PRs"
-
       - name: Enable auto-merge
         run: gh pr merge --auto --squash "$PR_URL"
         env:
