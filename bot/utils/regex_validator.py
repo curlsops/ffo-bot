@@ -31,15 +31,7 @@ class RegexValidator:
     MAX_EXECUTION_TIME_MS = 100
 
     async def validate(self, pattern: str):
-        """
-        Validate regex pattern for ReDoS vulnerabilities.
-
-        Args:
-            pattern: Regex pattern to validate
-
-        Raises:
-            RegexValidationError: If pattern is dangerous or invalid
-        """
+        """Validate regex pattern for ReDoS vulnerabilities."""
         if len(pattern) > self.MAX_PATTERN_LENGTH:
             raise RegexValidationError(
                 f"Pattern exceeds maximum length of {self.MAX_PATTERN_LENGTH}"

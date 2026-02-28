@@ -84,14 +84,9 @@ def test_sanitize_sql_parameter():
 
 
 def test_validate_emoji_empty():
-    """Test validate_emoji rejects empty string."""
+    """Test validate_emoji rejects empty/whitespace-only strings."""
     with pytest.raises(ValidationError):
         InputValidator.validate_emoji("   ")
 
-
-def test_validate_emoji_whitespace_only():
-    """Test validate_emoji rejects whitespace-only string."""
-    with pytest.raises(ValidationError) as exc_info:
-        InputValidator.validate_emoji("   \t\n   ")
-
-    assert "empty" in str(exc_info.value).lower()
+    with pytest.raises(ValidationError):
+        InputValidator.validate_emoji("")

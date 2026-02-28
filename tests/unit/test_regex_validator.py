@@ -91,7 +91,6 @@ async def test_pattern_execution_exception():
 @pytest.mark.asyncio
 async def test_pattern_slow_execution():
     """Test pattern that exceeds execution time threshold."""
-    import time
     from unittest.mock import MagicMock, patch
 
     validator = RegexValidator()

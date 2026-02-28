@@ -27,19 +27,7 @@ class InputValidator:
 
     @staticmethod
     def validate_discord_id(value: Any, field_name: str) -> int:
-        """
-        Validate Discord ID (snowflake).
-
-        Args:
-            value: Value to validate
-            field_name: Field name for error messages
-
-        Returns:
-            Validated Discord ID as integer
-
-        Raises:
-            ValidationError: If validation fails
-        """
+        """Validate Discord ID (snowflake)."""
         try:
             discord_id = int(value)
         except (TypeError, ValueError):
@@ -55,21 +43,7 @@ class InputValidator:
     def validate_string(
         value: Any, field_name: str, max_length: int, allow_empty: bool = False
     ) -> str:
-        """
-        Validate and sanitize string input.
-
-        Args:
-            value: Value to validate
-            field_name: Field name for error messages
-            max_length: Maximum allowed length
-            allow_empty: Whether to allow empty strings
-
-        Returns:
-            Validated and trimmed string
-
-        Raises:
-            ValidationError: If validation fails
-        """
+        """Validate and sanitize string input."""
         if not isinstance(value, str):
             raise ValidationError(f"{field_name} must be a string")
 
@@ -86,18 +60,7 @@ class InputValidator:
 
     @staticmethod
     def validate_command_name(value: str) -> str:
-        """
-        Validate slash command name format.
-
-        Args:
-            value: Command name to validate
-
-        Returns:
-            Validated command name
-
-        Raises:
-            ValidationError: If validation fails
-        """
+        """Validate slash command name format."""
         value = InputValidator.validate_string(
             value, "command_name", InputValidator.MAX_COMMAND_NAME_LENGTH
         )
@@ -111,21 +74,9 @@ class InputValidator:
 
     @staticmethod
     def validate_phrase_pattern(value: str) -> str:
-        """
-        Validate regex phrase pattern.
-
-        Args:
-            value: Regex pattern to validate
-
-        Returns:
-            Validated pattern
-
-        Raises:
-            ValidationError: If validation fails
-        """
+        """Validate regex phrase pattern."""
         value = InputValidator.validate_string(value, "phrase", InputValidator.MAX_PHRASE_LENGTH)
 
-        # Test regex compilation
         try:
             re.compile(value, re.IGNORECASE)
         except re.error as e:
@@ -135,37 +86,10 @@ class InputValidator:
 
     @staticmethod
     def sanitize_sql_parameter(value: str) -> str:
-        """
-        Sanitize string for SQL (used with parameterized queries).
-
-        Args:
-            value: String to sanitize
-
-        Returns:
-            Sanitized string
-
-        Note:
-            When using parameterized queries, sanitization is primarily
-            about data validation, not SQL injection prevention.
-            The database driver handles proper escaping.
-        """
-        # Remove null bytes that could truncate strings
+        """Remove null bytes that could truncate strings in SQL parameters."""
         return value.replace("\x00", "")
 
     @staticmethod
     def validate_emoji(value: str) -> str:
-        """
-        Validate emoji string.
-
-        Args:
-            value: Emoji to validate
-
-        Returns:
-            Validated emoji
-
-        Raises:
-            ValidationError: If validation fails
-        """
-        value = InputValidator.validate_string(value, "emoji", 255)
-
-        return value
+        """Validate emoji string (Unicode or Discord custom format)."""
+        return InputValidator.validate_string(value, "emoji", 255)
