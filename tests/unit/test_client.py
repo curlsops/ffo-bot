@@ -159,7 +159,7 @@ class TestFFOBotExtensions:
     async def test_load_extensions_success(self, bot):
         with patch.object(bot, "load_extension", new_callable=AsyncMock) as mock_load:
             await bot._load_extensions()
-            assert mock_load.call_count == 8
+            assert mock_load.call_count == 9
 
     @pytest.mark.asyncio
     async def test_load_extensions_handles_failure(self, bot):
