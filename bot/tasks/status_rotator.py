@@ -47,7 +47,7 @@ class StatusRotator(commands.Cog):
             logger.warning(f"Failed to fetch dad joke: {e}")
             return None
 
-    @tasks.loop(hours=24)
+    @tasks.loop(hours=1)
     async def rotate_status(self) -> None:
         """Update bot presence with a random dad joke."""
         joke = await self._fetch_dad_joke()
