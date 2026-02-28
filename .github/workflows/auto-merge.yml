@@ -12,7 +12,7 @@ permissions:
 
 jobs:
   auto-merge:
-    runs-on: arc-runner-set
+    runs-on: ubuntu-latest
     if: github.actor == 'renovate[bot]'
 
     steps:
