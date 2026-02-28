@@ -84,7 +84,7 @@ class PhraseMatcher:
         return await asyncio.get_event_loop().run_in_executor(None, pattern.search, text)
 
     def _normalize_message(self, content: str) -> str:
-        return content.lower()
+        return re.sub(r"[@#$]", "", content.lower())
 
     async def validate_pattern(self, phrase: str) -> None:
         await self.validator.validate(phrase)

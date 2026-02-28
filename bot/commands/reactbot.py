@@ -40,7 +40,10 @@ class ReactBotCommands(commands.Cog):
                     emoji_id = int(parts[2])
                     emoji_obj = self.bot.get_emoji(emoji_id)
                     if emoji_obj is None:
-                        return False, f"❌ Cannot access emoji {emoji_str}. The bot must be in the server where this emoji exists."
+                        return (
+                            False,
+                            f"❌ Cannot access emoji {emoji_str}. The bot must be in the server where this emoji exists.",
+                        )
                     if not emoji_obj.is_usable():
                         return False, f"❌ Emoji {emoji_str} is not usable by the bot."
                 except ValueError:
@@ -129,8 +132,8 @@ class ReactBotCommands(commands.Cog):
         try:
             async with self.bot.db_pool.acquire() as conn:
                 rows = await conn.fetch(
-                    """SELECT phrase, emoji FROM phrase_reactions 
-                       WHERE server_id = $1 AND is_active = true 
+                    """SELECT phrase, emoji FROM phrase_reactions
+                       WHERE server_id = $1 AND is_active = true
                        ORDER BY match_count DESC LIMIT 25""",
                     interaction.guild_id,
                 )
