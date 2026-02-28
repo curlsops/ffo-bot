@@ -1,10 +1,11 @@
 """Initial schema
 
 Revision ID: 001_initial
-Revises: 
+Revises:
 Create Date: 2026-01-11 00:00:00.000000
 
 """
+
 from typing import Sequence, Union
 
 import sqlalchemy as sa
@@ -542,8 +543,7 @@ def upgrade() -> None:
     op.create_index("idx_audit_log_retention", "audit_log", ["occurred_at"], unique=False)
 
     # Create function for updating updated_at timestamp
-    op.execute(
-        """
+    op.execute("""
         CREATE OR REPLACE FUNCTION update_updated_at_column()
         RETURNS TRIGGER AS $$
         BEGIN
@@ -551,8 +551,7 @@ def upgrade() -> None:
             RETURN NEW;
         END;
         $$ LANGUAGE plpgsql;
-    """
-    )
+    """)
 
     # Create triggers
     for table in [
@@ -564,13 +563,11 @@ def upgrade() -> None:
         "user_preferences",
         "bot_config",
     ]:
-        op.execute(
-            f"""
+        op.execute(f"""
             CREATE TRIGGER update_{table}_updated_at
             BEFORE UPDATE ON {table}
             FOR EACH ROW EXECUTE FUNCTION update_updated_at_column();
-        """
-        )
+        """)
 
 
 def downgrade() -> None:
