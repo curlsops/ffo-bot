@@ -349,3 +349,43 @@ class TestPhraseMatcherValidation:
             await matcher.validate_pattern("hello")
 
             mock_validate.assert_called_once_with("hello")
+
+
+class TestPhraseMatcherTimeout:
+    """Tests for regex timeout handling."""
+
+    @pytest.mark.asyncio
+    async def test_match_phrases_timeout_disables_pattern(self, mock_cache):
+        """Test that timeout during matching disables the pattern."""
+        import asyncio
+
+        mock_conn = AsyncMock()
+
+        @asynccontextmanager
+        async def acquire():
+            yield mock_conn
+
+        mock_db_pool = MagicMock()
+        mock_db_pool.acquire = acquire
+
+        matcher = PhraseMatcher(mock_db_pool, mock_cache)
+        matcher._patterns_by_server[123] = [
+            PhrasePattern(
+                phrase_id="1",
+                pattern=re.compile(r"hello", re.IGNORECASE),
+                emoji="👋",
+                server_id=123,
+            )
+        ]
+
+        # Mock _match_with_timeout to raise TimeoutError
+        with patch.object(matcher, "_match_with_timeout", new_callable=AsyncMock) as mock_match:
+            mock_match.side_effect = asyncio.TimeoutError()
+
+            result = await matcher.match_phrases("Hello World!", 123)
+
+            # Should return empty list due to timeout
+            assert result == []
+
+            # Should have called _disable_pattern
+            mock_conn.execute.assert_called_once()

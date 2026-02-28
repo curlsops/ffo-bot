@@ -68,3 +68,49 @@ async def test_valid_complex_pattern():
     await validator.validate(r"hello\s+world")
     await validator.validate(r"\d{3}-\d{4}")
     await validator.validate(r"[a-zA-Z]+@[a-zA-Z]+\.[a-zA-Z]+")
+
+
+@pytest.mark.asyncio
+async def test_pattern_execution_exception():
+    """Test pattern that raises exception during search."""
+    from unittest.mock import MagicMock, patch
+
+    validator = RegexValidator()
+
+    # Mock the compiled pattern to raise an exception during search
+    mock_pattern = MagicMock()
+    mock_pattern.search.side_effect = Exception("Search failed")
+
+    with patch("re.compile", return_value=mock_pattern):
+        with pytest.raises(RegexValidationError) as exc_info:
+            await validator.validate(r"test")
+
+        assert "Pattern execution error" in str(exc_info.value)
+
+
+@pytest.mark.asyncio
+async def test_pattern_slow_execution():
+    """Test pattern that exceeds execution time threshold."""
+    import time
+    from unittest.mock import MagicMock, patch
+
+    validator = RegexValidator()
+
+    # Mock time.perf_counter to simulate slow execution
+    call_count = [0]
+    start_time = 1000.0
+
+    def mock_perf_counter():
+        call_count[0] += 1
+        if call_count[0] % 2 == 1:
+            return start_time
+        else:
+            # Return time that exceeds threshold (100ms = 0.1s)
+            return start_time + 0.2
+
+    with patch("time.perf_counter", side_effect=mock_perf_counter):
+        with pytest.raises(RegexValidationError) as exc_info:
+            await validator.validate(r"simple")
+
+        assert "execution time" in str(exc_info.value)
+        assert "exceeds" in str(exc_info.value)

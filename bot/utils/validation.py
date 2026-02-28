@@ -168,9 +168,4 @@ class InputValidator:
         """
         value = InputValidator.validate_string(value, "emoji", 255)
 
-        # Basic emoji validation (can be Unicode emoji or custom Discord emoji)
-        # Custom Discord emoji format: <:name:id> or <a:name:id>
-        if not value:
-            raise ValidationError("Emoji cannot be empty")
-
         return value

@@ -31,7 +31,16 @@ echo "✓ Dependencies installed"
 
 # Run linters and formatters
 echo ""
-if [ "$1" = "--fix" ] || [ "$1" = "-f" ]; then
+if [ "$1" = "--check" ] || [ "$1" = "-c" ]; then
+    echo "Running linters (check only, use without --check to auto-format)..."
+    echo "- flake8"
+    flake8 bot/ config/ database/ main.py --count --statistics
+    echo "- black"
+    black --check bot/ config/ database/ main.py
+    echo "- isort"
+    isort --check-only bot/ config/ database/ main.py
+    echo "✓ All linters passed"
+else
     echo "Formatting code..."
     echo "- isort (fixing imports)"
     isort bot/ config/ database/ main.py
@@ -42,15 +51,6 @@ if [ "$1" = "--fix" ] || [ "$1" = "-f" ]; then
     echo "Running flake8 check..."
     flake8 bot/ config/ database/ main.py --count --statistics
     echo "✓ Flake8 passed"
-else
-    echo "Running linters (use --fix to auto-format)..."
-    echo "- flake8"
-    flake8 bot/ config/ database/ main.py --count --statistics
-    echo "- black"
-    black --check bot/ config/ database/ main.py
-    echo "- isort"
-    isort --check-only bot/ config/ database/ main.py
-    echo "✓ All linters passed"
 fi
 
 # Run tests
@@ -66,6 +66,19 @@ echo ""
 echo "Building Docker image..."
 docker buildx build -t ffobot:test .
 echo "✓ Docker image built successfully"
+
+# Smoke test - verify container starts and can import modules
+echo ""
+echo "Running container smoke test..."
+docker run --rm ffobot:test python -c "
+import bot
+import config
+import database
+from bot.client import FFOBot
+from config.settings import Settings
+print('All modules imported successfully')
+"
+echo "✓ Container smoke test passed"
 
 echo ""
 echo "🎉 Build and test completed successfully!"
