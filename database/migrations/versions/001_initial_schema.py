@@ -104,14 +104,13 @@ def upgrade() -> None:
         sa.CheckConstraint("role IN ('super_admin', 'admin', 'moderator')"),
         sa.ForeignKeyConstraint(["server_id"], ["servers.server_id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint(
-            "server_id",
-            "user_id",
-            "role",
-            "is_active",
-            name="_server_user_role_active_uc",
-            postgresql_where=sa.text("is_active = true"),
-        ),
+    )
+    op.create_index(
+        "_server_user_role_active_uc",
+        "user_permissions",
+        ["server_id", "user_id", "role"],
+        unique=True,
+        postgresql_where=sa.text("is_active = true"),
     )
     op.create_index(
         "idx_user_permissions_lookup",
@@ -163,14 +162,13 @@ def upgrade() -> None:
         ),
         sa.ForeignKeyConstraint(["server_id"], ["servers.server_id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint(
-            "server_id",
-            "user_id",
-            "command_name",
-            "is_active",
-            name="_server_user_command_active_uc",
-            postgresql_where=sa.text("is_active = true"),
-        ),
+    )
+    op.create_index(
+        "_server_user_command_active_uc",
+        "command_permissions",
+        ["server_id", "user_id", "command_name"],
+        unique=True,
+        postgresql_where=sa.text("is_active = true"),
     )
     op.create_index(
         "idx_command_permissions_lookup",
@@ -210,13 +208,13 @@ def upgrade() -> None:
         ),
         sa.ForeignKeyConstraint(["server_id"], ["servers.server_id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint(
-            "server_id",
-            "message_id",
-            "emoji",
-            name="_server_message_emoji_uc",
-            postgresql_where=sa.text("is_active = true"),
-        ),
+    )
+    op.create_index(
+        "_server_message_emoji_uc",
+        "reaction_roles",
+        ["server_id", "message_id", "emoji"],
+        unique=True,
+        postgresql_where=sa.text("is_active = true"),
     )
     op.create_index(
         "idx_reaction_roles_message",
@@ -263,14 +261,14 @@ def upgrade() -> None:
         ),
         sa.ForeignKeyConstraint(["server_id"], ["servers.server_id"], ondelete="CASCADE"),
         sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint(
-            "server_id",
-            "phrase",
-            "emoji",
-            name="_server_phrase_emoji_uc",
-            postgresql_where=sa.text("is_active = true"),
-        ),
         comment="Phrase patterns that trigger automatic emoji reactions",
+    )
+    op.create_index(
+        "_server_phrase_emoji_uc",
+        "phrase_reactions",
+        ["server_id", "phrase", "emoji"],
+        unique=True,
+        postgresql_where=sa.text("is_active = true"),
     )
     op.create_index(
         "idx_phrase_reactions_server",
