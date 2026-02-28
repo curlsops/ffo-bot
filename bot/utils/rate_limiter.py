@@ -19,15 +19,6 @@ class RateLimiter:
         server_capacity: int = 100,
         server_refill_rate: float = 100 / 60,  # 100 per minute
     ):
-        """
-        Initialize rate limiter.
-
-        Args:
-            user_capacity: Maximum tokens per user
-            user_refill_rate: Tokens refilled per second
-            server_capacity: Maximum tokens per server
-            server_refill_rate: Tokens refilled per second
-        """
         # user_id -> (tokens, last_refill)
         self._user_buckets: Dict[int, Tuple[float, datetime]] = defaultdict(
             lambda: (user_capacity, datetime.now(UTC))
@@ -45,55 +36,28 @@ class RateLimiter:
         self._lock = asyncio.Lock()
 
     async def check_rate_limit(self, user_id: int, server_id: int) -> Tuple[bool, str]:
-        """
-        Check if request is within rate limits.
-
-        Args:
-            user_id: Discord user ID
-            server_id: Discord server ID
-
-        Returns:
-            (allowed, reason) tuple
-        """
         async with self._lock:
-            # Check user rate limit
-            user_allowed = self._check_bucket(
+            if not self._check_bucket(
                 self._user_buckets, user_id, self.user_capacity, self.user_refill_rate
-            )
-
-            if not user_allowed:
-                logger.warning(f"User {user_id} rate limited")
+            ):
                 return False, "You're sending commands too quickly. Please slow down."
 
-            # Check server rate limit
-            server_allowed = self._check_bucket(
+            if not self._check_bucket(
                 self._server_buckets, server_id, self.server_capacity, self.server_refill_rate
-            )
-
-            if not server_allowed:
-                logger.warning(f"Server {server_id} rate limited")
+            ):
                 return False, "Server rate limit exceeded. Please try again later."
 
-            # Consume tokens
             self._consume_token(self._user_buckets, user_id)
             self._consume_token(self._server_buckets, server_id)
-
             return True, ""
 
     def _check_bucket(self, buckets: Dict, key: int, capacity: float, refill_rate: float) -> bool:
-        """Check if bucket has available tokens."""
         tokens, last_refill = buckets[key]
-
-        # Refill tokens based on time elapsed
         now = datetime.now(UTC)
-        elapsed_seconds = (now - last_refill).total_seconds()
-        new_tokens = min(capacity, tokens + (elapsed_seconds * refill_rate))
-
+        new_tokens = min(capacity, tokens + ((now - last_refill).total_seconds() * refill_rate))
         buckets[key] = (new_tokens, now)
-
         return new_tokens >= 1.0
 
     def _consume_token(self, buckets: Dict, key: int):
-        """Consume one token from bucket."""
         tokens, last_refill = buckets[key]
         buckets[key] = (tokens - 1.0, last_refill)

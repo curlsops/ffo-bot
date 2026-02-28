@@ -28,7 +28,6 @@ class Constants:
     PHRASE_PATTERN_CACHE_TTL = 300  # 5 minutes
     USER_ROLE_CACHE_TTL = 300  # 5 minutes
     COMMAND_PERMISSION_CACHE_TTL = 60  # 1 minute
-    NOTIFIARR_EVENT_CACHE_TTL = 300  # 5 minutes
 
 
 class Role(str, Enum):

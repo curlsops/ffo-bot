@@ -13,8 +13,6 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class PhrasePattern:
-    """Compiled phrase pattern with metadata."""
-
     phrase_id: str
     pattern: re.Pattern
     emoji: str
@@ -22,9 +20,6 @@ class PhrasePattern:
 
 
 class PhraseMatcher:
-    """Message phrase detection with ReDoS protection."""
-
-    # Regex timeout to prevent ReDoS
     REGEX_TIMEOUT_SECONDS = 0.5
 
     def __init__(self, db_pool, cache):
@@ -34,126 +29,80 @@ class PhraseMatcher:
         self._patterns_by_server: Dict[int, List[PhrasePattern]] = {}
 
     async def load_patterns(self, server_id: int):
-        """Load and compile regex patterns for server."""
         cache_key = f"phrase_patterns:{server_id}"
         cached = self.cache.get(cache_key)
-
         if cached is not None:
             self._patterns_by_server[server_id] = cached
             return
 
         async with self.db_pool.acquire() as conn:
             rows = await conn.fetch(
-                """
-                SELECT id, phrase, emoji
-                FROM phrase_reactions
-                WHERE server_id = $1 AND is_active = true
-                """,
+                "SELECT id, phrase, emoji FROM phrase_reactions WHERE server_id = $1 AND is_active = true",
                 server_id,
             )
 
         patterns = []
         for row in rows:
             try:
-                # Compile case-insensitive pattern
-                pattern = re.compile(row["phrase"], re.IGNORECASE)
                 patterns.append(
                     PhrasePattern(
                         phrase_id=str(row["id"]),
-                        pattern=pattern,
+                        pattern=re.compile(row["phrase"], re.IGNORECASE),
                         emoji=row["emoji"],
                         server_id=server_id,
                     )
                 )
             except re.error as e:
-                logger.error(f"Invalid regex pattern {row['phrase']}: {e}")
+                logger.error(f"Invalid regex {row['phrase']}: {e}")
 
         self._patterns_by_server[server_id] = patterns
-
-        # Cache patterns for 5 minutes
         self.cache.set(cache_key, patterns, ttl=300)
 
-        logger.info(f"Loaded {len(patterns)} patterns for server {server_id}")
-
     async def match_phrases(self, message_content: str, server_id: int) -> List[Tuple[str, str]]:
-        """Match message against all patterns for server. Returns list of (phrase_id, emoji)."""
         if server_id not in self._patterns_by_server:
             await self.load_patterns(server_id)
 
-        patterns = self._patterns_by_server[server_id]
-
+        patterns = self._patterns_by_server.get(server_id, [])
         if not patterns:
             return []
 
-        # Normalize message content
-        normalized_content = self._normalize_message(message_content)
-
+        normalized = self._normalize_message(message_content)
         matches = []
-        for phrase_pattern in patterns:
+        for p in patterns:
             try:
-                # Run regex with timeout protection
-                match = await asyncio.wait_for(
-                    self._match_with_timeout(phrase_pattern.pattern, normalized_content),
+                if await asyncio.wait_for(
+                    self._match_with_timeout(p.pattern, normalized),
                     timeout=self.REGEX_TIMEOUT_SECONDS,
-                )
-
-                if match:
-                    matches.append((phrase_pattern.phrase_id, phrase_pattern.emoji))
-                    logger.debug(
-                        f"Phrase match: {phrase_pattern.phrase_id} -> {phrase_pattern.emoji}"
-                    )
-
+                ):
+                    matches.append((p.phrase_id, p.emoji))
             except asyncio.TimeoutError:
-                logger.warning(
-                    f"Regex timeout for pattern {phrase_pattern.phrase_id} "
-                    f"in server {server_id}"
-                )
-                # Disable problematic pattern
-                await self._disable_pattern(phrase_pattern.phrase_id)
-
+                logger.warning(f"Regex timeout for {p.phrase_id}")
+                await self._disable_pattern(p.phrase_id)
         return matches
 
     async def _match_with_timeout(self, pattern: re.Pattern, text: str) -> Optional[re.Match]:
-        """Run regex match in executor to enable timeout."""
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, pattern.search, text)
+        return await asyncio.get_event_loop().run_in_executor(None, pattern.search, text)
 
     def _normalize_message(self, content: str) -> str:
-        """Normalize message for matching (lowercase, alphanumeric only)."""
         return re.sub(r"[^a-zA-Z0-9\s]", "", content).lower()
 
     async def validate_pattern(self, phrase: str) -> None:
-        """Validate regex pattern before storing."""
         await self.validator.validate(phrase)
-
         try:
             re.compile(phrase, re.IGNORECASE)
         except re.error as e:
-            raise RegexValidationError(f"Invalid regex syntax: {e}")
+            raise RegexValidationError(f"Invalid regex: {e}")
 
     async def _disable_pattern(self, phrase_id: str):
-        """Disable problematic pattern in database."""
         try:
             async with self.db_pool.acquire() as conn:
                 await conn.execute(
-                    """
-                    UPDATE phrase_reactions
-                    SET is_active = false
-                    WHERE id = $1
-                    """,
-                    phrase_id,
+                    "UPDATE phrase_reactions SET is_active = false WHERE id = $1", phrase_id
                 )
-
-            logger.error(f"Disabled phrase pattern {phrase_id} due to ReDoS risk")
+            logger.error(f"Disabled pattern {phrase_id} (ReDoS)")
         except Exception as e:
-            logger.error(f"Failed to disable pattern {phrase_id}: {e}")
+            logger.error(f"Failed to disable {phrase_id}: {e}")
 
     def invalidate_cache(self, server_id: int):
-        """Clear cached patterns for server after configuration change."""
-        cache_key = f"phrase_patterns:{server_id}"
-        self.cache.delete(cache_key)
-
-        if server_id in self._patterns_by_server:
-            del self._patterns_by_server[server_id]
-
-        logger.debug(f"Invalidated phrase cache for server {server_id}")
+        self.cache.delete(f"phrase_patterns:{server_id}")
+        self._patterns_by_server.pop(server_id, None)

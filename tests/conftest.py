@@ -8,7 +8,7 @@ import pytest
 
 @pytest.fixture
 def mock_db_pool():
-    """Mock database pool for testing with async context manager support."""
+    """Mock database pool for testing."""
     conn = MagicMock()
     conn.fetchval = AsyncMock()
     conn.fetch = AsyncMock(return_value=[])
