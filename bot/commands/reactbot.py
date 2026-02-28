@@ -3,6 +3,7 @@
 import logging
 from typing import List
 
+import asyncpg
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -35,12 +36,15 @@ class ReactBotCommands(commands.Cog):
         if emoji_str.startswith("<") and emoji_str.endswith(">"):
             parts = emoji_str.strip("<>").split(":")
             if len(parts) >= 3:
-                emoji_id = int(parts[2])
-                emoji_obj = self.bot.get_emoji(emoji_id)
-                if emoji_obj is None:
-                    return False, f"❌ Cannot access emoji {emoji_str}. The bot must be in the server where this emoji exists."
-                if not emoji_obj.is_usable():
-                    return False, f"❌ Emoji {emoji_str} is not usable by the bot (may require Nitro or bot permissions)."
+                try:
+                    emoji_id = int(parts[2])
+                    emoji_obj = self.bot.get_emoji(emoji_id)
+                    if emoji_obj is None:
+                        return False, f"❌ Cannot access emoji {emoji_str}. The bot must be in the server where this emoji exists."
+                    if not emoji_obj.is_usable():
+                        return False, f"❌ Emoji {emoji_str} is not usable by the bot."
+                except ValueError:
+                    pass
         return True, ""
 
     @app_commands.command(name="reactbot_add", description="Add a phrase reaction (Admin only)")
@@ -84,6 +88,11 @@ class ReactBotCommands(commands.Cog):
                     server_id=str(interaction.guild_id),
                     status="success",
                 ).inc()
+        except asyncpg.UniqueViolationError:
+            await interaction.followup.send(
+                f"❌ This exact phrase + emoji combination already exists: `{phrase}` → {emoji}",
+                ephemeral=True,
+            )
         except (ValidationError, RegexValidationError) as e:
             await interaction.followup.send(f"❌ {e}", ephemeral=True)
         except Exception as e:
