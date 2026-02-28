@@ -4,6 +4,12 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     git \
     libpq-dev \
     gcc \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# Install Node.js (required for GitHub Actions)
+RUN curl -fsSL https://deb.nodesource.com/setup_22.x | bash - \
+    && apt-get install -y nodejs \
     && rm -rf /var/lib/apt/lists/*
 
 WORKDIR /deps
