@@ -53,4 +53,10 @@ async def test_validate_dangerous_pattern(mock_db_pool, mock_cache):
 @pytest.mark.asyncio
 async def test_normalize_message(mock_db_pool, mock_cache):
     matcher = PhraseMatcher(mock_db_pool, mock_cache)
-    assert matcher._normalize_message("Hello! World? 123") == "hello world 123"
+    assert matcher._normalize_message("Hello! World? 123") == "hello! world? 123"
+
+
+@pytest.mark.asyncio
+async def test_normalize_message_preserves_emoticons(mock_db_pool, mock_cache):
+    matcher = PhraseMatcher(mock_db_pool, mock_cache)
+    assert matcher._normalize_message(":3") == ":3"

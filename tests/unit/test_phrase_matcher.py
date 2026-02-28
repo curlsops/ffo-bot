@@ -31,16 +31,16 @@ class TestPhraseMatcherInit:
 class TestPhraseMatcherNormalization:
     def test_normalize_message_basic(self, mock_db_pool, mock_cache):
         matcher = PhraseMatcher(mock_db_pool, mock_cache)
-        assert matcher._normalize_message("Hello World!") == "hello world"
+        assert matcher._normalize_message("Hello World!") == "hello world!"
 
-    def test_normalize_message_removes_punctuation(self, mock_db_pool, mock_cache):
+    def test_normalize_message_preserves_punctuation(self, mock_db_pool, mock_cache):
         matcher = PhraseMatcher(mock_db_pool, mock_cache)
-        assert matcher._normalize_message("Hello, World! How are you?") == "hello world how are you"
+        assert matcher._normalize_message("Hello, World! How are you?") == "hello, world! how are you?"
 
-    def test_normalize_message_removes_special_chars(self, mock_db_pool, mock_cache):
+    def test_normalize_message_preserves_special_chars(self, mock_db_pool, mock_cache):
         matcher = PhraseMatcher(mock_db_pool, mock_cache)
         assert (
-            matcher._normalize_message("Hello @user #channel $money") == "hello user channel money"
+            matcher._normalize_message("Hello @user #channel $money") == "hello @user #channel $money"
         )
 
     def test_normalize_message_preserves_numbers(self, mock_db_pool, mock_cache):
@@ -50,6 +50,11 @@ class TestPhraseMatcherNormalization:
     def test_normalize_message_lowercase(self, mock_db_pool, mock_cache):
         matcher = PhraseMatcher(mock_db_pool, mock_cache)
         assert matcher._normalize_message("UPPERCASE MESSAGE") == "uppercase message"
+
+    def test_normalize_message_preserves_emoticons(self, mock_db_pool, mock_cache):
+        matcher = PhraseMatcher(mock_db_pool, mock_cache)
+        assert matcher._normalize_message(":3") == ":3"
+        assert matcher._normalize_message("UwU :3 OwO") == "uwu :3 owo"
 
 
 class TestPhraseMatcherCacheInvalidation:
