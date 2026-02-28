@@ -37,9 +37,11 @@ class TestPhraseMatcherNormalization:
         matcher = PhraseMatcher(mock_db_pool, mock_cache)
         assert matcher._normalize_message("Hello, World! How are you?") == "hello, world! how are you?"
 
-    def test_normalize_message_strips_discord_noise(self, mock_db_pool, mock_cache):
+    def test_normalize_message_preserves_special_chars(self, mock_db_pool, mock_cache):
         matcher = PhraseMatcher(mock_db_pool, mock_cache)
-        assert matcher._normalize_message("Hello @user #channel $money") == "hello user channel money"
+        assert (
+            matcher._normalize_message("Hello @user #channel $money") == "hello @user #channel $money"
+        )
 
     def test_normalize_message_preserves_numbers(self, mock_db_pool, mock_cache):
         matcher = PhraseMatcher(mock_db_pool, mock_cache)
