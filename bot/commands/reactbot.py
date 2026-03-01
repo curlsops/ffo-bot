@@ -55,6 +55,7 @@ class ReactBotCommands(commands.Cog):
         name="reactbot_add",
         description="Add a phrase reaction (Admin only)",
     )
+    @app_commands.guild_only()
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(
         phrase="Regex pattern to match (case-insensitive)", emoji="Emoji to react with"
@@ -111,6 +112,7 @@ class ReactBotCommands(commands.Cog):
         name="reactbot_list",
         description="List all phrase reactions",
     )
+    @app_commands.guild_only()
     @app_commands.default_permissions(administrator=True)
     async def reactbot_list(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
@@ -164,6 +166,7 @@ class ReactBotCommands(commands.Cog):
         name="reactbot_remove",
         description="Remove a phrase reaction (Admin only)",
     )
+    @app_commands.guild_only()
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(phrase="Select phrase pattern to remove")
     async def reactbot_remove(self, interaction: discord.Interaction, phrase: str):

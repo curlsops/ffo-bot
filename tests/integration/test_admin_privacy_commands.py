@@ -18,12 +18,13 @@ def make_interaction(guild=True):
     return i
 
 
-def make_admin_bot(admin=True, notifier_success=True):
+def make_admin_bot(admin=True, notifier_success=True, current_notify_channel_id=None):
     bot = MagicMock()
     bot.permission_checker = MagicMock()
     bot.permission_checker.check_role = AsyncMock(return_value=admin)
     bot._register_server = AsyncMock()
     bot.notifier = MagicMock()
+    bot.notifier.get_notify_channel_id = AsyncMock(return_value=current_notify_channel_id)
     bot.notifier.set_notify_channel = AsyncMock(return_value=notifier_success)
     return bot
 
@@ -62,7 +63,7 @@ class TestSetNotifyChannel:
 
     @pytest.mark.asyncio
     async def test_disable(self):
-        bot = make_admin_bot()
+        bot = make_admin_bot(current_notify_channel_id=123)
         i = make_interaction()
         await AdminCommands(bot).set_notify_channel.callback(AdminCommands(bot), i, channel=None)
         bot._register_server.assert_awaited_once_with(i.guild)
@@ -77,10 +78,27 @@ class TestSetNotifyChannel:
 
     @pytest.mark.asyncio
     async def test_failure(self):
-        bot = make_admin_bot(notifier_success=False)
+        bot = make_admin_bot(notifier_success=False, current_notify_channel_id=123)
         i = make_interaction()
         await AdminCommands(bot).set_notify_channel.callback(AdminCommands(bot), i, channel=None)
         assert "Failed" in i.followup.send.call_args[0][0]
+
+    @pytest.mark.asyncio
+    async def test_already_set_to_channel(self):
+        bot = make_admin_bot(current_notify_channel_id=123)
+        i = make_interaction()
+        channel = MagicMock(id=123, mention="#c")
+        await AdminCommands(bot).set_notify_channel.callback(AdminCommands(bot), i, channel=channel)
+        assert "already set" in i.followup.send.call_args[0][0].lower()
+        bot.notifier.set_notify_channel.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_already_disabled(self):
+        bot = make_admin_bot(current_notify_channel_id=None)
+        i = make_interaction()
+        await AdminCommands(bot).set_notify_channel.callback(AdminCommands(bot), i, channel=None)
+        assert "already disabled" in i.followup.send.call_args[0][0].lower()
+        bot.notifier.set_notify_channel.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_not_admin(self):
