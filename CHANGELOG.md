@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.2.0](https://github.com/curlsops/ffo-bot/compare/v1.1.0...v1.2.0) (2026-03-01)
+
+
+### Features
+
+* run database migrations on container startup ([#45](https://github.com/curlsops/ffo-bot/issues/45)) ([3b3d6b0](https://github.com/curlsops/ffo-bot/commit/3b3d6b0b123850902a1b4610c40f7a2699e4f8b1))
+
+## [1.1.0](https://github.com/curlsops/ffo-bot/compare/v1.0.0...v1.1.0) (2026-03-01)
+
+
+### Features
+
+* add admin notification system for giveaway events ([#40](https://github.com/curlsops/ffo-bot/issues/40)) ([8161bba](https://github.com/curlsops/ffo-bot/commit/8161bbad0d1c857b956e0fa2ec132b1e105809f7))
+* add error notifications to admin notification system ([#42](https://github.com/curlsops/ffo-bot/issues/42)) ([ff57431](https://github.com/curlsops/ffo-bot/commit/ff57431c66b72e0dc3204e3fcf6bb0ef621e3fc1))
+* implement giveaway system ([#37](https://github.com/curlsops/ffo-bot/issues/37)) ([1110eaa](https://github.com/curlsops/ffo-bot/commit/1110eaa43ad15fe12058ac4750e7ad3e5c51e0e8))
+
 ## [1.0.0](https://github.com/curlsops/ffo-bot/compare/v0.1.0...v1.0.0) (2026-02-28)
 
 
