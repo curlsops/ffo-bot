@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.2](https://github.com/curlsops/ffo-bot/compare/v1.3.1...v1.3.2) (2026-03-01)
+
+
+### Bug Fixes
+
+* **client:** sync commands globally only ([#54](https://github.com/curlsops/ffo-bot/issues/54)) ([2e19cf0](https://github.com/curlsops/ffo-bot/commit/2e19cf0926e5a37e566d053e5605ece75a2c18ea))
+
 ## [1.3.1](https://github.com/curlsops/ffo-bot/compare/v1.3.0...v1.3.1) (2026-03-01)
 
 
