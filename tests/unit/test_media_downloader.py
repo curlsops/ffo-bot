@@ -78,6 +78,7 @@ class TestFileType:
     @pytest.mark.parametrize("content_type,expected", [
         ("image/png", "image"), ("image/jpeg", "image"), ("image/gif", "gif"),
         ("video/mp4", "video"), ("application/pdf", None), ("text/plain", None),
+        (None, None),
     ])
     def test_get_file_type(self, downloader, content_type, expected):
         assert downloader._get_file_type(content_type) == expected
