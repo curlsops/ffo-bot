@@ -1,5 +1,21 @@
 # Changelog
 
+## [1.5.0](https://github.com/curlsops/ffo-bot/compare/v1.4.0...v1.5.0) (2026-03-01)
+
+
+### Features
+
+* **admin:** add /version command ([d978ca3](https://github.com/curlsops/ffo-bot/commit/d978ca3e017cf1a113a52af418ddd90b38d64e59))
+
+
+### Bug Fixes
+
+* **ci:** release build - provenance off, amd64 only ([9d47dce](https://github.com/curlsops/ffo-bot/commit/9d47dce2ddef3add409ddfd872e93996e8fb41f5))
+* **commands:** guild-only sync, merge on_ready loop ([4079913](https://github.com/curlsops/ffo-bot/commit/407991338aa579da4a03a5caecddd49c87bae716))
+* **giveaway:** add button param to leave_button for [@discord](https://github.com/discord).ui.button callback ([7320e59](https://github.com/curlsops/ffo-bot/commit/7320e5967127d27bf1cd416116a9f8e921351f88))
+* **giveaway:** fix Join button callback, notifier config, and footer formatting ([5a219db](https://github.com/curlsops/ffo-bot/commit/5a219db82c82851f1f5e42ec5e952f22b5f001af))
+* **giveaway:** fix Join button callback, notifier config, and footer formatting ([2390ec7](https://github.com/curlsops/ffo-bot/commit/2390ec74993d394f72f57a1b8484d17aba63dc80))
+
 ## [1.4.0](https://github.com/curlsops/ffo-bot/compare/v1.3.7...v1.4.0) (2026-03-01)
 
 
