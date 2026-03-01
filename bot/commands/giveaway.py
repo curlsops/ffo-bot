@@ -1,3 +1,4 @@
+import json
 import logging
 import re
 import uuid
@@ -250,11 +251,15 @@ class GiveawayCommands(commands.Cog):
                     prize,
                     winners,
                     ends_at,
-                    self._parse_roles(required_roles),
-                    self._parse_roles(blacklist_roles),
-                    self._parse_roles(bypass_roles),
-                    self._parse_bonus_roles(bonus_roles),
-                    self._parse_messages(messages),
+                    json.dumps(self._parse_roles(required_roles)),
+                    json.dumps(self._parse_roles(blacklist_roles)),
+                    json.dumps(self._parse_roles(bypass_roles)),
+                    json.dumps(self._parse_bonus_roles(bonus_roles)),
+                    (
+                        json.dumps(msg)
+                        if (msg := self._parse_messages(messages)) is not None
+                        else None
+                    ),
                     nodonorwin,
                     nodefaults,
                     ping,

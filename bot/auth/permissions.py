@@ -1,5 +1,6 @@
 """Permission checking and authorization."""
 
+import json
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional
@@ -111,7 +112,7 @@ class PermissionChecker:
                     """,
                     ctx.server_id,
                     ctx.user_id,
-                    {"command": ctx.command_name, "required_role": required_role.value},
+                    json.dumps({"command": ctx.command_name, "required_role": required_role.value}),
                 )
         except Exception as e:
             logger.error(f"Failed to log permission denial: {e}")
