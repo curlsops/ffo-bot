@@ -72,19 +72,8 @@ class FFOBot(commands.Bot):
         await self._start_health_server()
         await self._load_extensions()
         await self._register_persistent_views()
-        await self._sync_commands()
-        logger.info("Ready")
-
-    async def _sync_commands(self):
-        """Sync commands globally and to specific guilds for instant updates."""
-        guild_ids = [566729141466955789, 1454280374351036521]
-        for guild_id in guild_ids:
-            guild = discord.Object(id=guild_id)
-            self.tree.copy_global_to(guild=guild)
-            await self.tree.sync(guild=guild)
-            logger.info(f"Synced commands to guild {guild_id}")
         await self.tree.sync()
-        logger.info("Synced global commands")
+        logger.info("Ready")
 
     async def _load_extensions(self):
         extensions = [
