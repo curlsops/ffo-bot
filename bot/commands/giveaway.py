@@ -25,7 +25,6 @@ def parse_duration(duration: str) -> Optional[int]:
 
 
 def _discord_timestamp(dt: datetime, fmt: str = "R") -> str:
-    """Format datetime as Discord timestamp (R=relative, F=long date/time, f=short date/time)."""
     return f"<t:{int(dt.timestamp())}:{fmt}>"
 
 
@@ -33,7 +32,6 @@ def build_embed(giveaway, entry_count: int, ended: bool = False) -> discord.Embe
     ends_at = giveaway.get("ended_at") or giveaway["ends_at"]
     ts_rel = _discord_timestamp(ends_at, "R")
     ts_full = _discord_timestamp(ends_at, "F")
-    ts_short = _discord_timestamp(ends_at, "f")
 
     lines = [
         f"**{giveaway['prize']}**",
@@ -53,14 +51,18 @@ def build_embed(giveaway, entry_count: int, ended: bool = False) -> discord.Embe
         title="🎉 GIVEAWAY ENDED 🎉" if ended else "🎉 GIVEAWAY 🎉",
         description=description,
         color=discord.Color.dark_grey() if ended else discord.Color.gold(),
-        timestamp=ends_at,
+        timestamp=ends_at if ended else None,
     )
+    w = giveaway.get("winners_count") or 1
+    winner_word = "winner" if w == 1 else "winners"
+    entry_word = "entry" if entry_count == 1 else "entries"
     if ended:
-        footer = f"{entry_count} entries"
-        if giveaway.get("winners_count"):
-            footer = f"{giveaway['winners_count']} winners • {footer}"
+        footer = f"{entry_count} {entry_word}"
+        if w:
+            footer = f"{w} {winner_word} • {footer}"
     else:
-        footer = f"{giveaway['winners_count']} winners | Ends {ts_short}"
+        ends_str = ends_at.strftime("%b %d at %H:%M")
+        footer = f"{w} {winner_word} | Ends {ends_str}"
     embed.set_footer(text=footer)
     if giveaway.get("image_url"):
         embed.set_image(url=giveaway["image_url"])
@@ -160,8 +162,6 @@ class EntriesPaginatedView(discord.ui.View):
 
 
 class AlreadyJoinedView(discord.ui.View):
-    """Ephemeral view shown when user has already joined, with Leave button."""
-
     def __init__(self, giveaway_id: uuid.UUID, message_id: int, bot):
         super().__init__(timeout=60)
         self.giveaway_id = giveaway_id
@@ -169,7 +169,9 @@ class AlreadyJoinedView(discord.ui.View):
         self.bot = bot
 
     @discord.ui.button(label="Leave", style=discord.ButtonStyle.danger, row=0)
-    async def leave_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def leave_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button | None = None
+    ):
         await interaction.response.defer(ephemeral=True)
         try:
             removed = await self._remove_entry(interaction)
@@ -590,7 +592,6 @@ class GiveawayCommands(commands.Cog):
             await interaction.followup.send("Error rerolling giveaway.", ephemeral=True)
 
     def _parse_message_id(self, s: str) -> Optional[int]:
-        """Extract message ID from a Discord message link or raw ID."""
         s = s.strip()
         m = re.search(r"/(\d{17,20})$", s)
         if m:
