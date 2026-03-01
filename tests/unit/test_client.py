@@ -260,7 +260,8 @@ class TestFFOBotOnReady:
         bot._connection.user.__str__ = lambda s: "Bot#1234"
 
         with patch.object(FFOBot, "guilds", new_callable=PropertyMock, return_value=[]):
-            await bot.on_ready()
+            with patch.object(bot.tree, "sync", new_callable=AsyncMock):
+                await bot.on_ready()
 
 
 class TestFFOBotDrainQueue:
@@ -578,7 +579,8 @@ class TestFFOBotAppCommandError:
         bot._connection = MagicMock()
         bot._connection.user = MagicMock(id=123)
         with patch.object(FFOBot, "guilds", new_callable=PropertyMock, return_value=[]):
-            await bot.on_ready()
+            with patch.object(bot.tree, "sync", new_callable=AsyncMock):
+                await bot.on_ready()
         bot.metrics.set_guild_count.assert_called_with(0)
 
     @pytest.mark.asyncio
