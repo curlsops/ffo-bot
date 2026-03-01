@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.4](https://github.com/curlsops/ffo-bot/compare/v1.3.3...v1.3.4) (2026-03-01)
+
+
+### Bug Fixes
+
+* trigger release 1.3.4 ([4b33244](https://github.com/curlsops/ffo-bot/commit/4b332449315dd2b6d0d69ca761579dff303f28d7))
+* trigger release for CI changes ([4a6c1fd](https://github.com/curlsops/ffo-bot/commit/4a6c1fd35fec93580e914ea30d40375b24f766df))
+
 ## [1.3.3](https://github.com/curlsops/ffo-bot/compare/v1.3.2...v1.3.3) (2026-03-01)
 
 
