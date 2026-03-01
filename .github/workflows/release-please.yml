@@ -67,3 +67,30 @@ jobs:
           provenance: false
           platforms: linux/amd64
 
+  upload-release-artifacts:
+    needs: release-please
+    if: ${{ needs.release-please.outputs.release_created }}
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+
+    steps:
+      - name: Create package info artifact
+        run: |
+          IMAGE="ghcr.io/${{ github.repository }}"
+          TAG="${{ needs.release-please.outputs.tag_name }}"
+          VERSION="${{ needs.release-please.outputs.version }}"
+          jq -n \
+            --arg pkg "ffo-bot" \
+            --arg ver "$VERSION" \
+            --arg img "${IMAGE}:${TAG}" \
+            --arg imgVer "${IMAGE}:${VERSION}" \
+            --arg imgLatest "${IMAGE}:latest" \
+            '{package:$pkg,version:$ver,docker_image:$img,tags:[$img,$imgVer,$imgLatest]}' \
+            > release-package-info.json
+
+      - name: Upload artifact to release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          gh release upload ${{ needs.release-please.outputs.tag_name }} release-package-info.json
