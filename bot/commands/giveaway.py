@@ -24,46 +24,46 @@ def parse_duration(duration: str) -> Optional[int]:
     return int(match.group(1)) * TIME_UNITS[match.group(2).lower()]
 
 
-def format_time_remaining(ends_at: datetime) -> str:
-    delta = ends_at - datetime.now(timezone.utc)
-    if delta.total_seconds() <= 0:
-        return "Ended"
-    d, r = divmod(int(delta.total_seconds()), 86400)
-    h, r = divmod(r, 3600)
-    m, _ = divmod(r, 60)
-    parts = []
-    if d:
-        parts.append(f"{d}d")
-    if h:
-        parts.append(f"{h}h")
-    if m or not parts:
-        parts.append(f"{m}m")
-    return " ".join(parts)
+def _discord_timestamp(dt: datetime, fmt: str = "R") -> str:
+    """Format datetime as Discord timestamp (R=relative, F=long date/time, f=short date/time)."""
+    return f"<t:{int(dt.timestamp())}:{fmt}>"
 
 
 def build_embed(giveaway, entry_count: int, ended: bool = False) -> discord.Embed:
+    ends_at = giveaway.get("ended_at") or giveaway["ends_at"]
+    ts_rel = _discord_timestamp(ends_at, "R")
+    ts_full = _discord_timestamp(ends_at, "F")
+    ts_short = _discord_timestamp(ends_at, "f")
+
+    lines = [
+        f"**{giveaway['prize']}**",
+        "",
+        "Click join button below to enter!" if not ended else "",
+        f"**Ends:** {ts_rel} ({ts_full})" if not ended else f"**Ended:** {ts_full}",
+        f"**Hosted by:** <@{giveaway['host_id']}>",
+    ]
+    if giveaway.get("donor_id"):
+        lines.append(f"**Donated by:** <@{giveaway['donor_id']}>")
+    if giveaway.get("extra_text"):
+        lines.append("")
+        lines.append(giveaway["extra_text"])
+    description = "\n".join(line for line in lines if line).strip()
+
     embed = discord.Embed(
         title="🎉 GIVEAWAY ENDED 🎉" if ended else "🎉 GIVEAWAY 🎉",
-        description=f"**{giveaway['prize']}**",
+        description=description,
         color=discord.Color.dark_grey() if ended else discord.Color.gold(),
-        timestamp=giveaway.get("ended_at") or giveaway["ends_at"],
+        timestamp=ends_at,
     )
-    donor = f"<@{giveaway['donor_id']}>" if giveaway.get("donor_id") else "N/A"
-    embed.add_field(name="Hosted by", value=f"<@{giveaway['host_id']}>", inline=True)
-    embed.add_field(name="Donated by", value=donor, inline=True)
     if ended:
-        embed.add_field(name="Total Entries", value=str(entry_count), inline=True)
+        footer = f"{entry_count} entries"
+        if giveaway.get("winners_count"):
+            footer = f"{giveaway['winners_count']} winners • {footer}"
     else:
-        embed.add_field(name="Winners", value=str(giveaway["winners_count"]), inline=True)
-        embed.add_field(name="Entries", value=str(entry_count), inline=True)
-        embed.add_field(
-            name="Time Remaining", value=format_time_remaining(giveaway["ends_at"]), inline=True
-        )
-    if giveaway.get("extra_text"):
-        embed.add_field(name="Info", value=giveaway["extra_text"], inline=False)
+        footer = f"{giveaway['winners_count']} winners | Ends {ts_short}"
+    embed.set_footer(text=footer)
     if giveaway.get("image_url"):
         embed.set_image(url=giveaway["image_url"])
-    embed.set_footer(text="Ended at" if ended else "Ends at")
     return embed
 
 
@@ -71,51 +71,169 @@ PER_PAGE = 10
 
 
 class EntriesPaginatedView(discord.ui.View):
-    def __init__(self, rows: list, timeout: float = 60):
+    def __init__(self, rows: list, user_id: Optional[int] = None, timeout: float = 60):
         super().__init__(timeout=timeout)
         self.rows = rows
+        self.user_id = user_id
         self.page = 0
         self.total_entries = sum(r["entries"] for r in rows)
         self.max_page = max(0, (len(rows) - 1) // PER_PAGE)
+        self._user_entry = next((r for r in rows if r["user_id"] == user_id), None)
+
+        prev_btn = discord.ui.Button(
+            label="◀",
+            style=discord.ButtonStyle.secondary,
+            custom_id="entries:prev",
+            row=0,
+        )
+        prev_btn.callback = self._prev_callback
+        self.add_item(prev_btn)
+
+        self.page_btn = discord.ui.Button(
+            label=f"1/{self.max_page + 1}",
+            style=discord.ButtonStyle.success,
+            custom_id="entries:page",
+            disabled=True,
+            row=0,
+        )
+        self.add_item(self.page_btn)
+
+        next_btn = discord.ui.Button(
+            label="▶",
+            style=discord.ButtonStyle.secondary,
+            custom_id="entries:next",
+            row=0,
+        )
+        next_btn.callback = self._next_callback
+        self.add_item(next_btn)
+
+        if self._user_entry is not None:
+            my_btn = discord.ui.Button(
+                label="✓ My Entry",
+                style=discord.ButtonStyle.primary,
+                custom_id="entries:mine",
+                row=0,
+            )
+            my_btn.callback = self._my_entry_callback
+            self.add_item(my_btn)
 
     def _format_page(self) -> str:
         start = self.page * PER_PAGE
         chunk = self.rows[start : start + PER_PAGE]
         lines = [f"<@{r['user_id']}> ({r['entries']})" for r in chunk]
         body = "\n".join(lines)
-        footer = f"Page {self.page + 1}/{self.max_page + 1}"
-        return f"**Entries ({len(self.rows)} users, {self.total_entries} total):**\n{body}\n\n*{footer}*"
+        return f"**Giveaway Participants**\n\n{body}"
 
     def _update_buttons(self):
-        self.prev_page.disabled = self.page <= 0
-        self.next_page.disabled = self.page >= self.max_page
+        self.page_btn.label = f"{self.page + 1}/{self.max_page + 1}"
+        for child in self.children:
+            if child.custom_id == "entries:prev":
+                child.disabled = self.page <= 0
+            elif child.custom_id == "entries:next":
+                child.disabled = self.page >= self.max_page
 
-    @discord.ui.button(label="◀ Prev", style=discord.ButtonStyle.secondary, row=0)
-    async def prev_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def _prev_callback(self, interaction: discord.Interaction):
         if self.page <= 0:
             return
         self.page -= 1
         self._update_buttons()
         await interaction.response.edit_message(content=self._format_page(), view=self)
 
-    @discord.ui.button(label="Next ▶", style=discord.ButtonStyle.secondary, row=0)
-    async def next_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def _next_callback(self, interaction: discord.Interaction):
         if self.page >= self.max_page:
             return
         self.page += 1
         self._update_buttons()
         await interaction.response.edit_message(content=self._format_page(), view=self)
 
+    async def _my_entry_callback(self, interaction: discord.Interaction):
+        entries = self._user_entry["entries"]
+        total = self.total_entries
+        pct = (entries / total * 100) if total > 0 else 0
+        pct_str = f"{pct:.2f}".rstrip("0").rstrip(".") if pct < 100 else "100"
+        lines = [
+            f"✓ You had **{entries}** {'entry' if entries == 1 else 'entries'} for this giveaway!",
+            f"ℹ️ There are a total of **{total}** entries in this giveaway (including bonuses).",
+            f"🎁 Your chances of winning: **{pct_str}%**",
+        ]
+        await interaction.response.send_message("\n".join(lines), ephemeral=True)
+
+
+class AlreadyJoinedView(discord.ui.View):
+    """Ephemeral view shown when user has already joined, with Leave button."""
+
+    def __init__(self, giveaway_id: uuid.UUID, message_id: int, bot):
+        super().__init__(timeout=60)
+        self.giveaway_id = giveaway_id
+        self.message_id = message_id
+        self.bot = bot
+
+    @discord.ui.button(label="Leave", style=discord.ButtonStyle.danger, row=0)
+    async def leave_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        try:
+            removed = await self._remove_entry(interaction)
+            if removed:
+                await self._update_giveaway_embed(interaction)
+                await interaction.followup.send(
+                    "Your entry for this giveaway has been removed.", ephemeral=True
+                )
+            else:
+                await interaction.followup.send("You are not in this giveaway.", ephemeral=True)
+        except Exception as e:
+            logger.error(f"Leave giveaway error: {e}", exc_info=True)
+            await interaction.followup.send("Error leaving giveaway.", ephemeral=True)
+
+    async def _remove_entry(self, interaction: discord.Interaction) -> bool:
+        async with self.bot.db_pool.acquire() as conn:
+            result = await conn.execute(
+                "DELETE FROM giveaway_entries WHERE giveaway_id = $1 AND user_id = $2",
+                self.giveaway_id,
+                interaction.user.id,
+            )
+        return result and "DELETE 1" in result
+
+    async def _update_giveaway_embed(self, interaction: discord.Interaction):
+        try:
+            channel = interaction.channel
+            if not channel:
+                return
+            msg = await channel.fetch_message(self.message_id)
+            async with self.bot.db_pool.acquire() as conn:
+                count = await conn.fetchval(
+                    "SELECT COUNT(*) FROM giveaway_entries WHERE giveaway_id = $1", self.giveaway_id
+                )
+                giveaway = await conn.fetchrow(
+                    "SELECT * FROM giveaways WHERE id = $1", self.giveaway_id
+                )
+            if giveaway:
+                view = GiveawayView(self.giveaway_id, self.bot, entry_count=count or 0)
+                await msg.edit(embed=build_embed(giveaway, count or 0), view=view)
+        except Exception as e:
+            logger.warning(f"Could not update giveaway embed: {e}")
+
 
 class GiveawayView(discord.ui.View):
-    def __init__(self, giveaway_id: uuid.UUID, bot):
+    def __init__(self, giveaway_id: uuid.UUID, bot, entry_count: int = 0):
         super().__init__(timeout=None)
         self.giveaway_id = giveaway_id
         self.bot = bot
 
-    @discord.ui.button(
-        label="🎉 Join", style=discord.ButtonStyle.primary, custom_id="giveaway:join"
-    )
+        join_btn = discord.ui.Button(
+            label="🎉 Join", style=discord.ButtonStyle.primary, custom_id="giveaway:join"
+        )
+        join_btn.callback = self.join_button
+        self.add_item(join_btn)
+
+        entries_label = f"👥 {entry_count}" if entry_count > 0 else "👥"
+        entries_btn = discord.ui.Button(
+            label=entries_label,
+            style=discord.ButtonStyle.secondary,
+            custom_id="giveaway:entries",
+        )
+        entries_btn.callback = self.entries_button
+        self.add_item(entries_btn)
+
     async def join_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
         try:
@@ -141,18 +259,19 @@ class GiveawayView(discord.ui.View):
             if await self._add_entry(giveaway["id"], interaction.user.id, entries):
                 await self._update_embed(interaction.message, giveaway["id"])
                 await interaction.followup.send(
-                    f"You joined with **{entries}** {'entries' if entries > 1 else 'entry'}!",
-                    ephemeral=True,
+                    "You have successfully joined this giveaway.", ephemeral=True
                 )
             else:
-                await interaction.followup.send("You've already joined!", ephemeral=True)
+                view = AlreadyJoinedView(giveaway["id"], interaction.message.id, self.bot)
+                await interaction.followup.send(
+                    "🚫 **You have already joined this giveaway!**",
+                    ephemeral=True,
+                    view=view,
+                )
         except Exception as e:
             logger.error(f"Join error: {e}", exc_info=True)
             await interaction.followup.send("Error joining giveaway.", ephemeral=True)
 
-    @discord.ui.button(
-        label="👥", style=discord.ButtonStyle.secondary, custom_id="giveaway:entries"
-    )
     async def entries_button(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer(ephemeral=True)
         try:
@@ -164,7 +283,7 @@ class GiveawayView(discord.ui.View):
             if not rows:
                 await interaction.followup.send("No entries yet.", ephemeral=True)
                 return
-            view = EntriesPaginatedView(rows, timeout=60)
+            view = EntriesPaginatedView(rows, user_id=interaction.user.id, timeout=60)
             view._update_buttons()
             await interaction.followup.send(view._format_page(), ephemeral=True, view=view)
         except Exception as e:
@@ -225,7 +344,8 @@ class GiveawayView(discord.ui.View):
             giveaway = await conn.fetchrow("SELECT * FROM giveaways WHERE id = $1", giveaway_id)
         if giveaway:
             try:
-                await message.edit(embed=build_embed(giveaway, count))
+                view = GiveawayView(giveaway_id, self.bot, entry_count=count or 0)
+                await message.edit(embed=build_embed(giveaway, count or 0), view=view)
             except Exception:
                 pass
 
@@ -244,6 +364,7 @@ class GiveawayCommands(commands.Cog):
         return True
 
     @app_commands.command(name="gstart", description="Start a giveaway")
+    @app_commands.default_permissions(administrator=True)
     @app_commands.describe(
         duration="Duration (e.g. 1h, 2d, 1w)",
         winners="Number of winners",
@@ -335,7 +456,7 @@ class GiveawayCommands(commands.Cog):
                     image,
                 )
 
-            view = GiveawayView(giveaway_id, self.bot)
+            view = GiveawayView(giveaway_id, self.bot, entry_count=0)
             msg = await interaction.followup.send(
                 content="@everyone" if ping else None,
                 embed=build_embed(giveaway_data, 0),
@@ -363,6 +484,136 @@ class GiveawayCommands(commands.Cog):
         except Exception as e:
             logger.error(f"gstart error: {e}", exc_info=True)
             await interaction.followup.send("Error starting giveaway.", ephemeral=True)
+
+    @app_commands.command(name="greroll", description="Reroll winners for an ended giveaway")
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.describe(
+        message_id="The giveaway message ID (from the message link, or right-click → Copy ID)"
+    )
+    async def greroll(self, interaction: discord.Interaction, message_id: str):
+        await interaction.response.defer(ephemeral=True)
+        try:
+            if not await self._check_admin(interaction, "greroll"):
+                return
+
+            msg_id = self._parse_message_id(message_id)
+            if not msg_id:
+                await interaction.followup.send(
+                    "Invalid message ID. Use the number from the message link or enable Developer Mode and right-click → Copy Message Link.",
+                    ephemeral=True,
+                )
+                return
+
+            async with self.bot.db_pool.acquire() as conn:
+                giveaway = await conn.fetchrow(
+                    "SELECT * FROM giveaways WHERE message_id = $1", msg_id
+                )
+            if not giveaway:
+                await interaction.followup.send("Giveaway not found.", ephemeral=True)
+                return
+            if giveaway["is_active"]:
+                await interaction.followup.send(
+                    "Giveaway is still active. Reroll only works for ended giveaways.",
+                    ephemeral=True,
+                )
+                return
+
+            async with self.bot.db_pool.acquire() as conn:
+                entries = await conn.fetch(
+                    "SELECT user_id, entries FROM giveaway_entries WHERE giveaway_id = $1",
+                    giveaway["id"],
+                )
+                old_winners = await conn.fetch(
+                    "SELECT user_id FROM giveaway_entries WHERE giveaway_id = $1 AND is_winner = true",
+                    giveaway["id"],
+                )
+
+            if not entries:
+                await interaction.followup.send("No entries to reroll from.", ephemeral=True)
+                return
+
+            old_winner_ids = {r["user_id"] for r in old_winners}
+            pool = [e for e in entries if e["user_id"] not in old_winner_ids]
+            if not pool:
+                await interaction.followup.send(
+                    "All entrants were winners. No one left to reroll.",
+                    ephemeral=True,
+                )
+                return
+
+            new_winners = self._select_winners(pool, giveaway["winners_count"])
+
+            async with self.bot.db_pool.acquire() as conn:
+                await conn.execute(
+                    "UPDATE giveaway_entries SET is_winner = false WHERE giveaway_id = $1",
+                    giveaway["id"],
+                )
+                if new_winners:
+                    await conn.executemany(
+                        "UPDATE giveaway_entries SET is_winner = true WHERE giveaway_id = $1 AND user_id = $2",
+                        [(giveaway["id"], w) for w in new_winners],
+                    )
+
+            channel = self.bot.get_channel(giveaway["channel_id"])
+            if channel:
+                try:
+                    msg = await channel.fetch_message(giveaway["message_id"])
+                    g = dict(giveaway)
+                    g["ended_at"] = giveaway["ended_at"]
+                    embed = build_embed(g, len(entries), ended=True)
+                    if new_winners:
+                        embed.add_field(
+                            name="Winners (Rerolled)",
+                            value="\n".join(f"<@{w}>" for w in new_winners),
+                            inline=False,
+                        )
+                    await msg.edit(embed=embed)
+                except discord.NotFound:
+                    pass
+
+                if new_winners:
+                    mentions = " ".join(f"<@{w}>" for w in new_winners)
+                    await channel.send(
+                        f"🎉 Reroll! New winners for **{giveaway['prize']}**: {mentions}"
+                    )
+                else:
+                    await channel.send(f"Reroll for **{giveaway['prize']}** — no valid entries.")
+
+            await interaction.followup.send(
+                f"Rerolled! New winner(s): {', '.join(f'<@{w}>' for w in new_winners) if new_winners else 'None'}",
+                ephemeral=True,
+            )
+        except Exception as e:
+            logger.error(f"greroll error: {e}", exc_info=True)
+            await interaction.followup.send("Error rerolling giveaway.", ephemeral=True)
+
+    def _parse_message_id(self, s: str) -> Optional[int]:
+        """Extract message ID from a Discord message link or raw ID."""
+        s = s.strip()
+        m = re.search(r"/(\d{17,20})$", s)
+        if m:
+            return int(m.group(1))
+        if s.isdigit():
+            return int(s)
+        return None
+
+    def _select_winners(self, entries: list, count: int) -> list:
+        import random
+
+        if not entries or count < 1:
+            return []
+        weighted = []
+        for e in entries:
+            weighted.extend([e["user_id"]] * e["entries"])
+        random.shuffle(weighted)
+        winners, seen = [], set()
+        for uid in weighted:
+            if uid not in seen:
+                winners.append(uid)
+                seen.add(uid)
+            if len(winners) >= count:
+                break
+        return winners
 
     def _parse_roles(self, roles_str: Optional[str]) -> list:
         if not roles_str:

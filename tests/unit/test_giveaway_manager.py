@@ -167,6 +167,15 @@ class TestBuildEndedEmbed:
         if expected_text:
             assert expected_text in str([f.value for f in embed.fields])
 
+    def test_includes_donor(self, manager):
+        embed = manager._build_ended_embed(_giveaway(donor_id=555), [100], 5)
+        assert "Donated by" in embed.description and "<@555>" in embed.description
+
+    def test_winners_field(self, manager):
+        embed = manager._build_ended_embed(_giveaway(), [10, 20], 3)
+        assert "<@10>" in embed.fields[0].value and "<@20>" in embed.fields[0].value
+        assert "2 winners" in embed.footer.text
+
 
 # --- _end_giveaway ---
 
@@ -219,6 +228,18 @@ class TestEndGiveaway:
     @pytest.mark.asyncio
     async def test_error(self, manager, caplog):
         manager.bot.db_pool = _db_ctx(MagicMock(execute=AsyncMock(side_effect=Exception("Error"))))
+        await manager._end_giveaway(_giveaway())
+        assert "End giveaway error" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_msg_edit_error_logged(self, manager, caplog):
+        manager.bot.db_pool = _db_ctx(MagicMock(
+            execute=AsyncMock(), executemany=AsyncMock(),
+            fetch=AsyncMock(return_value=[{"user_id": 100, "entries": 1}])
+        ))
+        channel, msg = _channel_with_msg()
+        msg.edit = AsyncMock(side_effect=discord.HTTPException(MagicMock(), ""))
+        manager.bot.get_channel.return_value = channel
         await manager._end_giveaway(_giveaway())
         assert "End giveaway error" in caplog.text
 

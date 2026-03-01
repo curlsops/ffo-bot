@@ -116,8 +116,14 @@ class FFOBot(commands.Bot):
                 active = await conn.fetch(
                     "SELECT id, message_id FROM giveaways WHERE is_active = true AND message_id IS NOT NULL"
                 )
-            for row in active:
-                self.add_view(GiveawayView(row["id"], self), message_id=row["message_id"])
+                for row in active:
+                    count = await conn.fetchval(
+                        "SELECT COUNT(*) FROM giveaway_entries WHERE giveaway_id = $1", row["id"]
+                    )
+                    self.add_view(
+                        GiveawayView(row["id"], self, entry_count=count or 0),
+                        message_id=row["message_id"],
+                    )
 
     async def on_ready(self):
         logger.info(f"Connected as {self.user} (ID: {self.user.id}) to {len(self.guilds)} servers")
