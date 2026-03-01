@@ -172,7 +172,9 @@ class AlreadyJoinedView(discord.ui.View):
         self.bot = bot
 
     @discord.ui.button(label="Leave", style=discord.ButtonStyle.danger, row=0)
-    async def leave_button(self, interaction: discord.Interaction):
+    async def leave_button(
+        self, interaction: discord.Interaction, button: discord.ui.Button | None = None
+    ):
         await interaction.response.defer(ephemeral=True)
         try:
             removed = await self._remove_entry(interaction)
