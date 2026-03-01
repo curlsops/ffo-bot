@@ -236,7 +236,7 @@ class GiveawayView(discord.ui.View):
         entries_btn.callback = self.entries_button
         self.add_item(entries_btn)
 
-    async def join_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def join_button(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         try:
             giveaway = await self._get_giveaway(interaction.message.id)
@@ -274,7 +274,7 @@ class GiveawayView(discord.ui.View):
             logger.error(f"Join error: {e}", exc_info=True)
             await interaction.followup.send("Error joining giveaway.", ephemeral=True)
 
-    async def entries_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def entries_button(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         try:
             giveaway = await self._get_giveaway(interaction.message.id)
