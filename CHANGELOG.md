@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.5.2](https://github.com/curlsops/ffo-bot/compare/v1.5.1...v1.5.2) (2026-03-01)
+
+
+### Bug Fixes
+
+* **notifier,giveaway:** already-set check, DB error handling, guild-only commands ([#85](https://github.com/curlsops/ffo-bot/issues/85)) ([7d156b0](https://github.com/curlsops/ffo-bot/commit/7d156b00741415631d885928622566c4561c08e3))
+* remove loop.stop() to prevent event loop stopped before future c… ([e846739](https://github.com/curlsops/ffo-bot/commit/e846739a4675db8c2bddc0a7f53c330dc305aa3a))
+* remove loop.stop() to prevent event loop stopped before future completed ([578b902](https://github.com/curlsops/ffo-bot/commit/578b9020ffa2896ad9b41312b6449ac9545b6563))
+* remove loop.stop() to prevent event loop stopped before future completed ([#83](https://github.com/curlsops/ffo-bot/issues/83)) ([fbaa527](https://github.com/curlsops/ffo-bot/commit/fbaa527fad519fe033d2f9323bc262dfa3174d7c))
+
 ## [1.5.1](https://github.com/curlsops/ffo-bot/compare/v1.5.0...v1.5.1) (2026-03-01)
 
 
