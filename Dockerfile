@@ -46,6 +46,7 @@ COPY --chown=discord:discord database/ ./database/
 COPY --chown=discord:discord config/ ./config/
 COPY --chown=discord:discord main.py .
 COPY --chown=discord:discord alembic.ini .
+COPY --chown=discord:discord entrypoint.sh .
 
 # Switch to non-root user
 USER discord
@@ -64,6 +65,6 @@ EXPOSE 8080 8443
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
   CMD curl -f http://localhost:8080/healthz || exit 1
 
-# Run application
-CMD ["python", "main.py"]
+# Run application with migrations
+ENTRYPOINT ["./entrypoint.sh"]
 
