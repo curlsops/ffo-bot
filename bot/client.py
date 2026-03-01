@@ -80,6 +80,7 @@ class FFOBot(commands.Bot):
             "bot.commands.privacy",
             "bot.commands.giveaway",
             "bot.tasks.giveaway_manager",
+            "bot.tasks.status_rotator",
         ]
 
         for extension in extensions:
