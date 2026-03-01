@@ -130,11 +130,14 @@ class FFOBot(commands.Bot):
         for guild in self.guilds:
             await self._register_server(guild)
 
+        # Sync only to guilds (not globally) to avoid duplicate commands in the UI
         for guild in self.guilds:
             self.tree.copy_global_to(guild=guild)
             await self.tree.sync(guild=guild)
         if self.guilds:
             logger.info(f"Synced slash commands to {len(self.guilds)} guild(s)")
+        else:
+            await self.tree.sync()
 
         if self.metrics:
             self.metrics.set_guild_count(len(self.guilds))
