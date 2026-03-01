@@ -52,6 +52,8 @@ class Settings(BaseSettings):
     # Feature Flags
     feature_media_download: bool = Field(default=True, description="Enable media download")
     feature_reaction_roles: bool = Field(default=True, description="Enable reaction roles")
+    feature_rotating_status: bool = Field(default=False, description="Enable rotating status")
+    feature_giveaways: bool = Field(default=True, description="Enable giveaway system")
 
     @field_validator("log_level")
     @classmethod
