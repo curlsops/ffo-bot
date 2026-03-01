@@ -51,6 +51,8 @@ jobs:
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
+          build-args: |
+            FFO_BOT_VERSION=${{ needs.release-please.outputs.version }}
           push: true
           tags: |
             ghcr.io/${{ github.repository }}:${{ needs.release-please.outputs.tag_name }}
