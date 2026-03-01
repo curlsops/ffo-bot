@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.3.8](https://github.com/curlsops/ffo-bot/compare/v1.3.7...v1.3.8) (2026-03-01)
+
+
+### Bug Fixes
+
+* update README links and test count ([ef3d186](https://github.com/curlsops/ffo-bot/commit/ef3d186776670161d014a73db4fce9c8e2c02be2))
+
 ## [1.3.7](https://github.com/curlsops/ffo-bot/compare/v1.3.6...v1.3.7) (2026-03-01)
 
 
