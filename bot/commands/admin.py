@@ -1,8 +1,7 @@
 """Admin commands."""
 
-import os
-
 import importlib.metadata
+import os
 
 import discord
 from discord import app_commands
