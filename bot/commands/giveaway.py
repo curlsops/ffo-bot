@@ -25,7 +25,6 @@ def parse_duration(duration: str) -> Optional[int]:
 
 
 def _discord_timestamp(dt: datetime, fmt: str = "R") -> str:
-    """Discord timestamp (R=relative, F=long, f=short)."""
     return f"<t:{int(dt.timestamp())}:{fmt}>"
 
 
@@ -163,8 +162,6 @@ class EntriesPaginatedView(discord.ui.View):
 
 
 class AlreadyJoinedView(discord.ui.View):
-    """Ephemeral view shown when user has already joined, with Leave button."""
-
     def __init__(self, giveaway_id: uuid.UUID, message_id: int, bot):
         super().__init__(timeout=60)
         self.giveaway_id = giveaway_id
@@ -593,7 +590,6 @@ class GiveawayCommands(commands.Cog):
             await interaction.followup.send("Error rerolling giveaway.", ephemeral=True)
 
     def _parse_message_id(self, s: str) -> Optional[int]:
-        """Extract message ID from a Discord message link or raw ID."""
         s = s.strip()
         m = re.search(r"/(\d{17,20})$", s)
         if m:

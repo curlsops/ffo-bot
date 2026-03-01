@@ -129,6 +129,8 @@ class FFOBot(commands.Bot):
 
         for guild in self.guilds:
             await self._register_server(guild)
+
+        for guild in self.guilds:
             self.tree.copy_global_to(guild=guild)
             await self.tree.sync(guild=guild)
         if self.guilds:

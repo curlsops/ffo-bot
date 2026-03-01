@@ -29,7 +29,7 @@ class AdminCommands(commands.Cog):
             f"Pong! Latency: {round(self.bot.latency * 1000)}ms", ephemeral=True
         )
 
-    @app_commands.command(name="version", description="Show bot version (admin only)")
+    @app_commands.command(name="version", description="Show bot version")
     async def version(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         if not await self._check_admin(interaction, "version"):
