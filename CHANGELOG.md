@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.2.0](https://github.com/curlsops/ffo-bot/compare/v1.1.0...v1.2.0) (2026-03-01)
+
+
+### Features
+
+* run database migrations on container startup ([#45](https://github.com/curlsops/ffo-bot/issues/45)) ([3b3d6b0](https://github.com/curlsops/ffo-bot/commit/3b3d6b0b123850902a1b4610c40f7a2699e4f8b1))
+
 ## [1.1.0](https://github.com/curlsops/ffo-bot/compare/v1.0.0...v1.1.0) (2026-03-01)
 
 
