@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.7](https://github.com/curlsops/ffo-bot/compare/v1.3.6...v1.3.7) (2026-03-01)
+
+
+### Bug Fixes
+
+* deslop tests and add edge case coverage ([58be57f](https://github.com/curlsops/ffo-bot/commit/58be57f3ad6ca2f92c5e4f44efedadcd1514b8ff))
+* deslop tests and add edge case coverage ([6a48207](https://github.com/curlsops/ffo-bot/commit/6a48207fe445debabe2df60fc19623bd13ef25cf))
+
 ## [1.3.6](https://github.com/curlsops/ffo-bot/compare/v1.3.5...v1.3.6) (2026-03-01)
 
 
