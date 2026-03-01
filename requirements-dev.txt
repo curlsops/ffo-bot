@@ -6,6 +6,7 @@ pytest>=8.0.0
 pytest-asyncio>=0.25.0
 pytest-cov>=6.0.0
 pytest-mock>=3.14.0
+pytest-xdist>=3.8.0
 
 # Linting and Formatting
 flake8>=7.0.0,<8.0.0

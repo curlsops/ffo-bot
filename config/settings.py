@@ -1,6 +1,7 @@
 """Application settings and configuration."""
 
 from pathlib import Path
+from typing import Optional
 
 from pydantic import Field, field_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
@@ -15,6 +16,9 @@ class Settings(BaseSettings):
 
     # Environment
     environment: str = Field(default="production", description="Environment name")
+    openai_api_key: Optional[str] = Field(
+        default=None, description="OpenAI API key for voice transcription"
+    )
 
     # Discord Configuration
     discord_bot_token: str = Field(..., description="Discord bot token")
@@ -54,6 +58,9 @@ class Settings(BaseSettings):
     feature_reaction_roles: bool = Field(default=True, description="Enable reaction roles")
     feature_rotating_status: bool = Field(default=False, description="Enable rotating status")
     feature_giveaways: bool = Field(default=True, description="Enable giveaway system")
+    feature_voice_transcription: bool = Field(
+        default=False, description="Transcribe voice messages (requires OPENAI_API_KEY)"
+    )
 
     @field_validator("log_level")
     @classmethod

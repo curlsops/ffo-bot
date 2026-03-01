@@ -8,8 +8,6 @@ import discord
 import pytest
 
 
-# --- Fixtures & Helpers ---
-
 def _giveaway(**overrides):
     return {
         "id": uuid.uuid4(), "server_id": 999, "channel_id": 123, "message_id": 456,
@@ -67,8 +65,6 @@ def manager(mock_bot):
     return GiveawayManager(mock_bot)
 
 
-# --- Lifecycle ---
-
 class TestGiveawayManagerLifecycle:
     @pytest.mark.asyncio
     @pytest.mark.parametrize("enabled,should_start", [(True, True), (False, False)])
@@ -90,8 +86,6 @@ class TestGiveawayManagerLifecycle:
         manager.bot.wait_until_ready.assert_called_once()
 
 
-# --- check_giveaways ---
-
 class TestCheckGiveaways:
     @pytest.mark.asyncio
     async def test_no_expired(self, manager):
@@ -112,8 +106,6 @@ class TestCheckGiveaways:
         await manager.check_giveaways()
         assert "Giveaway check error" in caplog.text
 
-
-# --- _select_winners ---
 
 class TestSelectWinners:
     @pytest.mark.parametrize("entries,winners_count,expected_len,expected_set", [
@@ -154,8 +146,6 @@ class TestSelectWinners:
         assert len(winners) == 50 and len(set(winners)) == 50
 
 
-# --- _build_ended_embed ---
-
 class TestBuildEndedEmbed:
     @pytest.mark.parametrize("winners,entries,expected_text", [
         ([100, 200], 10, None),
@@ -167,8 +157,15 @@ class TestBuildEndedEmbed:
         if expected_text:
             assert expected_text in str([f.value for f in embed.fields])
 
+    def test_includes_donor(self, manager):
+        embed = manager._build_ended_embed(_giveaway(donor_id=555), [100], 5)
+        assert "Donated by" in embed.description and "<@555>" in embed.description
 
-# --- _end_giveaway ---
+    def test_winners_field(self, manager):
+        embed = manager._build_ended_embed(_giveaway(), [10, 20], 3)
+        assert "<@10>" in embed.fields[0].value and "<@20>" in embed.fields[0].value
+        assert "2 winners" in embed.footer.text
+
 
 class TestEndGiveaway:
     @pytest.mark.asyncio
@@ -223,6 +220,18 @@ class TestEndGiveaway:
         assert "End giveaway error" in caplog.text
 
     @pytest.mark.asyncio
+    async def test_msg_edit_error_logged(self, manager, caplog):
+        manager.bot.db_pool = _db_ctx(MagicMock(
+            execute=AsyncMock(), executemany=AsyncMock(),
+            fetch=AsyncMock(return_value=[{"user_id": 100, "entries": 1}])
+        ))
+        channel, msg = _channel_with_msg()
+        msg.edit = AsyncMock(side_effect=discord.HTTPException(MagicMock(), ""))
+        manager.bot.get_channel.return_value = channel
+        await manager._end_giveaway(_giveaway())
+        assert "End giveaway error" in caplog.text
+
+    @pytest.mark.asyncio
     async def test_handles_asyncpg_record_immutability(self, manager):
         giveaway = ImmutableRecord(_giveaway())
         manager.bot.db_pool = _db_ctx(MagicMock(
@@ -238,8 +247,6 @@ class TestEndGiveaway:
         msg.edit.assert_called_once()
         assert "Congratulations" in str(channel.send.call_args)
 
-
-# --- Setup ---
 
 class TestSetup:
     @pytest.mark.asyncio

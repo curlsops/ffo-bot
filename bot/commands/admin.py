@@ -31,6 +31,7 @@ class AdminCommands(commands.Cog):
         name="set_notify_channel",
         description="Set channel for admin notifications (giveaway events, etc.)",
     )
+    @app_commands.default_permissions(administrator=True)
     @app_commands.describe(channel="Channel to send notifications to (leave empty to disable)")
     async def set_notify_channel(
         self,
@@ -46,6 +47,7 @@ class AdminCommands(commands.Cog):
         if not await self._check_admin(interaction, "set_notify_channel"):
             return
 
+        await self.bot._register_server(interaction.guild)
         success = await self.bot.notifier.set_notify_channel(
             interaction.guild_id,
             channel.id if channel else None,

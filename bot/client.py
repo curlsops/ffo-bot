@@ -11,6 +11,7 @@ from bot.auth.permissions import PermissionChecker
 from bot.cache.memory import InMemoryCache
 from bot.processors.media_downloader import MediaDownloader
 from bot.processors.phrase_matcher import PhraseMatcher
+from bot.processors.voice_transcriber import VoiceTranscriber
 from bot.utils.metrics import BotMetrics
 from bot.utils.notifier import AdminNotifier
 from bot.utils.rate_limiter import RateLimiter
@@ -35,6 +36,7 @@ class FFOBot(commands.Bot):
         self.metrics: Optional[BotMetrics] = None
         self.phrase_matcher: Optional[PhraseMatcher] = None
         self.media_downloader: Optional[MediaDownloader] = None
+        self.voice_transcriber: Optional[VoiceTranscriber] = None
         self.permission_checker: Optional[PermissionChecker] = None
         self.rate_limiter: Optional[RateLimiter] = None
         self.notifier: Optional[AdminNotifier] = None
@@ -61,6 +63,9 @@ class FFOBot(commands.Bot):
             )
             await self.media_downloader.initialize()
 
+        if self.settings.feature_voice_transcription and self.settings.openai_api_key:
+            self.voice_transcriber = VoiceTranscriber(api_key=self.settings.openai_api_key)
+
         self.permission_checker = PermissionChecker(self.db_pool, self.cache, self)
         self.rate_limiter = RateLimiter(
             user_capacity=self.settings.rate_limit_user_capacity,
@@ -84,6 +89,8 @@ class FFOBot(commands.Bot):
             "bot.commands.reactbot",
             "bot.commands.privacy",
             "bot.commands.giveaway",
+            "bot.commands.polls",
+            "bot.commands.reaction_roles",
             "bot.tasks.giveaway_manager",
             "bot.tasks.status_rotator",
         ]
@@ -109,8 +116,14 @@ class FFOBot(commands.Bot):
                 active = await conn.fetch(
                     "SELECT id, message_id FROM giveaways WHERE is_active = true AND message_id IS NOT NULL"
                 )
-            for row in active:
-                self.add_view(GiveawayView(row["id"], self), message_id=row["message_id"])
+                for row in active:
+                    count = await conn.fetchval(
+                        "SELECT COUNT(*) FROM giveaway_entries WHERE giveaway_id = $1", row["id"]
+                    )
+                    self.add_view(
+                        GiveawayView(row["id"], self, entry_count=count or 0),
+                        message_id=row["message_id"],
+                    )
 
     async def on_ready(self):
         logger.info(f"Connected as {self.user} (ID: {self.user.id}) to {len(self.guilds)} servers")

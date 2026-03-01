@@ -13,7 +13,11 @@ class PrivacyCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
 
-    @app_commands.command(name="privacy_optout", description="Opt out of message tracking")
+    @app_commands.command(
+        name="privacy_optout",
+        description="Opt out of message tracking",
+    )
+    @app_commands.default_permissions(administrator=True)
     async def privacy_optout(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         try:
@@ -35,7 +39,11 @@ class PrivacyCommands(commands.Cog):
             logger.error(f"privacy_optout error: {e}", exc_info=True)
             await interaction.followup.send("❌ An error occurred.", ephemeral=True)
 
-    @app_commands.command(name="privacy_optin", description="Opt back in to message tracking")
+    @app_commands.command(
+        name="privacy_optin",
+        description="Opt back in to message tracking",
+    )
+    @app_commands.default_permissions(administrator=True)
     async def privacy_optin(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         try:

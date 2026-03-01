@@ -32,6 +32,10 @@ class MessageHandler(commands.Cog):
             if await self._is_monitored_channel(message.guild.id, message.channel.id):
                 await self._download_media(message)
 
+        vt = getattr(self.bot, "voice_transcriber", None)
+        if message.attachments and vt and vt.enabled:
+            await self._transcribe_voice_messages(message)
+
     async def _process_phrase_matching(self, message: discord.Message):
         try:
             matches = await self.bot.phrase_matcher.match_phrases(message.content, message.guild.id)
@@ -106,6 +110,30 @@ class MessageHandler(commands.Cog):
                 )
         except Exception as e:
             logger.error(f"Failed to log phrase match: {e}")
+
+    async def _transcribe_voice_messages(self, message: discord.Message):
+        """Transcribe voice message attachments and reply with the text."""
+        vt = getattr(self.bot, "voice_transcriber", None)
+        if not vt:
+            return
+        for att in message.attachments:
+            if not vt.is_voice_attachment(att.filename, att.content_type):
+                continue
+            try:
+                text = await vt.transcribe(att.url, att.filename)
+                if text:
+                    embed = discord.Embed(
+                        description=text[:2000],
+                        color=discord.Color.blue(),
+                    )
+                    embed.set_author(
+                        name=f"Voice message from {message.author.display_name}",
+                        icon_url=message.author.display_avatar.url,
+                    )
+                    embed.set_footer(text="Transcribed automatically")
+                    await message.reply(embed=embed)
+            except Exception as e:
+                logger.error(f"Voice transcription error: {e}", exc_info=True)
 
     async def _is_monitored_channel(self, server_id: int, channel_id: int) -> bool:
         try:

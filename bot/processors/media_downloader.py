@@ -99,7 +99,9 @@ class MediaDownloader:
                         status="error",
                     ).inc()
 
-    def _get_file_type(self, content_type: str) -> Optional[str]:
+    def _get_file_type(self, content_type: Optional[str]) -> Optional[str]:
+        if not content_type:
+            return None
         if content_type.startswith("image/gif"):
             return "gif"
         if content_type.startswith("image/"):

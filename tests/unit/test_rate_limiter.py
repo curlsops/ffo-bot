@@ -68,6 +68,21 @@ class TestRateLimiter:
         assert allowed is False
 
     @pytest.mark.asyncio
+    async def test_exactly_at_capacity_allowed(self):
+        limiter = RateLimiter(user_capacity=2, server_capacity=100)
+        await limiter.check_rate_limit(user_id=123, server_id=456)
+        allowed, _ = await limiter.check_rate_limit(user_id=123, server_id=456)
+        assert allowed is True
+
+    @pytest.mark.asyncio
+    async def test_one_over_capacity_blocked(self):
+        limiter = RateLimiter(user_capacity=2, server_capacity=100)
+        await limiter.check_rate_limit(user_id=123, server_id=456)
+        await limiter.check_rate_limit(user_id=123, server_id=456)
+        allowed, _ = await limiter.check_rate_limit(user_id=123, server_id=456)
+        assert allowed is False
+
+    @pytest.mark.asyncio
     async def test_high_refill_rate_with_mocked_time(self):
         now = datetime.now(UTC)
         with patch("bot.utils.rate_limiter.datetime") as mock_dt:

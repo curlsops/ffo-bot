@@ -11,8 +11,6 @@ from bot.processors.phrase_matcher import PhraseMatcher, PhrasePattern
 from bot.utils.regex_validator import RegexValidationError
 
 
-# --- Fixtures ---
-
 @asynccontextmanager
 async def _db_ctx(conn):
     yield conn
@@ -28,15 +26,11 @@ def _pattern(phrase_id="1", pattern=r"hello", emoji="👋", server_id=123):
     return PhrasePattern(phrase_id=phrase_id, pattern=re.compile(pattern, re.IGNORECASE), emoji=emoji, server_id=server_id)
 
 
-# --- PhrasePattern ---
-
 class TestPhrasePattern:
     def test_creation(self):
         p = _pattern()
         assert p.phrase_id == "1" and p.emoji == "👋" and p.server_id == 123
 
-
-# --- PhraseMatcher Init ---
 
 class TestPhraseMatcherInit:
     def test_initialization(self, mock_db_pool, mock_cache):
@@ -45,9 +39,10 @@ class TestPhraseMatcherInit:
         assert matcher._patterns_by_server == {}
 
 
-# --- Normalization ---
-
 class TestNormalization:
+    def test_normalize_message_empty(self, mock_db_pool, mock_cache):
+        assert PhraseMatcher(mock_db_pool, mock_cache)._normalize_message("") == ""
+
     @pytest.mark.parametrize("inp,expected", [
         ("Hello World!", "hello world!"),
         ("Hello, World! How are you?", "hello, world! how are you?"),
@@ -61,8 +56,6 @@ class TestNormalization:
         assert PhraseMatcher(mock_db_pool, mock_cache)._normalize_message(inp) == expected
 
 
-# --- Cache Invalidation ---
-
 class TestCacheInvalidation:
     def test_invalidate_cache(self, mock_db_pool, mock_cache):
         matcher = PhraseMatcher(mock_db_pool, mock_cache)
@@ -73,8 +66,6 @@ class TestCacheInvalidation:
     def test_invalidate_nonexistent(self, mock_db_pool, mock_cache):
         PhraseMatcher(mock_db_pool, mock_cache).invalidate_cache(999)
 
-
-# --- Pattern Loading ---
 
 class TestPatternLoading:
     @pytest.mark.asyncio
@@ -105,8 +96,6 @@ class TestPatternLoading:
         await matcher.load_patterns(789)
         assert len(matcher._patterns_by_server[789]) == 1
 
-
-# --- Pattern Matching ---
 
 class TestPatternMatching:
     @pytest.mark.asyncio
@@ -146,8 +135,6 @@ class TestPatternMatching:
         assert await matcher._match_with_timeout(re.compile(r"missing"), "this is a test") is None
 
 
-# --- Disable Pattern ---
-
 class TestDisablePattern:
     @pytest.mark.asyncio
     async def test_disable(self, mock_cache):
@@ -162,8 +149,6 @@ class TestDisablePattern:
         matcher = PhraseMatcher(_make_db_pool(conn), mock_cache)
         await matcher._disable_pattern("123")
 
-
-# --- Validation ---
 
 class TestValidation:
     @pytest.mark.asyncio
@@ -194,8 +179,6 @@ class TestValidation:
             await matcher.validate_pattern("hello")
             m.assert_called_once_with("hello")
 
-
-# --- Timeout ---
 
 class TestTimeout:
     @pytest.mark.asyncio

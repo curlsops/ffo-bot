@@ -8,8 +8,6 @@ import pytest
 from bot.utils.health import HealthCheckServer
 
 
-# --- Fixtures ---
-
 @pytest.fixture
 def mock_bot():
     return MagicMock()
@@ -25,8 +23,6 @@ async def _db_ctx(conn):
     yield conn
 
 
-# --- Init ---
-
 class TestHealthCheckServerInit:
     def test_initialization(self, server, mock_bot):
         assert server.bot == mock_bot
@@ -41,8 +37,6 @@ class TestHealthCheckServerInit:
         assert "/healthz" in routes and "/readyz" in routes and "/metrics" in routes
 
 
-# --- Liveness ---
-
 class TestLiveness:
     @pytest.mark.asyncio
     @pytest.mark.parametrize("is_closed,expected_status", [(False, 200), (True, 500)])
@@ -51,8 +45,6 @@ class TestLiveness:
         response = await server.liveness(MagicMock())
         assert response.status == expected_status
 
-
-# --- Readiness ---
 
 class TestReadiness:
     @pytest.mark.asyncio
@@ -78,8 +70,6 @@ class TestReadiness:
         assert response.status == 200 and response.text == "Ready"
 
 
-# --- Metrics ---
-
 class TestMetrics:
     @pytest.mark.asyncio
     @pytest.mark.parametrize("has_cache", [True, False])
@@ -95,8 +85,29 @@ class TestMetrics:
             else:
                 server.bot.metrics.set_cache_size.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_metrics_when_bot_metrics_none(self, server):
+        server.bot.cache = None
+        server.bot.metrics = None
+        with patch("bot.utils.metrics.generate_metrics_response", return_value=b"# metrics\n"):
+            response = await server.metrics(MagicMock())
+        assert response.status == 200
 
-# --- Start ---
+
+class TestHealthViaTestServer:
+    @pytest.mark.asyncio
+    async def test_healthz_200_via_http(self):
+        from aiohttp.test_utils import TestClient, TestServer
+
+        bot = MagicMock()
+        bot.is_closed.return_value = False
+        server = HealthCheckServer(bot)
+        async with TestServer(server.app) as srv:
+            async with TestClient(srv) as client:
+                resp = await client.get("/healthz")
+                assert resp.status == 200
+                assert await resp.text() == "OK"
+
 
 class TestStart:
     @pytest.mark.asyncio

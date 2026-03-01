@@ -22,6 +22,7 @@ def make_admin_bot(admin=True, notifier_success=True):
     bot = MagicMock()
     bot.permission_checker = MagicMock()
     bot.permission_checker.check_role = AsyncMock(return_value=admin)
+    bot._register_server = AsyncMock()
     bot.notifier = MagicMock()
     bot.notifier.set_notify_channel = AsyncMock(return_value=notifier_success)
     return bot
@@ -40,6 +41,14 @@ class TestAdminPing:
         bot = MagicMock(latency=0.123)
         await AdminCommands(bot).ping.callback(AdminCommands(bot), make_interaction())
 
+    @pytest.mark.asyncio
+    async def test_ping_latency_zero(self):
+        bot = MagicMock(latency=0)
+        i = make_interaction()
+        i.response.send_message = AsyncMock()
+        await AdminCommands(bot).ping.callback(AdminCommands(bot), i)
+        assert "0ms" in i.response.send_message.call_args[0][0]
+
 
 class TestSetNotifyChannel:
     @pytest.mark.asyncio
@@ -48,6 +57,7 @@ class TestSetNotifyChannel:
         i = make_interaction()
         channel = MagicMock(id=123, mention="#c")
         await AdminCommands(bot).set_notify_channel.callback(AdminCommands(bot), i, channel=channel)
+        bot._register_server.assert_awaited_once_with(i.guild)
         bot.notifier.set_notify_channel.assert_awaited_once_with(111, 123)
 
     @pytest.mark.asyncio
@@ -55,6 +65,7 @@ class TestSetNotifyChannel:
         bot = make_admin_bot()
         i = make_interaction()
         await AdminCommands(bot).set_notify_channel.callback(AdminCommands(bot), i, channel=None)
+        bot._register_server.assert_awaited_once_with(i.guild)
         bot.notifier.set_notify_channel.assert_awaited_once_with(111, None)
 
     @pytest.mark.asyncio
@@ -109,3 +120,31 @@ class TestPrivacy:
         i = make_interaction()
         await PrivacyCommands(bot).privacy_optin.callback(PrivacyCommands(bot), i)
         i.followup.send.assert_awaited()
+
+    @pytest.mark.asyncio
+    async def test_optout_db_error(self):
+        @asynccontextmanager
+        async def bad_pool():
+            conn = MagicMock()
+            conn.execute = AsyncMock(side_effect=Exception("DB"))
+            yield conn
+
+        bot = MagicMock()
+        bot.db_pool.acquire = lambda: bad_pool()
+        i = make_interaction()
+        await PrivacyCommands(bot).privacy_optout.callback(PrivacyCommands(bot), i)
+        assert "error" in str(i.followup.send.call_args).lower()
+
+    @pytest.mark.asyncio
+    async def test_optin_db_error(self):
+        @asynccontextmanager
+        async def bad_pool():
+            conn = MagicMock()
+            conn.execute = AsyncMock(side_effect=Exception("DB"))
+            yield conn
+
+        bot = MagicMock()
+        bot.db_pool.acquire = lambda: bad_pool()
+        i = make_interaction()
+        await PrivacyCommands(bot).privacy_optin.callback(PrivacyCommands(bot), i)
+        assert "error" in str(i.followup.send.call_args).lower()

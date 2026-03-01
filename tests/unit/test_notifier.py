@@ -9,8 +9,6 @@ import pytest
 from bot.utils.notifier import AdminNotifier
 
 
-# --- Fixtures & Helpers ---
-
 @pytest.fixture
 def bot():
     return MagicMock(db_pool=MagicMock())
@@ -43,8 +41,6 @@ def _setup_channel(bot, config=None):
     return channel
 
 
-# --- get_notify_channel ---
-
 class TestGetNotifyChannel:
     @pytest.mark.asyncio
     @pytest.mark.parametrize("config,channel_exists,expected", [
@@ -57,8 +53,20 @@ class TestGetNotifyChannel:
     async def test_cases(self, notifier, bot, config, channel_exists, expected):
         bot.db_pool.acquire.return_value = _db_ctx(_conn_with_config(config))
         bot.get_channel.return_value = MagicMock(spec=discord.TextChannel) if channel_exists and config else None
+        if config and not channel_exists and config.get("notify_channel_id"):
+            bot.fetch_channel = AsyncMock(side_effect=Exception())
         result = await notifier.get_notify_channel(999)
         assert (result is not None) == (expected is True)
+
+    @pytest.mark.asyncio
+    async def test_fetch_channel_fallback_when_get_channel_misses(self, notifier, bot):
+        bot.db_pool.acquire.return_value = _db_ctx(_conn_with_config({"notify_channel_id": 123}))
+        bot.get_channel.return_value = None
+        fetched = MagicMock(spec=discord.TextChannel)
+        bot.fetch_channel = AsyncMock(return_value=fetched)
+        result = await notifier.get_notify_channel(999)
+        assert result is fetched
+        bot.fetch_channel.assert_awaited_once_with(123)
 
     @pytest.mark.asyncio
     async def test_config_must_be_dict(self, notifier, bot):
@@ -66,8 +74,6 @@ class TestGetNotifyChannel:
         with pytest.raises(AttributeError, match="'str' object has no attribute 'get'"):
             await notifier.get_notify_channel(999)
 
-
-# --- set_notify_channel ---
 
 class TestSetNotifyChannel:
     @pytest.mark.asyncio
@@ -81,8 +87,6 @@ class TestSetNotifyChannel:
         bot.db_pool.acquire.return_value = _db_ctx(conn)
         assert await notifier.set_notify_channel(999, channel_id) is expected
 
-
-# --- send ---
 
 class TestSend:
     @pytest.mark.asyncio
@@ -103,8 +107,6 @@ class TestSend:
         assert await notifier.send(999, discord.Embed()) is False
 
 
-# --- Giveaway Notifications ---
-
 class TestGiveawayNotifications:
     @pytest.mark.asyncio
     async def test_created(self, notifier, bot):
@@ -122,8 +124,6 @@ class TestGiveawayNotifications:
         fields = str([f.value for f in channel.send.call_args[1]["embed"].fields])
         assert expected_text in fields
 
-
-# --- Error Notifications ---
 
 class TestErrorNotifications:
     @pytest.mark.asyncio
@@ -150,8 +150,6 @@ class TestErrorNotifications:
         assert len(tb.value) <= 1032
 
 
-# --- Error All Servers ---
-
 class TestErrorAllServers:
     @pytest.mark.asyncio
     async def test_notifies_all(self, notifier, bot):
@@ -169,8 +167,6 @@ class TestErrorAllServers:
         bot.db_pool.acquire.return_value = _db_ctx(AsyncMock(fetch=AsyncMock(side_effect=Exception())))
         await notifier.notify_error_all_servers(Exception("err"), "ctx")
 
-
-# --- Edge Cases ---
 
 class TestEdgeCases:
     @pytest.mark.asyncio

@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -116,3 +116,48 @@ async def test_reactbot_remove_not_found():
     await commands.reactbot_remove.callback(commands, interaction, phrase="missing")
     conn.execute.assert_awaited()
     interaction.followup.send.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_validate_emoji_accessible_custom_emoji_not_found():
+    bot = make_bot()
+    bot.get_emoji = MagicMock(return_value=None)
+    commands = ReactBotCommands(bot)
+    interaction = make_interaction()
+    ok, msg = await commands._validate_emoji_accessible(interaction, "<:custom:123456789>")
+    assert ok is False
+    assert "Cannot access" in msg or "must be in the server" in msg
+
+
+@pytest.mark.asyncio
+async def test_validate_emoji_accessible_unicode_returns_true():
+    bot = make_bot()
+    commands = ReactBotCommands(bot)
+    interaction = make_interaction()
+    ok, _ = await commands._validate_emoji_accessible(interaction, "👍")
+    assert ok is True
+
+
+@pytest.mark.asyncio
+async def test_phrase_autocomplete_empty():
+    bot = make_bot()
+    db_pool, conn = make_db_pool(fetch_result=[])
+    bot.db_pool = db_pool
+    commands = ReactBotCommands(bot)
+    interaction = make_interaction()
+    choices = await commands.phrase_autocomplete(interaction, "")
+    assert choices == []
+
+
+@pytest.mark.asyncio
+async def test_reactbot_add_validation_error():
+    from bot.utils.validation import ValidationError
+
+    bot = make_bot()
+    db_pool, conn = make_db_pool()
+    bot.db_pool = db_pool
+    with patch("bot.commands.reactbot.InputValidator.validate_phrase_pattern", side_effect=ValidationError("Invalid")):
+        commands = ReactBotCommands(bot)
+        interaction = make_interaction()
+        await commands.reactbot_add.callback(commands, interaction, phrase="[invalid", emoji="👍")
+    assert "❌" in str(interaction.followup.send.call_args)

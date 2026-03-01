@@ -7,16 +7,15 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from bot.commands.giveaway import (
+    AlreadyJoinedView,
     EntriesPaginatedView,
     GiveawayCommands,
     GiveawayView,
     build_embed,
-    format_time_remaining,
     parse_duration,
+    _discord_timestamp,
 )
 
-
-# --- Fixtures & Helpers ---
 
 @pytest.fixture
 def mock_bot():
@@ -75,7 +74,17 @@ def _entries(n):
     return [{"user_id": i, "entries": 1} for i in range(n)]
 
 
-# --- parse_duration ---
+class TestDiscordTimestamp:
+    def test_default_format(self):
+        dt = datetime(2025, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
+        out = _discord_timestamp(dt)
+        assert out.startswith("<t:") and ":R>" in out
+
+    def test_custom_format(self):
+        dt = datetime(2025, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
+        out = _discord_timestamp(dt, "F")
+        assert ":F>" in out
+
 
 class TestParseDuration:
     @pytest.mark.parametrize("inp,expected", [
@@ -89,21 +98,12 @@ class TestParseDuration:
     def test_invalid(self, inp):
         assert parse_duration(inp) is None
 
+    def test_1w_uppercase(self):
+        assert parse_duration("1W") == 604800
 
-# --- format_time_remaining ---
+    def test_59s_below_min(self):
+        assert parse_duration("59s") == 59
 
-class TestFormatTimeRemaining:
-    def test_ended(self):
-        assert format_time_remaining(datetime(2020, 1, 1, tzinfo=timezone.utc)) == "Ended"
-
-    @pytest.mark.parametrize("delta,expected", [
-        (timedelta(minutes=30), "m"), (timedelta(hours=5), "h"), (timedelta(days=2, hours=3), "d"),
-    ])
-    def test_future(self, delta, expected):
-        assert expected in format_time_remaining(datetime.now(timezone.utc) + delta)
-
-
-# --- Parse Helpers ---
 
 class TestParseHelpers:
     @pytest.mark.parametrize("inp,expected", [
@@ -128,8 +128,6 @@ class TestParseHelpers:
         assert cog._parse_messages(inp) == expected
 
 
-# --- build_embed ---
-
 class TestBuildEmbed:
     def test_basic(self):
         embed = build_embed(_giveaway(prize="Test Prize"), 0)
@@ -137,14 +135,22 @@ class TestBuildEmbed:
 
     def test_with_extras(self):
         embed = build_embed(_giveaway(donor_id=456, extra_text="Extra info", image_url="https://x.com/a.png"), 10)
-        fields = str([f.value for f in embed.fields])
-        assert "<@456>" in fields and "Extra info" in fields
+        assert "<@456>" in embed.description and "Extra info" in embed.description
 
     def test_ended(self):
         assert "ENDED" in build_embed(_giveaway(hours=-1, ended_at=datetime.now(timezone.utc)), 5, ended=True).title
 
+    def test_ended_uses_ended_at(self):
+        ended_at = datetime.now(timezone.utc)
+        g = _giveaway()
+        g["ended_at"] = ended_at
+        embed = build_embed(g, 3, ended=True)
+        assert "ENDED" in embed.title and "3 entries" in embed.footer.text
 
-# --- GiveawayCommands ---
+    def test_ended_with_winners_count(self):
+        embed = build_embed(_giveaway(winners_count=2), 10, ended=True)
+        assert "2 winners" in embed.footer.text and "10 entries" in embed.footer.text
+
 
 class TestGiveawayCommands:
     @pytest.mark.asyncio
@@ -183,14 +189,21 @@ class TestGiveawayCommands:
         i.followup.send.assert_called()
 
     @pytest.mark.asyncio
+    async def test_gstart_ping(self, cog):
+        cog.bot.db_pool = _db_ctx(AsyncMock())
+        cog.bot.notifier = MagicMock(notify_giveaway_created=AsyncMock())
+        i = _interaction()
+        await cog.gstart.callback(cog, i, "1h", 1, "Prize", ping=True)
+        call = i.followup.send.call_args
+        assert call.kwargs.get("content") == "@everyone"
+
+    @pytest.mark.asyncio
     async def test_gstart_error(self, cog):
         cog.bot.db_pool = _db_ctx(AsyncMock(execute=AsyncMock(side_effect=Exception("DB"))))
         i = _interaction()
         await cog.gstart.callback(cog, i, "1h", 1, "Prize")
         assert "Error starting" in str(i.followup.send.call_args)
 
-
-# --- GiveawayView ---
 
 class TestGiveawayView:
     @pytest.mark.asyncio
@@ -255,7 +268,7 @@ class TestGiveawayView:
     async def test_join_button_early_exit(self, view, mock_bot, giveaway, expected):
         mock_bot.db_pool = _db_ctx(AsyncMock(fetchrow=AsyncMock(return_value=giveaway)))
         i = _interaction()
-        await view.join_button.callback(i)
+        await view.join_button(i, None)
         assert expected in str(i.followup.send.call_args)
 
     @pytest.mark.asyncio
@@ -263,28 +276,31 @@ class TestGiveawayView:
         mock_bot.db_pool = _db_ctx(AsyncMock(fetchrow=AsyncMock(return_value=_active_giveaway(view, blacklist_roles=[111]))))
         i = _interaction()
         i.user.roles = [MagicMock(id=111)]
-        await view.join_button.callback(i)
+        await view.join_button(i, None)
         assert "blacklisted" in str(i.followup.send.call_args)
 
     @pytest.mark.asyncio
     async def test_join_button_already_joined(self, view, mock_bot):
         mock_bot.db_pool = _db_ctx(AsyncMock(fetchrow=AsyncMock(return_value=_active_giveaway(view)), execute=AsyncMock(side_effect=Exception("dup"))))
         i = _interaction()
-        await view.join_button.callback(i)
-        assert "already" in str(i.followup.send.call_args)
+        await view.join_button(i, None)
+        call = i.followup.send.call_args
+        assert "already joined" in str(call).lower()
+        assert call.kwargs.get("view") is not None
+        assert isinstance(call.kwargs["view"], AlreadyJoinedView)
 
     @pytest.mark.asyncio
     async def test_join_button_success(self, view, mock_bot):
         mock_bot.db_pool = _db_ctx(AsyncMock(fetchrow=AsyncMock(return_value=_active_giveaway(view)), execute=AsyncMock(), fetchval=AsyncMock(return_value=1)))
         i = _interaction()
-        await view.join_button.callback(i)
+        await view.join_button(i, None)
         assert "joined" in str(i.followup.send.call_args)
 
     @pytest.mark.asyncio
     async def test_join_button_error(self, view, mock_bot):
         mock_bot.db_pool = _db_ctx(AsyncMock(fetchrow=AsyncMock(side_effect=Exception("DB"))))
         i = _interaction()
-        await view.join_button.callback(i)
+        await view.join_button(i, None)
         assert "Error" in str(i.followup.send.call_args)
 
     @pytest.mark.asyncio
@@ -295,7 +311,7 @@ class TestGiveawayView:
     async def test_entries_button_early_exit(self, view, mock_bot, giveaway, entries_rows, expected):
         mock_bot.db_pool = _db_ctx(AsyncMock(fetchrow=AsyncMock(return_value=giveaway), fetch=AsyncMock(return_value=entries_rows)))
         i = _interaction()
-        await view.entries_button.callback(i)
+        await view.entries_button(i, None)
         assert expected in str(i.followup.send.call_args)
 
     @pytest.mark.asyncio
@@ -305,30 +321,75 @@ class TestGiveawayView:
             fetch=AsyncMock(return_value=[{"user_id": 1, "entries": 1}, {"user_id": 2, "entries": 2}])
         ))
         i = _interaction()
-        await view.entries_button.callback(i)
+        await view.entries_button(i, None)
         call = str(i.followup.send.call_args)
-        assert "2 users" in call and "3 total" in call
+        assert "Giveaway Participants" in call and "<@1>" in call and "<@2>" in call
 
     @pytest.mark.asyncio
     async def test_entries_button_error(self, view, mock_bot):
         mock_bot.db_pool = _db_ctx(AsyncMock(fetchrow=AsyncMock(side_effect=Exception("DB"))))
         i = _interaction()
-        await view.entries_button.callback(i)
+        await view.entries_button(i, None)
         assert "Error" in str(i.followup.send.call_args)
 
 
-# --- EntriesPaginatedView ---
+class TestAlreadyJoinedView:
+    @pytest.fixture
+    def leave_view(self, mock_bot):
+        return AlreadyJoinedView(uuid.uuid4(), 999, mock_bot)
+
+    @pytest.mark.asyncio
+    async def test_leave_success(self, leave_view, mock_bot):
+        conn = AsyncMock(execute=AsyncMock(return_value="DELETE 1"))
+        mock_bot.db_pool = _db_ctx(conn)
+        i = _interaction()
+        i.channel = MagicMock(fetch_message=AsyncMock(return_value=MagicMock(edit=AsyncMock())))
+        conn.fetchval = AsyncMock(return_value=0)
+        conn.fetchrow = AsyncMock(return_value=_giveaway())
+        await leave_view.leave_button.callback(i)
+        assert "removed" in str(i.followup.send.call_args).lower()
+
+    @pytest.mark.asyncio
+    async def test_leave_not_in_giveaway(self, leave_view, mock_bot):
+        mock_bot.db_pool = _db_ctx(AsyncMock(execute=AsyncMock(return_value="DELETE 0")))
+        i = _interaction()
+        await leave_view.leave_button.callback(i)
+        assert "not in" in str(i.followup.send.call_args).lower()
+
+    @pytest.mark.asyncio
+    async def test_leave_channel_none(self, leave_view, mock_bot):
+        mock_bot.db_pool = _db_ctx(AsyncMock(execute=AsyncMock(return_value="DELETE 1")))
+        i = _interaction()
+        i.channel = None
+        await leave_view.leave_button.callback(i)
+        assert "removed" in str(i.followup.send.call_args).lower()
+
+    @pytest.mark.asyncio
+    async def test_leave_updates_embed(self, leave_view, mock_bot):
+        gid = leave_view.giveaway_id
+        conn = AsyncMock(
+            execute=AsyncMock(return_value="DELETE 1"),
+            fetchval=AsyncMock(return_value=0),
+            fetchrow=AsyncMock(return_value=_giveaway()),
+        )
+        mock_bot.db_pool = _db_ctx(conn)
+        msg = MagicMock(edit=AsyncMock())
+        i = _interaction()
+        i.channel = MagicMock(fetch_message=AsyncMock(return_value=msg))
+        await leave_view.leave_button.callback(i)
+        msg.edit.assert_called_once()
+
 
 class TestEntriesPaginatedView:
-    @pytest.mark.parametrize("n,expected_users,expected_total,expected_page", [
-        (0, "0 users", "0 total", "Page 1/1"),
-        (2, "2 users", "2 total", "Page 1/1"),
-        (15, "15 users", "15 total", "Page 1/2"),
+    @pytest.mark.parametrize("n,expected", [
+        (0, "Giveaway Participants"),
+        (2, "Giveaway Participants"),
+        (15, "Giveaway Participants"),
     ])
-    def test_format_page(self, n, expected_users, expected_total, expected_page):
+    def test_format_page(self, n, expected):
         view = EntriesPaginatedView(_entries(n))
         out = view._format_page()
-        assert expected_users in out and expected_total in out and expected_page in out
+        assert expected in out
 
     def test_row_with_zero_entries(self):
         view = EntriesPaginatedView([{"user_id": 1, "entries": 0}])
@@ -337,35 +398,71 @@ class TestEntriesPaginatedView:
     def test_update_buttons(self):
         view = EntriesPaginatedView(_entries(15))
         view._update_buttons()
-        assert view.prev_page.disabled and not view.next_page.disabled
+        prev_btn = next(c for c in view.children if c.custom_id == "entries:prev")
+        next_btn = next(c for c in view.children if c.custom_id == "entries:next")
+        assert prev_btn.disabled and not next_btn.disabled
         view.page = 1
         view._update_buttons()
-        assert not view.prev_page.disabled and view.next_page.disabled
+        assert not prev_btn.disabled and next_btn.disabled
+
+    def test_my_entry_button_shown_when_user_in_list(self):
+        view = EntriesPaginatedView(_entries(5), user_id=2)
+        my_btn = next((c for c in view.children if c.custom_id == "entries:mine"), None)
+        assert my_btn is not None and "My Entry" in my_btn.label
+
+    def test_my_entry_button_hidden_when_user_not_in_list(self):
+        view = EntriesPaginatedView(_entries(5), user_id=999)
+        my_btn = next((c for c in view.children if c.custom_id == "entries:mine"), None)
+        assert my_btn is None
 
     @pytest.mark.asyncio
     async def test_prev_page_no_op_on_first(self):
         view = EntriesPaginatedView(_entries(15))
+        prev_btn = next(c for c in view.children if c.custom_id == "entries:prev")
         i = MagicMock(response=MagicMock(edit_message=AsyncMock()))
-        await view.prev_page.callback(i)
+        await prev_btn.callback(i)
         i.response.edit_message.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_next_page_advances(self):
         view = EntriesPaginatedView(_entries(15))
+        next_btn = next(c for c in view.children if c.custom_id == "entries:next")
         i = MagicMock(response=MagicMock(edit_message=AsyncMock()))
-        await view.next_page.callback(i)
-        assert view.page == 1 and "Page 2/2" in i.response.edit_message.call_args[1]["content"]
+        await next_btn.callback(i)
+        assert view.page == 1
+
+    @pytest.mark.asyncio
+    async def test_next_page_no_op_on_last(self):
+        view = EntriesPaginatedView(_entries(11))
+        view.page = 1
+        next_btn = next(c for c in view.children if c.custom_id == "entries:next")
+        i = MagicMock(response=MagicMock(edit_message=AsyncMock()))
+        await next_btn.callback(i)
+        i.response.edit_message.assert_not_called()
+
+    def test_empty_rows(self):
+        view = EntriesPaginatedView([])
+        assert view.max_page == 0 and view.total_entries == 0
+        assert "Giveaway Participants" in view._format_page()
 
     @pytest.mark.asyncio
     async def test_prev_page_goes_back(self):
         view = EntriesPaginatedView(_entries(15))
         view.page = 1
+        prev_btn = next(c for c in view.children if c.custom_id == "entries:prev")
         i = MagicMock(response=MagicMock(edit_message=AsyncMock()))
-        await view.prev_page.callback(i)
-        assert view.page == 0 and "Page 1/2" in i.response.edit_message.call_args[1]["content"]
+        await prev_btn.callback(i)
+        assert view.page == 0
 
+    @pytest.mark.asyncio
+    async def test_my_entry_callback(self):
+        view = EntriesPaginatedView([{"user_id": 42, "entries": 3}], user_id=42)
+        my_btn = next(c for c in view.children if c.custom_id == "entries:mine")
+        i = MagicMock(response=MagicMock(send_message=AsyncMock()))
+        await my_btn.callback(i)
+        msg = i.response.send_message.call_args[0][0]
+        assert "3" in msg and "entries" in msg and "chances of winning" in msg
 
-# --- Edge Cases ---
 
 class TestEdgeCases:
     def test_parse_duration_very_large_value(self):
@@ -388,28 +485,157 @@ class TestEdgeCases:
         view = EntriesPaginatedView(_entries(10))
         assert view.max_page == 0
         out = view._format_page()
-        assert "10 users" in out and "Page 1/1" in out
+        assert "Giveaway Participants" in out
 
     def test_paginated_view_exactly_11_items(self):
         view = EntriesPaginatedView(_entries(11))
         assert view.max_page == 1
         out = view._format_page()
-        assert "11 users" in out and "Page 1/2" in out
-
-    def test_format_time_remaining_zero_seconds(self):
-        now = datetime.now(timezone.utc)
-        assert format_time_remaining(now) == "Ended"
-
-    def test_format_time_remaining_one_second(self):
-        result = format_time_remaining(datetime.now(timezone.utc) + timedelta(seconds=1))
-        assert "0m" in result
-
-    def test_format_time_remaining_over_one_day(self):
-        result = format_time_remaining(datetime.now(timezone.utc) + timedelta(days=1, hours=1))
-        assert "1d" in result
+        assert "Giveaway Participants" in out
 
 
-# --- Setup ---
+class TestParseMessageId:
+    def test_raw_id(self, cog):
+        assert cog._parse_message_id("123456789012345678") == 123456789012345678
+
+    def test_message_link(self, cog):
+        assert cog._parse_message_id(
+            "https://discord.com/channels/1/2/123456789012345678"
+        ) == 123456789012345678
+
+    @pytest.mark.parametrize("inp", ["abc", "12.34", "not-a-id", ""])
+    def test_invalid(self, cog, inp):
+        assert cog._parse_message_id(inp) is None
+
+    def test_strips_whitespace(self, cog):
+        assert cog._parse_message_id("  123456789012345678  ") == 123456789012345678
+
+
+class TestSelectWinners:
+    def test_empty_entries(self, cog):
+        assert cog._select_winners([], 1) == []
+
+    def test_zero_count(self, cog):
+        assert cog._select_winners([{"user_id": 1, "entries": 1}], 0) == []
+
+    def test_returns_requested_count(self, cog):
+        entries = [{"user_id": i, "entries": 1} for i in range(10)]
+        winners = cog._select_winners(entries, 2)
+        assert len(winners) == 2
+        assert len(set(winners)) == 2
+
+    def test_weighted_entries(self, cog):
+        entries = [{"user_id": 1, "entries": 5}, {"user_id": 2, "entries": 1}]
+        winners = cog._select_winners(entries, 1)
+        assert len(winners) == 1
+        assert winners[0] in (1, 2)
+
+
+class TestGreroll:
+    @pytest.mark.asyncio
+    async def test_invalid_message_id(self, cog):
+        cog.bot.db_pool = _db_ctx(AsyncMock())
+        i = _interaction()
+        await cog.greroll.callback(cog, i, "invalid")
+        assert "Invalid message ID" in str(i.followup.send.call_args)
+
+    @pytest.mark.asyncio
+    async def test_giveaway_not_found(self, cog):
+        conn = AsyncMock(fetchrow=AsyncMock(return_value=None))
+        cog.bot.db_pool = _db_ctx(conn)
+        i = _interaction()
+        await cog.greroll.callback(cog, i, "123456789012345678")
+        assert "not found" in str(i.followup.send.call_args)
+
+    @pytest.mark.asyncio
+    async def test_giveaway_still_active(self, cog):
+        conn = AsyncMock(fetchrow=AsyncMock(return_value={"id": 1, "is_active": True}))
+        cog.bot.db_pool = _db_ctx(conn)
+        i = _interaction()
+        await cog.greroll.callback(cog, i, "123456789012345678")
+        assert "still active" in str(i.followup.send.call_args)
+
+    @pytest.mark.asyncio
+    async def test_no_entries(self, cog):
+        giveaway = {
+            "id": 1,
+            "is_active": False,
+            "message_id": 123,
+            "channel_id": 2,
+            "prize": "Prize",
+            "winners_count": 1,
+            "ended_at": datetime.now(timezone.utc),
+        }
+        conn = AsyncMock(
+            fetchrow=AsyncMock(return_value=giveaway),
+            fetch=AsyncMock(return_value=[]),
+        )
+        cog.bot.db_pool = _db_ctx(conn)
+        i = _interaction()
+        await cog.greroll.callback(cog, i, "123456789012345678")
+        assert "No entries" in str(i.followup.send.call_args)
+
+    @pytest.mark.asyncio
+    async def test_all_entrants_were_winners(self, cog):
+        giveaway = {
+            "id": 1,
+            "is_active": False,
+            "message_id": 123,
+            "channel_id": 2,
+            "prize": "Prize",
+            "winners_count": 1,
+            "ended_at": datetime.now(timezone.utc),
+        }
+        conn = AsyncMock(
+            fetchrow=AsyncMock(return_value=giveaway),
+            fetch=AsyncMock(
+                side_effect=[
+                    [{"user_id": 1, "entries": 1}],
+                    [{"user_id": 1}],
+                ]
+            ),
+        )
+        cog.bot.db_pool = _db_ctx(conn)
+        i = _interaction()
+        await cog.greroll.callback(cog, i, "123456789012345678")
+        assert "All entrants were winners" in str(i.followup.send.call_args)
+
+    @pytest.mark.asyncio
+    async def test_greroll_success(self, cog):
+        giveaway = {
+            "id": 1,
+            "is_active": False,
+            "message_id": 123,
+            "channel_id": 2,
+            "prize": "Prize",
+            "winners_count": 1,
+            "ended_at": datetime.now(timezone.utc),
+        }
+        conn = AsyncMock(
+            fetchrow=AsyncMock(return_value=giveaway),
+            fetch=AsyncMock(
+                side_effect=[
+                    [{"user_id": 1, "entries": 1}, {"user_id": 2, "entries": 1}],
+                    [],
+                ]
+            ),
+            execute=AsyncMock(),
+            executemany=AsyncMock(),
+        )
+        cog.bot.db_pool = _db_ctx(conn)
+        cog.bot.get_channel = MagicMock(return_value=None)
+        i = _interaction()
+        await cog.greroll.callback(cog, i, "123456789012345678")
+        assert "Rerolled" in str(i.followup.send.call_args)
+
+    @pytest.mark.asyncio
+    async def test_greroll_not_admin(self, cog):
+        cog.bot.permission_checker.check_role = AsyncMock(return_value=False)
+        cog.bot.db_pool = _db_ctx(AsyncMock())
+        i = _interaction()
+        await cog.greroll.callback(cog, i, "123456789012345678")
+        assert "Admin" in str(i.followup.send.call_args)
+
 
 class TestSetup:
     @pytest.mark.asyncio

@@ -102,23 +102,35 @@ class GiveawayManager(commands.Cog):
         return winners
 
     def _build_ended_embed(self, giveaway, winners: list, entry_count: int) -> discord.Embed:
+        ended_at = giveaway["ended_at"]
+        ts_full = f"<t:{int(ended_at.timestamp())}:F>"
+
+        lines = [
+            f"**{giveaway['prize']}**",
+            "",
+            f"**Ended:** {ts_full}",
+            f"**Hosted by:** <@{giveaway['host_id']}>",
+        ]
+        if giveaway.get("donor_id"):
+            lines.append(f"**Donated by:** <@{giveaway['donor_id']}>")
+        description = "\n".join(lines)
+
         embed = discord.Embed(
             title="🎉 GIVEAWAY ENDED 🎉",
-            description=f"**{giveaway['prize']}**",
+            description=description,
             color=discord.Color.dark_grey(),
-            timestamp=giveaway["ended_at"],
+            timestamp=ended_at,
         )
-        donor = f"<@{giveaway['donor_id']}>" if giveaway.get("donor_id") else "N/A"
-        embed.add_field(name="Hosted by", value=f"<@{giveaway['host_id']}>", inline=True)
-        embed.add_field(name="Donated by", value=donor, inline=True)
-        embed.add_field(name="Total Entries", value=str(entry_count), inline=True)
         if winners:
             embed.add_field(
                 name="Winners", value="\n".join(f"<@{w}>" for w in winners), inline=False
             )
         else:
             embed.add_field(name="Winners", value="No valid entries", inline=False)
-        embed.set_footer(text="Ended at")
+        footer = f"{entry_count} entries"
+        if winners:
+            footer = f"{len(winners)} winners • {footer}"
+        embed.set_footer(text=footer)
         return embed
 
 
