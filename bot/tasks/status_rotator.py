@@ -44,9 +44,7 @@ class StatusRotator(commands.Cog):
         if len(joke) > MAX_ACTIVITY_LEN:
             joke = joke[: MAX_ACTIVITY_LEN - 3] + "..."
         try:
-            await self.bot.change_presence(
-                activity=discord.Activity(type=discord.ActivityType.playing, name=joke)
-            )
+            await self.bot.change_presence(activity=discord.CustomActivity(name=joke))
         except Exception:
             pass
 
