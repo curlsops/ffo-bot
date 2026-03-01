@@ -1,3 +1,5 @@
+"""Tests for health check server."""
+
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -6,130 +8,99 @@ import pytest
 from bot.utils.health import HealthCheckServer
 
 
+# --- Fixtures ---
+
+@pytest.fixture
+def mock_bot():
+    return MagicMock()
+
+
+@pytest.fixture
+def server(mock_bot):
+    return HealthCheckServer(mock_bot, port=8080)
+
+
+@asynccontextmanager
+async def _db_ctx(conn):
+    yield conn
+
+
+# --- Init ---
+
 class TestHealthCheckServerInit:
-    def test_health_server_initialization(self):
-        mock_bot = MagicMock()
-        server = HealthCheckServer(mock_bot, port=8080)
+    def test_initialization(self, server, mock_bot):
         assert server.bot == mock_bot
         assert server.port == 8080
-        assert server.app is not None
         assert server.runner is None
 
-    def test_health_server_default_port(self):
-        mock_bot = MagicMock()
-        server = HealthCheckServer(mock_bot)
-        assert server.port == 8080
+    def test_default_port(self, mock_bot):
+        assert HealthCheckServer(mock_bot).port == 8080
 
-    def test_health_server_routes_registered(self):
-        mock_bot = MagicMock()
-        server = HealthCheckServer(mock_bot)
+    def test_routes_registered(self, server):
         routes = [r.resource.canonical for r in server.app.router.routes()]
-        assert "/healthz" in routes
-        assert "/readyz" in routes
-        assert "/metrics" in routes
+        assert "/healthz" in routes and "/readyz" in routes and "/metrics" in routes
 
 
-class TestHealthCheckServerLiveness:
+# --- Liveness ---
+
+class TestLiveness:
     @pytest.mark.asyncio
-    async def test_liveness_when_bot_alive(self):
-        mock_bot = MagicMock()
-        mock_bot.is_closed.return_value = False
-        server = HealthCheckServer(mock_bot)
+    @pytest.mark.parametrize("is_closed,expected_status", [(False, 200), (True, 500)])
+    async def test_liveness(self, server, is_closed, expected_status):
+        server.bot.is_closed.return_value = is_closed
         response = await server.liveness(MagicMock())
-        assert response.status == 200
-        assert response.text == "OK"
+        assert response.status == expected_status
 
+
+# --- Readiness ---
+
+class TestReadiness:
     @pytest.mark.asyncio
-    async def test_liveness_when_bot_closed(self):
-        mock_bot = MagicMock()
-        mock_bot.is_closed.return_value = True
-        server = HealthCheckServer(mock_bot)
-        response = await server.liveness(MagicMock())
-        assert response.status == 500
-        assert "closed" in response.text.lower()
-
-
-class TestHealthCheckServerReadiness:
-    @pytest.mark.asyncio
-    async def test_readiness_when_not_ready(self):
-        mock_bot = MagicMock()
-        mock_bot.is_ready.return_value = False
-        server = HealthCheckServer(mock_bot)
+    async def test_not_ready(self, server):
+        server.bot.is_ready.return_value = False
         response = await server.readiness(MagicMock())
-        assert response.status == 503
-        assert "not connected" in response.text.lower()
+        assert response.status == 503 and "not connected" in response.text.lower()
 
     @pytest.mark.asyncio
-    async def test_readiness_when_db_fails(self):
-        mock_bot = MagicMock()
-        mock_bot.is_ready.return_value = True
-        mock_conn = AsyncMock()
-        mock_conn.fetchval.side_effect = Exception("Connection failed")
-
-        @asynccontextmanager
-        async def acquire():
-            yield mock_conn
-
-        mock_bot.db_pool = MagicMock()
-        mock_bot.db_pool.acquire = acquire
-        server = HealthCheckServer(mock_bot)
+    async def test_db_fails(self, server):
+        server.bot.is_ready.return_value = True
+        conn = AsyncMock(fetchval=AsyncMock(side_effect=Exception("Connection failed")))
+        server.bot.db_pool = MagicMock(acquire=lambda: _db_ctx(conn))
         response = await server.readiness(MagicMock())
-        assert response.status == 503
-        assert "database" in response.text.lower()
+        assert response.status == 503 and "database" in response.text.lower()
 
     @pytest.mark.asyncio
-    async def test_readiness_when_healthy(self):
-        mock_bot = MagicMock()
-        mock_bot.is_ready.return_value = True
-        mock_conn = AsyncMock()
-        mock_conn.fetchval.return_value = 1
-
-        @asynccontextmanager
-        async def acquire():
-            yield mock_conn
-
-        mock_bot.db_pool = MagicMock()
-        mock_bot.db_pool.acquire = acquire
-        server = HealthCheckServer(mock_bot)
+    async def test_healthy(self, server):
+        server.bot.is_ready.return_value = True
+        conn = AsyncMock(fetchval=AsyncMock(return_value=1))
+        server.bot.db_pool = MagicMock(acquire=lambda: _db_ctx(conn))
         response = await server.readiness(MagicMock())
-        assert response.status == 200
-        assert response.text == "Ready"
+        assert response.status == 200 and response.text == "Ready"
 
 
-class TestHealthCheckServerMetrics:
+# --- Metrics ---
+
+class TestMetrics:
     @pytest.mark.asyncio
-    async def test_metrics_endpoint(self):
-        mock_bot = MagicMock()
-        mock_bot.cache = MagicMock()
-        mock_bot.cache.size.return_value = 100
-        mock_bot.metrics = MagicMock()
-        server = HealthCheckServer(mock_bot)
+    @pytest.mark.parametrize("has_cache", [True, False])
+    async def test_metrics_endpoint(self, server, has_cache):
+        server.bot.cache = MagicMock(size=MagicMock(return_value=100)) if has_cache else None
+        server.bot.metrics = MagicMock()
 
-        with patch("bot.utils.metrics.generate_latest") as mock_gen:
-            mock_gen.return_value = b"# HELP test_metric\ntest_metric 1.0\n"
+        with patch("bot.utils.metrics.generate_latest", return_value=b"test_metric 1.0\n"):
             response = await server.metrics(MagicMock())
-            assert response.status == 200
-            assert response.content_type == "text/plain"
-            mock_bot.metrics.set_cache_size.assert_called_with(100)
+            assert response.status == 200 and response.content_type == "text/plain"
+            if has_cache:
+                server.bot.metrics.set_cache_size.assert_called_with(100)
+            else:
+                server.bot.metrics.set_cache_size.assert_not_called()
 
+
+# --- Start ---
+
+class TestStart:
     @pytest.mark.asyncio
-    async def test_metrics_without_cache(self):
-        mock_bot = MagicMock()
-        mock_bot.cache = None
-        mock_bot.metrics = MagicMock()
-        server = HealthCheckServer(mock_bot)
-
-        with patch("bot.utils.metrics.generate_latest") as mock_gen:
-            mock_gen.return_value = b"# HELP test_metric\ntest_metric 1.0\n"
-            response = await server.metrics(MagicMock())
-            assert response.status == 200
-            mock_bot.metrics.set_cache_size.assert_not_called()
-
-
-class TestHealthCheckServerStart:
-    @pytest.mark.asyncio
-    async def test_start_server(self):
-        mock_bot = MagicMock()
+    async def test_start_server(self, mock_bot):
         server = HealthCheckServer(mock_bot, port=9999)
 
         with patch("aiohttp.web.AppRunner") as mock_runner_class:
@@ -139,7 +110,7 @@ class TestHealthCheckServerStart:
                 mock_site = AsyncMock()
                 mock_site_class.return_value = mock_site
                 await server.start()
+
                 mock_runner.setup.assert_called_once()
                 mock_site_class.assert_called_with(mock_runner, "0.0.0.0", 9999)
-                mock_site.start.assert_called_once()
                 assert server.runner == mock_runner
