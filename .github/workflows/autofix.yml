@@ -1,10 +1,7 @@
 name: Autofix
 
 on:
-  push:
-    branches: [main]
-  pull_request:
-    branches: [main]
+  workflow_call:
 
 jobs:
   autofix:
