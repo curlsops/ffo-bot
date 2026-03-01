@@ -1,5 +1,15 @@
 # Changelog
 
+## [1.5.1](https://github.com/curlsops/ffo-bot/compare/v1.5.0...v1.5.1) (2026-03-01)
+
+
+### Bug Fixes
+
+* pass version to Docker build so /version shows correct release ([4db25c8](https://github.com/curlsops/ffo-bot/commit/4db25c86514c95e7acade73d0d9857f8d29cd4a7))
+* pass version to Docker build so /version shows correct release ([14d6e4c](https://github.com/curlsops/ffo-bot/commit/14d6e4c63a3e086bfbcaab6ff460f9b7380f2ac3))
+* remove entry count from giveaway participants and add button param to callbacks ([32daf0b](https://github.com/curlsops/ffo-bot/commit/32daf0b6ba5a7243ae8e49d535818bf65046e50f))
+* sync slash commands only to guilds to avoid duplicates ([61d0d66](https://github.com/curlsops/ffo-bot/commit/61d0d66838ec864e8e5f2a7b9760b586dc75877f))
+
 ## [1.5.0](https://github.com/curlsops/ffo-bot/compare/v1.4.0...v1.5.0) (2026-03-01)
 
 
