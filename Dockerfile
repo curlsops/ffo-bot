@@ -19,6 +19,9 @@ RUN pip install --user --no-cache-dir --no-warn-script-location -r requirements.
 # Stage 2: Runtime
 FROM python:3.14-slim
 
+ARG FFO_BOT_VERSION=unknown
+ENV FFO_BOT_VERSION=$FFO_BOT_VERSION
+
 LABEL org.opencontainers.image.source="https://github.com/MrCurlsTTV/ffo-bot"
 LABEL org.opencontainers.image.description="FFO Discord Bot"
 LABEL org.opencontainers.image.licenses="MIT"
