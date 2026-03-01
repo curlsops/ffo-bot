@@ -30,7 +30,6 @@ class GracefulShutdown:
             await self.bot.close()
         except Exception as e:
             logger.error(f"Shutdown error: {e}", exc_info=True)
-        asyncio.get_event_loop().stop()
 
 
 async def main():
