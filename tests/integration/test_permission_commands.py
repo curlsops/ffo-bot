@@ -120,3 +120,47 @@ async def test_list_permissions_empty():
     await cog.list_permissions.callback(cog, interaction)
     conn.fetch.assert_awaited()
     interaction.followup.send.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_grant_role_db_error():
+    bot, conn = make_bot()
+    conn.execute = AsyncMock(side_effect=Exception("DB error"))
+    cog = PermissionCommands(bot)
+    interaction = make_interaction()
+    target_user = make_user(20)
+    await cog.grant_role.callback(cog, interaction, user=target_user, role="admin")
+    assert "Error granting" in str(interaction.followup.send.call_args)
+
+
+@pytest.mark.asyncio
+async def test_revoke_role_db_error():
+    bot, conn = make_bot()
+    conn.execute = AsyncMock(side_effect=Exception("DB error"))
+    cog = PermissionCommands(bot)
+    interaction = make_interaction()
+    target_user = make_user(20)
+    await cog.revoke_role.callback(cog, interaction, user=target_user, role="admin")
+    assert "Error revoking" in str(interaction.followup.send.call_args)
+
+
+@pytest.mark.asyncio
+async def test_list_permissions_truncation():
+    rows = [{"user_id": i, "role": "moderator"} for i in range(30)]
+    bot, conn = make_bot(fetch_rows=rows)
+    cog = PermissionCommands(bot)
+    interaction = make_interaction()
+    await cog.list_permissions.callback(cog, interaction)
+    msg = interaction.followup.send.call_args[0][0]
+    assert "and 5 more" in msg
+
+
+@pytest.mark.asyncio
+async def test_list_permissions_unknown_role_emoji():
+    rows = [{"user_id": 1, "role": "unknown_role"}]
+    bot, conn = make_bot(fetch_rows=rows)
+    cog = PermissionCommands(bot)
+    interaction = make_interaction()
+    await cog.list_permissions.callback(cog, interaction)
+    msg = interaction.followup.send.call_args[0][0]
+    assert "Unknown" in msg

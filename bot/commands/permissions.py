@@ -26,8 +26,10 @@ class PermissionCommands(commands.Cog):
         return True
 
     @app_commands.command(
-        name="grant_role", description="Grant a role to a user (Super Admin only)"
+        name="grant_role",
+        description="Grant a role to a user (Super Admin only)",
     )
+    @app_commands.default_permissions(administrator=True)
     @app_commands.describe(user="User to grant role to", role="Role to grant")
     @app_commands.choices(
         role=[
@@ -55,8 +57,10 @@ class PermissionCommands(commands.Cog):
             await interaction.followup.send("❌ Error granting role.", ephemeral=True)
 
     @app_commands.command(
-        name="revoke_role", description="Revoke a role from a user (Super Admin only)"
+        name="revoke_role",
+        description="Revoke a role from a user (Super Admin only)",
     )
+    @app_commands.default_permissions(administrator=True)
     @app_commands.describe(user="User to revoke role from", role="Role to revoke")
     @app_commands.choices(
         role=[
@@ -89,7 +93,11 @@ class PermissionCommands(commands.Cog):
             logger.error(f"revoke_role error: {e}", exc_info=True)
             await interaction.followup.send("❌ Error revoking role.", ephemeral=True)
 
-    @app_commands.command(name="list_permissions", description="List all user permissions")
+    @app_commands.command(
+        name="list_permissions",
+        description="List all user permissions",
+    )
+    @app_commands.default_permissions(administrator=True)
     async def list_permissions(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         try:

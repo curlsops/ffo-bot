@@ -51,7 +51,11 @@ class ReactBotCommands(commands.Cog):
                     pass
         return True, ""
 
-    @app_commands.command(name="reactbot_add", description="Add a phrase reaction (Admin only)")
+    @app_commands.command(
+        name="reactbot_add",
+        description="Add a phrase reaction (Admin only)",
+    )
+    @app_commands.default_permissions(administrator=True)
     @app_commands.describe(
         phrase="Regex pattern to match (case-insensitive)", emoji="Emoji to react with"
     )
@@ -103,7 +107,11 @@ class ReactBotCommands(commands.Cog):
             logger.error(f"reactbot_add error: {e}", exc_info=True)
             await interaction.followup.send("❌ Error processing command.", ephemeral=True)
 
-    @app_commands.command(name="reactbot_list", description="List all phrase reactions")
+    @app_commands.command(
+        name="reactbot_list",
+        description="List all phrase reactions",
+    )
+    @app_commands.default_permissions(administrator=True)
     async def reactbot_list(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         try:
@@ -153,8 +161,10 @@ class ReactBotCommands(commands.Cog):
             return []
 
     @app_commands.command(
-        name="reactbot_remove", description="Remove a phrase reaction (Admin only)"
+        name="reactbot_remove",
+        description="Remove a phrase reaction (Admin only)",
     )
+    @app_commands.default_permissions(administrator=True)
     @app_commands.describe(phrase="Select phrase pattern to remove")
     async def reactbot_remove(self, interaction: discord.Interaction, phrase: str):
         await interaction.response.defer(ephemeral=True)
