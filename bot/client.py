@@ -11,6 +11,7 @@ from bot.auth.permissions import PermissionChecker
 from bot.cache.memory import InMemoryCache
 from bot.processors.media_downloader import MediaDownloader
 from bot.processors.phrase_matcher import PhraseMatcher
+from bot.processors.voice_transcriber import VoiceTranscriber
 from bot.utils.metrics import BotMetrics
 from bot.utils.notifier import AdminNotifier
 from bot.utils.rate_limiter import RateLimiter
@@ -35,6 +36,7 @@ class FFOBot(commands.Bot):
         self.metrics: Optional[BotMetrics] = None
         self.phrase_matcher: Optional[PhraseMatcher] = None
         self.media_downloader: Optional[MediaDownloader] = None
+        self.voice_transcriber: Optional[VoiceTranscriber] = None
         self.permission_checker: Optional[PermissionChecker] = None
         self.rate_limiter: Optional[RateLimiter] = None
         self.notifier: Optional[AdminNotifier] = None
@@ -60,6 +62,9 @@ class FFOBot(commands.Bot):
                 self.db_pool, self.settings.media_storage_path, self.metrics
             )
             await self.media_downloader.initialize()
+
+        if self.settings.feature_voice_transcription and self.settings.openai_api_key:
+            self.voice_transcriber = VoiceTranscriber(api_key=self.settings.openai_api_key)
 
         self.permission_checker = PermissionChecker(self.db_pool, self.cache, self)
         self.rate_limiter = RateLimiter(
