@@ -1,4 +1,3 @@
-import json
 import logging
 import re
 import uuid
@@ -68,6 +67,46 @@ def build_embed(giveaway, entry_count: int, ended: bool = False) -> discord.Embe
     return embed
 
 
+PER_PAGE = 10
+
+
+class EntriesPaginatedView(discord.ui.View):
+    def __init__(self, rows: list, timeout: float = 60):
+        super().__init__(timeout=timeout)
+        self.rows = rows
+        self.page = 0
+        self.total_entries = sum(r["entries"] for r in rows)
+        self.max_page = max(0, (len(rows) - 1) // PER_PAGE)
+
+    def _format_page(self) -> str:
+        start = self.page * PER_PAGE
+        chunk = self.rows[start : start + PER_PAGE]
+        lines = [f"<@{r['user_id']}> ({r['entries']})" for r in chunk]
+        body = "\n".join(lines)
+        footer = f"Page {self.page + 1}/{self.max_page + 1}"
+        return f"**Entries ({len(self.rows)} users, {self.total_entries} total):**\n{body}\n\n*{footer}*"
+
+    def _update_buttons(self):
+        self.prev_page.disabled = self.page <= 0
+        self.next_page.disabled = self.page >= self.max_page
+
+    @discord.ui.button(label="◀ Prev", style=discord.ButtonStyle.secondary, row=0)
+    async def prev_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.page <= 0:
+            return
+        self.page -= 1
+        self._update_buttons()
+        await interaction.response.edit_message(content=self._format_page(), view=self)
+
+    @discord.ui.button(label="Next ▶", style=discord.ButtonStyle.secondary, row=0)
+    async def next_page(self, interaction: discord.Interaction, button: discord.ui.Button):
+        if self.page >= self.max_page:
+            return
+        self.page += 1
+        self._update_buttons()
+        await interaction.response.edit_message(content=self._format_page(), view=self)
+
+
 class GiveawayView(discord.ui.View):
     def __init__(self, giveaway_id: uuid.UUID, bot):
         super().__init__(timeout=None)
@@ -91,6 +130,11 @@ class GiveawayView(discord.ui.View):
             ok, reason = await self._check_eligibility(interaction, giveaway)
             if not ok:
                 await interaction.followup.send(reason, ephemeral=True)
+                logger.warning(
+                    f"Giveaway eligibility failed: user={interaction.user.id} "
+                    f"giveaway={giveaway['id']} reason={reason} "
+                    f"required_roles={giveaway.get('required_roles')} (type={type(giveaway.get('required_roles')).__name__})"
+                )
                 return
 
             entries = self._calculate_entries(interaction.user.roles, giveaway)
@@ -105,6 +149,34 @@ class GiveawayView(discord.ui.View):
         except Exception as e:
             logger.error(f"Join error: {e}", exc_info=True)
             await interaction.followup.send("Error joining giveaway.", ephemeral=True)
+
+    @discord.ui.button(
+        label="👥", style=discord.ButtonStyle.secondary, custom_id="giveaway:entries"
+    )
+    async def entries_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer(ephemeral=True)
+        try:
+            giveaway = await self._get_giveaway(interaction.message.id)
+            if not giveaway:
+                await interaction.followup.send("Giveaway not found.", ephemeral=True)
+                return
+            rows = await self._get_entries(giveaway["id"])
+            if not rows:
+                await interaction.followup.send("No entries yet.", ephemeral=True)
+                return
+            view = EntriesPaginatedView(rows, timeout=60)
+            view._update_buttons()
+            await interaction.followup.send(view._format_page(), ephemeral=True, view=view)
+        except Exception as e:
+            logger.error(f"Entries error: {e}", exc_info=True)
+            await interaction.followup.send("Error fetching entries.", ephemeral=True)
+
+    async def _get_entries(self, giveaway_id: uuid.UUID):
+        async with self.bot.db_pool.acquire() as conn:
+            return await conn.fetch(
+                "SELECT user_id, entries FROM giveaway_entries WHERE giveaway_id = $1 ORDER BY created_at",
+                giveaway_id,
+            )
 
     async def _get_giveaway(self, message_id: int):
         async with self.bot.db_pool.acquire() as conn:
@@ -251,15 +323,11 @@ class GiveawayCommands(commands.Cog):
                     prize,
                     winners,
                     ends_at,
-                    json.dumps(self._parse_roles(required_roles)),
-                    json.dumps(self._parse_roles(blacklist_roles)),
-                    json.dumps(self._parse_roles(bypass_roles)),
-                    json.dumps(self._parse_bonus_roles(bonus_roles)),
-                    (
-                        json.dumps(msg)
-                        if (msg := self._parse_messages(messages)) is not None
-                        else None
-                    ),
+                    self._parse_roles(required_roles),
+                    self._parse_roles(blacklist_roles),
+                    self._parse_roles(bypass_roles),
+                    self._parse_bonus_roles(bonus_roles),
+                    self._parse_messages(messages),
                     nodonorwin,
                     nodefaults,
                     ping,
