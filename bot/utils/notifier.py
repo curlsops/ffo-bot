@@ -12,7 +12,7 @@ class AdminNotifier:
     def __init__(self, bot):
         self.bot = bot
 
-    async def get_notify_channel(self, server_id: int) -> Optional[discord.TextChannel]:
+    async def get_notify_channel_id(self, server_id: int) -> Optional[int]:
         async with self.bot.db_pool.acquire() as conn:
             row = await conn.fetchrow("SELECT config FROM servers WHERE server_id = $1", server_id)
         if not row or not row["config"]:
@@ -21,13 +21,20 @@ class AdminNotifier:
         if not isinstance(config, dict):
             return None
         if channel_id := config.get("notify_channel_id"):
-            ch = self.bot.get_channel(int(channel_id))
-            if ch is None:
-                try:
-                    ch = await self.bot.fetch_channel(int(channel_id))
-                except Exception:
-                    logger.warning("Could not fetch notify channel %s", channel_id)
-            return ch
+            return int(channel_id)
+        return None
+
+    async def get_notify_channel(self, server_id: int) -> Optional[discord.TextChannel]:
+        channel_id = await self.get_notify_channel_id(server_id)
+        if not channel_id:
+            return None
+        ch = self.bot.get_channel(channel_id)
+        if ch is None:
+            try:
+                ch = await self.bot.fetch_channel(channel_id)
+            except Exception:
+                logger.warning("Could not fetch notify channel %s", channel_id)
+        return ch
 
     async def set_notify_channel(self, server_id: int, channel_id: Optional[int]) -> bool:
         try:

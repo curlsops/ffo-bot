@@ -364,6 +364,7 @@ class GiveawayCommands(commands.Cog):
         return True
 
     @app_commands.command(name="gstart", description="Start a giveaway")
+    @app_commands.guild_only()
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(
         duration="Duration (e.g. 1h, 2d, 1w)",
@@ -486,6 +487,7 @@ class GiveawayCommands(commands.Cog):
             await interaction.followup.send("Error starting giveaway.", ephemeral=True)
 
     @app_commands.command(name="greroll", description="Reroll winners for an ended giveaway")
+    @app_commands.guild_only()
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(
         message_id="The giveaway message ID (from the message link, or right-click → Copy ID)"

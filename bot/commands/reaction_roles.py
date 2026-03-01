@@ -47,6 +47,7 @@ class ReactionRoleCommands(commands.Cog):
         name="reactionrole_add",
         description="Add a reaction role (Admin only)",
     )
+    @app_commands.guild_only()
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(
         message="Message link or ID (use right-click → Copy Message Link)",
@@ -120,6 +121,7 @@ class ReactionRoleCommands(commands.Cog):
         name="reactionrole_remove",
         description="Remove a reaction role (Admin only)",
     )
+    @app_commands.guild_only()
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(
         message="Message link or ID",
@@ -187,6 +189,7 @@ class ReactionRoleCommands(commands.Cog):
         name="reactionrole_list",
         description="List all reaction roles (Admin only)",
     )
+    @app_commands.guild_only()
     @app_commands.default_permissions(administrator=True)
     async def reactionrole_list(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)

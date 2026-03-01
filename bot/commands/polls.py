@@ -44,6 +44,7 @@ class PollCommands(commands.Cog):
         return True
 
     @app_commands.command(name="poll", description="Create a poll (Admin only)")
+    @app_commands.guild_only()
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(
         question="The poll question (max 300 chars)",

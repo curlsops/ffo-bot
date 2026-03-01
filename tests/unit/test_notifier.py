@@ -41,6 +41,22 @@ def _setup_channel(bot, config=None):
     return channel
 
 
+class TestGetNotifyChannelId:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("config,expected", [
+        ({"notify_channel_id": 123}, 123),
+        ({"notify_channel_id": "456"}, 456),
+        (None, None),
+        ({}, None),
+        ({"other": "val"}, None),
+    ])
+    async def test_cases(self, notifier, bot, config, expected):
+        conn = _conn_with_config(config)
+        bot.db_pool.acquire.return_value = _db_ctx(conn)
+        result = await notifier.get_notify_channel_id(999)
+        assert result == expected
+
+
 class TestGetNotifyChannel:
     @pytest.mark.asyncio
     @pytest.mark.parametrize("config,channel_exists,expected", [
