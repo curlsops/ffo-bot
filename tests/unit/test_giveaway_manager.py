@@ -13,6 +13,7 @@ def mock_bot():
     bot.settings = MagicMock(feature_giveaways=True)
     bot.wait_until_ready = AsyncMock()
     bot.get_channel = MagicMock(return_value=None)
+    bot.notifier = None
     return bot
 
 
@@ -207,6 +208,39 @@ class TestEndGiveaway:
         manager.bot.get_channel.return_value = channel
         await manager._end_giveaway(giveaway)
         assert "Congratulations" in str(channel.send.call_args)
+
+    @pytest.mark.asyncio
+    async def test_end_giveaway_notifies_admin(self, manager):
+        giveaway = {
+            "id": uuid.uuid4(),
+            "server_id": 999,
+            "channel_id": 123,
+            "message_id": 456,
+            "host_id": 789,
+            "donor_id": None,
+            "prize": "Prize",
+            "winners_count": 1,
+            "ended_at": datetime.now(timezone.utc),
+        }
+        conn = MagicMock()
+        conn.execute = AsyncMock()
+        conn.executemany = AsyncMock()
+        conn.fetch = AsyncMock(return_value=[{"user_id": 100, "entries": 1}])
+        manager.bot.db_pool = make_db_ctx(conn)
+        channel = MagicMock()
+        msg = MagicMock()
+        msg.edit = AsyncMock()
+        channel.fetch_message = AsyncMock(return_value=msg)
+        channel.send = AsyncMock()
+        manager.bot.get_channel.return_value = channel
+        manager.bot.notifier = MagicMock()
+        manager.bot.notifier.notify_giveaway_ended = AsyncMock()
+
+        await manager._end_giveaway(giveaway)
+
+        manager.bot.notifier.notify_giveaway_ended.assert_awaited_once_with(
+            999, "Prize", [100], 1
+        )
 
     @pytest.mark.asyncio
     async def test_end_giveaway_no_channel(self, manager):
