@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.3.5](https://github.com/curlsops/ffo-bot/compare/v1.3.4...v1.3.5) (2026-03-01)
+
+
+### Bug Fixes
+
+* remove double json.dumps for JSONB columns ([cf27e82](https://github.com/curlsops/ffo-bot/commit/cf27e82cf6f95cde3b4fb64c1cf784659fe4de62))
+* remove double json.dumps for JSONB columns ([a0fd647](https://github.com/curlsops/ffo-bot/commit/a0fd647c38758eac743e86827822d7a882851f17))
+
 ## [1.3.4](https://github.com/curlsops/ffo-bot/compare/v1.3.3...v1.3.4) (2026-03-01)
 
 
