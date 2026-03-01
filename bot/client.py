@@ -118,6 +118,13 @@ class FFOBot(commands.Bot):
         for guild in self.guilds:
             await self._register_server(guild)
 
+        # Overwrite guild-specific commands with global set (removes duplicate/stale guild commands)
+        for guild in self.guilds:
+            self.tree.copy_global_to(guild=guild)
+            await self.tree.sync(guild=guild)
+        if self.guilds:
+            logger.info(f"Synced slash commands to {len(self.guilds)} guild(s)")
+
         if self.metrics:
             self.metrics.set_guild_count(len(self.guilds))
             self.metrics.set_connection_status(1)
@@ -142,6 +149,8 @@ class FFOBot(commands.Bot):
     async def on_guild_join(self, guild: discord.Guild):
         logger.info(f"Joined server: {guild.name} ({guild.id})")
         await self._register_server(guild)
+        self.tree.copy_global_to(guild=guild)
+        await self.tree.sync(guild=guild)
         if self.metrics:
             self.metrics.set_guild_count(len(self.guilds))
 
