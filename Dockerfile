@@ -47,6 +47,7 @@ COPY --chown=discord:discord config/ ./config/
 COPY --chown=discord:discord main.py .
 COPY --chown=discord:discord alembic.ini .
 COPY --chown=discord:discord entrypoint.sh .
+RUN chmod +x entrypoint.sh
 
 # Switch to non-root user
 USER discord

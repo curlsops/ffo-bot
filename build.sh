@@ -70,7 +70,7 @@ echo "✓ Docker image built successfully"
 # Smoke test - verify container starts and can import modules
 echo ""
 echo "Running container smoke test..."
-docker run --rm ffobot:test python -c "
+docker run --rm --entrypoint python ffobot:test -c "
 import bot
 import config
 import database
