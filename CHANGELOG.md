@@ -1,5 +1,24 @@
 # Changelog
 
+## [1.4.0](https://github.com/curlsops/ffo-bot/compare/v1.3.7...v1.4.0) (2026-03-01)
+
+
+### Features
+
+* **commands:** add polls and reaction role commands ([7d12be8](https://github.com/curlsops/ffo-bot/commit/7d12be80ac7e56a27c1d8aff205dd5d0eda55703))
+* **voice:** add voice message transcription ([8359246](https://github.com/curlsops/ffo-bot/commit/835924656d5fb41606a4594496ec19e00a873fe3))
+
+
+### Bug Fixes
+
+* **giveaway:** restore entry count in persistent views and improve commands ([b9e9b14](https://github.com/curlsops/ffo-bot/commit/b9e9b1402e28895590988499bd5a679c387031b9))
+* **logging:** resolve pythonjsonlogger deprecation warning ([d37c203](https://github.com/curlsops/ffo-bot/commit/d37c2039f1180108fe4d63a86bf2524777b3face))
+* **media:** handle content_type None in media downloader ([bc332a5](https://github.com/curlsops/ffo-bot/commit/bc332a581a7aca4c10938c2f6e34cdcfa3cf677f))
+* **notify:** ensure notify channel sends messages ([687ec88](https://github.com/curlsops/ffo-bot/commit/687ec88defbbe6f3040995e99babb555b0d4f043))
+* sync slash commands to guilds to remove duplicate command entries ([41ec7fe](https://github.com/curlsops/ffo-bot/commit/41ec7fe830b65a3cbeee011114e09930924968ba))
+* sync slash commands to guilds to remove duplicate command entries ([30c756d](https://github.com/curlsops/ffo-bot/commit/30c756dcf607c4443285aa1baab2c7639ec6614c))
+* update README links and test count ([ef3d186](https://github.com/curlsops/ffo-bot/commit/ef3d186776670161d014a73db4fce9c8e2c02be2))
+
 ## [1.3.7](https://github.com/curlsops/ffo-bot/compare/v1.3.6...v1.3.7) (2026-03-01)
 
 
