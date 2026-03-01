@@ -95,3 +95,8 @@ class TestGenerateMetricsResponse:
         response = generate_metrics_response()
         assert isinstance(response, bytes)
         assert len(response) > 0
+
+    def test_generate_standalone(self):
+        response = generate_metrics_response()
+        assert isinstance(response, bytes)
+        assert len(response) > 10

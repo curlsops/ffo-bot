@@ -101,3 +101,15 @@ class TestCacheValues:
         cache.set("dict", {"a": 1})
         assert cache.get("list") == [1, 2, 3]
         assert cache.get("dict") == {"a": 1}
+
+
+class TestCacheSizeBoundary:
+    def test_size_at_max_still_accepts(self):
+        cache = InMemoryCache(max_size=3, default_ttl=60)
+        cache.set("a", 1)
+        cache.set("b", 2)
+        cache.set("c", 3)
+        assert cache.size() == 3
+        cache.set("d", 4)
+        assert cache.size() <= 3
+        assert cache.get("d") == 4

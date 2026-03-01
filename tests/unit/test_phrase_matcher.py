@@ -48,6 +48,9 @@ class TestPhraseMatcherInit:
 # --- Normalization ---
 
 class TestNormalization:
+    def test_normalize_message_empty(self, mock_db_pool, mock_cache):
+        assert PhraseMatcher(mock_db_pool, mock_cache)._normalize_message("") == ""
+
     @pytest.mark.parametrize("inp,expected", [
         ("Hello World!", "hello world!"),
         ("Hello, World! How are you?", "hello, world! how are you?"),

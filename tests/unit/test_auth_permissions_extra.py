@@ -62,6 +62,12 @@ class TestIsDiscordAdmin:
         checker, _, _ = _checker()
         assert checker._is_discord_admin(1, 2) is False
 
+    def test_member_not_in_guild(self):
+        guild = MagicMock()
+        guild.get_member.return_value = None
+        checker = _checker_with_bot(guild, None)
+        assert checker._is_discord_admin(1, 2) is False
+
 
 # --- check_role ---
 

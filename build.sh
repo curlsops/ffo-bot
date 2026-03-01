@@ -81,11 +81,13 @@ from bot.commands.admin import AdminCommands
 from bot.commands.giveaway import GiveawayCommands, GiveawayView
 from bot.commands.permissions import PermissionCommands
 from bot.commands.privacy import PrivacyCommands
+from bot.commands.polls import PollCommands
 from bot.commands.reactbot import ReactBotCommands
 from bot.handlers.messages import MessageHandler
 from bot.handlers.reactions import ReactionHandler
 from bot.processors.media_downloader import MediaDownloader
 from bot.processors.phrase_matcher import PhraseMatcher
+from bot.processors.voice_transcriber import VoiceTranscriber
 from bot.tasks.giveaway_manager import GiveawayManager
 from bot.utils.health import HealthCheckServer
 from bot.utils.metrics import BotMetrics

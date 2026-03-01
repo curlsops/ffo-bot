@@ -95,6 +95,31 @@ class TestMetrics:
             else:
                 server.bot.metrics.set_cache_size.assert_not_called()
 
+    @pytest.mark.asyncio
+    async def test_metrics_when_bot_metrics_none(self, server):
+        server.bot.cache = None
+        server.bot.metrics = None
+        with patch("bot.utils.metrics.generate_metrics_response", return_value=b"# metrics\n"):
+            response = await server.metrics(MagicMock())
+        assert response.status == 200
+
+
+# --- HTTP via TestServer ---
+
+class TestHealthViaTestServer:
+    @pytest.mark.asyncio
+    async def test_healthz_200_via_http(self):
+        from aiohttp.test_utils import TestClient, TestServer
+
+        bot = MagicMock()
+        bot.is_closed.return_value = False
+        server = HealthCheckServer(bot)
+        async with TestServer(server.app) as srv:
+            async with TestClient(srv) as client:
+                resp = await client.get("/healthz")
+                assert resp.status == 200
+                assert await resp.text() == "OK"
+
 
 # --- Start ---
 

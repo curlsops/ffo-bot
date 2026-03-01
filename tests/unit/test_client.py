@@ -166,7 +166,7 @@ class TestFFOBotExtensions:
     async def test_load_extensions_success(self, bot):
         with patch.object(bot, "load_extension", new_callable=AsyncMock) as mock_load:
             await bot._load_extensions()
-            assert mock_load.call_count == 9
+            assert mock_load.call_count == 11
 
     @pytest.mark.asyncio
     async def test_load_extensions_handles_failure(self, bot):
@@ -186,6 +186,7 @@ class TestFFOBotPersistentViews:
         gid, mid = uuid.uuid4(), 12345
         conn = MagicMock()
         conn.fetch = AsyncMock(return_value=[{"id": gid, "message_id": mid}])
+        conn.fetchval = AsyncMock(return_value=0)
         bot.db_pool = make_db_ctx(conn)
         with patch("bot.commands.giveaway.GiveawayView"):
             with patch.object(bot, "add_view") as mock_add:
@@ -221,6 +222,7 @@ class TestFFOBotPersistentViews:
         ]
         conn = MagicMock()
         conn.fetch = AsyncMock(return_value=rows)
+        conn.fetchval = AsyncMock(return_value=0)
         bot.db_pool = make_db_ctx(conn)
         with patch("bot.commands.giveaway.GiveawayView"):
             with patch.object(bot, "add_view") as mock_add:
@@ -345,6 +347,75 @@ class TestFFOBotSetupHook:
         assert bot.media_downloader is not None
         mock_downloader.initialize.assert_called_once()
 
+    @pytest.mark.asyncio
+    async def test_setup_hook_with_voice_transcription(self, mock_settings):
+        from bot.client import FFOBot
+
+        mock_settings.feature_voice_transcription = True
+        mock_settings.openai_api_key = "sk-test"
+        bot = FFOBot(mock_settings)
+
+        mock_vt = MagicMock()
+        patches = [
+            patch(
+                "bot.client.DatabasePool.create", new_callable=AsyncMock, return_value=MagicMock()
+            ),
+            patch("bot.client.InMemoryCache"),
+            patch("bot.client.BotMetrics"),
+            patch("bot.client.PhraseMatcher"),
+            patch("bot.client.PermissionChecker"),
+            patch("bot.client.RateLimiter"),
+            patch("bot.client.VoiceTranscriber", mock_vt),
+            patch.object(bot, "_start_health_server", new_callable=AsyncMock),
+            patch.object(bot, "_load_extensions", new_callable=AsyncMock),
+        ]
+        mock_tree = MagicMock(sync=AsyncMock())
+
+        for p in patches:
+            p.start()
+        try:
+            with patch.object(type(bot), "tree", new_callable=PropertyMock, return_value=mock_tree):
+                await bot.setup_hook()
+        finally:
+            for p in patches:
+                p.stop()
+
+        mock_vt.assert_called_once_with(api_key="sk-test")
+        assert bot.voice_transcriber is not None
+
+    @pytest.mark.asyncio
+    async def test_setup_hook_voice_transcription_disabled_without_api_key(self, mock_settings):
+        from bot.client import FFOBot
+
+        mock_settings.feature_voice_transcription = True
+        mock_settings.openai_api_key = None
+        bot = FFOBot(mock_settings)
+
+        patches = [
+            patch(
+                "bot.client.DatabasePool.create", new_callable=AsyncMock, return_value=MagicMock()
+            ),
+            patch("bot.client.InMemoryCache"),
+            patch("bot.client.BotMetrics"),
+            patch("bot.client.PhraseMatcher"),
+            patch("bot.client.PermissionChecker"),
+            patch("bot.client.RateLimiter"),
+            patch.object(bot, "_start_health_server", new_callable=AsyncMock),
+            patch.object(bot, "_load_extensions", new_callable=AsyncMock),
+        ]
+        mock_tree = MagicMock(sync=AsyncMock())
+
+        for p in patches:
+            p.start()
+        try:
+            with patch.object(type(bot), "tree", new_callable=PropertyMock, return_value=mock_tree):
+                await bot.setup_hook()
+        finally:
+            for p in patches:
+                p.stop()
+
+        assert bot.voice_transcriber is None
+
 
 class TestFFOBotHealthServer:
     @pytest.mark.asyncio
@@ -391,6 +462,17 @@ class TestFFOBotErrorHandlers:
         assert bot._extract_server_id([]) is None
         assert bot._extract_server_id([MagicMock(spec=[])]) is None
 
+    def test_extract_server_id_guild_id_no_guild(self, bot):
+        obj = MagicMock()
+        obj.guild = None
+        obj.guild_id = 111
+        assert bot._extract_server_id([obj]) == 111
+
+    def test_extract_server_id_first_match_wins(self, bot):
+        a = MagicMock(guild=MagicMock(id=1))
+        b = MagicMock(guild=MagicMock(id=2))
+        assert bot._extract_server_id([a, b]) == 1
+
 
 class TestFFOBotAppCommandError:
     def make_interaction(self, guild_id=123, done=False, command="test"):
@@ -432,3 +514,82 @@ class TestFFOBotAppCommandError:
         i = self.make_interaction(command=None)
         await bot._on_app_command_error(i, discord.app_commands.AppCommandError())
         assert "Unknown" in bot.notifier.notify_error.call_args[0][2]
+
+    @pytest.mark.asyncio
+    async def test_app_command_error_response_done_uses_followup(self, bot):
+        bot.notifier = MagicMock(notify_error=AsyncMock())
+        i = self.make_interaction(done=True, command=None)
+        await bot._on_app_command_error(i, discord.app_commands.AppCommandError())
+        i.followup.send.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_app_command_error_response_not_done_uses_response(self, bot):
+        bot.notifier = MagicMock(notify_error=AsyncMock())
+        i = self.make_interaction(done=False, command=None)
+        await bot._on_app_command_error(i, discord.app_commands.AppCommandError())
+        i.response.send_message.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_on_error_no_notifier(self, bot):
+        bot.notifier = None
+        with patch("sys.exc_info", return_value=(ValueError, ValueError("x"), None)):
+            await bot.on_error("on_message", MagicMock(guild=MagicMock(id=123)))
+
+    @pytest.mark.asyncio
+    async def test_close_media_downloader_none(self, bot):
+        bot.db_pool = AsyncMock()
+        bot.cache = MagicMock()
+        bot.media_downloader = None
+        bot._health_server = None
+        with patch.object(bot, "_drain_message_queue", new_callable=AsyncMock):
+            with patch("discord.ext.commands.Bot.close", new_callable=AsyncMock):
+                await bot.close()
+        bot.db_pool.close.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_close_db_pool_none(self, bot):
+        bot.db_pool = None
+        bot.cache = MagicMock()
+        bot.media_downloader = None
+        bot._health_server = None
+        with patch.object(bot, "_drain_message_queue", new_callable=AsyncMock):
+            with patch("discord.ext.commands.Bot.close", new_callable=AsyncMock):
+                await bot.close()
+
+    @pytest.mark.asyncio
+    async def test_close_cache_none(self, bot):
+        bot.db_pool = AsyncMock()
+        bot.cache = None
+        bot.media_downloader = None
+        bot._health_server = None
+        with patch.object(bot, "_drain_message_queue", new_callable=AsyncMock):
+            with patch("discord.ext.commands.Bot.close", new_callable=AsyncMock):
+                await bot.close()
+
+    @pytest.mark.asyncio
+    async def test_register_persistent_views_acquire_raises(self, bot):
+        bot.settings.feature_giveaways = True
+        bot.db_pool = MagicMock()
+        bot.db_pool.acquire = MagicMock(side_effect=Exception("DB"))
+        with pytest.raises(Exception, match="DB"):
+            await bot._register_persistent_views()
+
+    @pytest.mark.asyncio
+    async def test_on_ready_empty_guilds(self, bot):
+        from bot.client import FFOBot
+
+        bot.metrics = MagicMock()
+        bot._connection = MagicMock()
+        bot._connection.user = MagicMock(id=123)
+        with patch.object(FFOBot, "guilds", new_callable=PropertyMock, return_value=[]):
+            await bot.on_ready()
+        bot.metrics.set_guild_count.assert_called_with(0)
+
+    @pytest.mark.asyncio
+    async def test_load_extensions_multiple_failures(self, bot, caplog):
+        async def fail_all(*args):
+            raise Exception("load failed")
+
+        with patch.object(bot, "load_extension", side_effect=fail_all):
+            await bot._load_extensions()
+        assert caplog.text.count("load failed") >= 1

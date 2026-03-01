@@ -92,6 +92,12 @@ class TestFetchJoke:
         with patch("aiohttp.ClientSession", side_effect=Exception()):
             assert await rotator._fetch_joke() is None
 
+    @pytest.mark.asyncio
+    async def test_json_error(self, rotator):
+        resp = AsyncMock(status=200, json=AsyncMock(side_effect=ValueError("bad json")))
+        with patch("aiohttp.ClientSession", return_value=mock_session(resp)):
+            assert await rotator._fetch_joke() is None
+
 
 class TestRotateStatus:
     @pytest.mark.asyncio
