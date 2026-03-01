@@ -1,5 +1,5 @@
 import asyncio
-from unittest.mock import AsyncMock, MagicMock, PropertyMock, patch
+from unittest.mock import ANY, AsyncMock, MagicMock, PropertyMock, patch
 
 import discord
 import pytest
@@ -177,13 +177,15 @@ class TestFFOBotPersistentViews:
     async def test_register_persistent_views_enabled(self, bot):
         import uuid
         bot.settings.feature_giveaways = True
+        gid, mid = uuid.uuid4(), 12345
         conn = MagicMock()
-        conn.fetch = AsyncMock(return_value=[{"id": uuid.uuid4()}])
+        conn.fetch = AsyncMock(return_value=[{"id": gid, "message_id": mid}])
         bot.db_pool = make_db_ctx(conn)
         with patch("bot.commands.giveaway.GiveawayView"):
             with patch.object(bot, "add_view") as mock_add:
                 await bot._register_persistent_views()
                 mock_add.assert_called_once()
+                mock_add.assert_called_with(ANY, message_id=mid)
 
     @pytest.mark.asyncio
     async def test_register_persistent_views_disabled(self, bot):
@@ -201,6 +203,25 @@ class TestFFOBotPersistentViews:
         with patch.object(bot, "add_view") as mock_add:
             await bot._register_persistent_views()
             mock_add.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_register_persistent_views_multiple(self, bot):
+        import uuid
+        bot.settings.feature_giveaways = True
+        rows = [
+            {"id": uuid.uuid4(), "message_id": 111},
+            {"id": uuid.uuid4(), "message_id": 222},
+            {"id": uuid.uuid4(), "message_id": 333},
+        ]
+        conn = MagicMock()
+        conn.fetch = AsyncMock(return_value=rows)
+        bot.db_pool = make_db_ctx(conn)
+        with patch("bot.commands.giveaway.GiveawayView"):
+            with patch.object(bot, "add_view") as mock_add:
+                await bot._register_persistent_views()
+                assert mock_add.call_count == 3
+                message_ids = [c.kwargs["message_id"] for c in mock_add.call_args_list]
+                assert message_ids == [111, 222, 333]
 
 
 class TestFFOBotOnReady:
@@ -238,7 +259,7 @@ class TestFFOBotDrainQueue:
     @pytest.mark.asyncio
     async def test_drain_with_pending_tasks(self, bot):
         async def fake_on_message():
-            await asyncio.sleep(0.1)
+            await asyncio.sleep(0.001)
 
         task = asyncio.create_task(fake_on_message())
         with patch("asyncio.all_tasks", return_value={task}):
