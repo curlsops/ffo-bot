@@ -1,11 +1,18 @@
 """Database connection pool management."""
 
+import json
 import logging
 from typing import Optional
 
 import asyncpg
 
 logger = logging.getLogger(__name__)
+
+
+async def _init_connection(conn: asyncpg.Connection) -> None:
+    await conn.set_type_codec(
+        "jsonb", encoder=json.dumps, decoder=json.loads, schema="pg_catalog"
+    )
 
 
 class DatabasePool:
@@ -18,7 +25,11 @@ class DatabasePool:
     ) -> "DatabasePool":
         try:
             pool = await asyncpg.create_pool(
-                database_url, min_size=min_size, max_size=max_size, command_timeout=command_timeout
+                database_url,
+                min_size=min_size,
+                max_size=max_size,
+                command_timeout=command_timeout,
+                init=_init_connection,
             )
             return cls(pool)
         except Exception as e:
