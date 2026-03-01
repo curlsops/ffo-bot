@@ -1,5 +1,7 @@
 """Admin commands."""
 
+import importlib.metadata
+
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -26,6 +28,17 @@ class AdminCommands(commands.Cog):
         await interaction.response.send_message(
             f"Pong! Latency: {round(self.bot.latency * 1000)}ms", ephemeral=True
         )
+
+    @app_commands.command(name="version", description="Show bot version (admin only)")
+    async def version(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        if not await self._check_admin(interaction, "version"):
+            return
+        try:
+            ver = importlib.metadata.version("ffo-bot")
+        except importlib.metadata.PackageNotFoundError:
+            ver = "unknown"
+        await interaction.followup.send(f"Running **ffo-bot** v{ver}", ephemeral=True)
 
     @app_commands.command(
         name="set_notify_channel",

@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -87,6 +87,23 @@ class TestSetNotifyChannel:
         bot = make_admin_bot(admin=False)
         i = make_interaction()
         await AdminCommands(bot).set_notify_channel.callback(AdminCommands(bot), i, channel=None)
+        assert "Admin required" in i.followup.send.call_args[0][0]
+
+
+class TestVersion:
+    @pytest.mark.asyncio
+    async def test_success(self):
+        bot = make_admin_bot()
+        i = make_interaction()
+        with patch("bot.commands.admin.importlib.metadata.version", return_value="1.3.7"):
+            await AdminCommands(bot).version.callback(AdminCommands(bot), i)
+        assert "1.3.7" in i.followup.send.call_args[0][0]
+
+    @pytest.mark.asyncio
+    async def test_not_admin(self):
+        bot = make_admin_bot(admin=False)
+        i = make_interaction()
+        await AdminCommands(bot).version.callback(AdminCommands(bot), i)
         assert "Admin required" in i.followup.send.call_args[0][0]
 
 
