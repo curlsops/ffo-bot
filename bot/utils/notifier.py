@@ -1,4 +1,5 @@
 import logging
+import traceback
 from typing import Optional
 
 import discord
@@ -15,8 +16,8 @@ class AdminNotifier:
             row = await conn.fetchrow("SELECT config FROM servers WHERE server_id = $1", server_id)
         if not row or not row["config"]:
             return None
-        channel_id = row["config"].get("notify_channel_id")
-        return self.bot.get_channel(int(channel_id)) if channel_id else None
+        if channel_id := row["config"].get("notify_channel_id"):
+            return self.bot.get_channel(int(channel_id))
 
     async def set_notify_channel(self, server_id: int, channel_id: Optional[int]) -> bool:
         try:
@@ -69,3 +70,36 @@ class AdminNotifier:
         winners_val = ", ".join(f"<@{w}>" for w in winners) if winners else "No valid entries"
         embed.add_field(name="Winners", value=winners_val, inline=False)
         await self.send(server_id, embed)
+
+    async def notify_error(
+        self,
+        server_id: int,
+        error: Exception,
+        context: str,
+        user_id: Optional[int] = None,
+        channel_id: Optional[int] = None,
+    ):
+        embed = discord.Embed(
+            title="Error", description=f"**{context}**", color=discord.Color.red()
+        )
+        embed.add_field(name="Type", value=type(error).__name__, inline=True)
+        embed.add_field(name="Message", value=str(error)[:1024] or "No message", inline=False)
+        if user_id:
+            embed.add_field(name="User", value=f"<@{user_id}>", inline=True)
+        if channel_id:
+            embed.add_field(name="Channel", value=f"<#{channel_id}>", inline=True)
+        tb = "".join(traceback.format_exception(type(error), error, error.__traceback__))
+        tb = tb[-1021:] + "..." if len(tb) > 1024 else tb
+        embed.add_field(name="Traceback", value=f"```\n{tb}\n```", inline=False)
+        await self.send(server_id, embed)
+
+    async def notify_error_all_servers(self, error: Exception, context: str):
+        try:
+            async with self.bot.db_pool.acquire() as conn:
+                rows = await conn.fetch(
+                    "SELECT server_id FROM servers WHERE config->>'notify_channel_id' IS NOT NULL"
+                )
+            for r in rows:
+                await self.notify_error(r["server_id"], error, context)
+        except Exception:
+            logger.exception("Failed to notify all servers")

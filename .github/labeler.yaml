@@ -1,43 +1,75 @@
 ---
-area/bootstrap:
+area/bot:
   - changed-files:
       - any-glob-to-any-file:
-          - bootstrap/**/*
+          - bot/**/*
+area/commands:
+  - changed-files:
+      - any-glob-to-any-file:
+          - bot/commands/**/*
+area/handlers:
+  - changed-files:
+      - any-glob-to-any-file:
+          - bot/handlers/**/*
+area/tasks:
+  - changed-files:
+      - any-glob-to-any-file:
+          - bot/tasks/**/*
+area/auth:
+  - changed-files:
+      - any-glob-to-any-file:
+          - bot/auth/**/*
+area/utils:
+  - changed-files:
+      - any-glob-to-any-file:
+          - bot/utils/**/*
+area/processors:
+  - changed-files:
+      - any-glob-to-any-file:
+          - bot/processors/**/*
+area/cache:
+  - changed-files:
+      - any-glob-to-any-file:
+          - bot/cache/**/*
+area/config:
+  - changed-files:
+      - any-glob-to-any-file:
+          - config/**/*
+area/database:
+  - changed-files:
+      - any-glob-to-any-file:
+          - database/**/*
+          - alembic.ini
+area/tests:
+  - changed-files:
+      - any-glob-to-any-file:
+          - tests/**/*
+area/ci:
+  - changed-files:
+      - any-glob-to-any-file:
+          - .github/**/*
+area/docker:
+  - changed-files:
+      - any-glob-to-any-file:
+          - Dockerfile
+          - build.sh
+          - build.bat
 area/docs:
   - changed-files:
       - any-glob-to-any-file:
           - README.md
-area/github:
+          - "*.md"
+area/deps:
   - changed-files:
       - any-glob-to-any-file:
-          - .github/**/*
-area/kubernetes:
-  - changed-files:
-      - any-glob-to-any-file:
-          - kubernetes/**/*
-area/mise:
-  - changed-files:
-      - any-glob-to-any-file:
-          - .mise.toml
+          - requirements.txt
+          - requirements-dev.txt
+          - pyproject.toml
 area/renovate:
   - changed-files:
       - any-glob-to-any-file:
-          - .renovate/**/*
           - .renovaterc.json5
 area/scripts:
   - changed-files:
       - any-glob-to-any-file:
           - scripts/**/*
-area/talos:
-  - changed-files:
-      - any-glob-to-any-file:
-          - talos/**/*
-area/taskfile:
-  - changed-files:
-      - any-glob-to-any-file:
-          - .taskfiles/**/*
-          - Taskfile.yaml
-area/templates:
-  - changed-files:
-      - any-glob-to-any-file:
-          - templates/**/*

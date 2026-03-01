@@ -1,5 +1,6 @@
 import asyncio
 import logging
+import sys
 from typing import Optional
 
 import discord
@@ -66,6 +67,7 @@ class FFOBot(commands.Bot):
             server_capacity=self.settings.rate_limit_server_capacity,
         )
         self.notifier = AdminNotifier(self)
+        self.tree.on_error = self._on_app_command_error
 
         await self._start_health_server()
         await self._load_extensions()
@@ -181,3 +183,37 @@ class FFOBot(commands.Bot):
 
     def is_shutting_down(self) -> bool:
         return self._shutdown_event.is_set()
+
+    async def on_error(self, event_method: str, *args, **kwargs):
+        error = sys.exc_info()[1]
+        logger.exception(f"Error in {event_method}")
+        if self.notifier and (server_id := self._extract_server_id(args)):
+            await self.notifier.notify_error(server_id, error, f"Event: {event_method}")
+
+    def _extract_server_id(self, args) -> Optional[int]:
+        for arg in args:
+            if hasattr(arg, "guild") and arg.guild:
+                return arg.guild.id
+            if hasattr(arg, "guild_id") and arg.guild_id:
+                return arg.guild_id
+            if isinstance(arg, discord.Guild):
+                return arg.id
+
+    async def _on_app_command_error(
+        self, interaction: discord.Interaction, error: discord.app_commands.AppCommandError
+    ):
+        cmd_name = interaction.command.name if interaction.command else "unknown"
+        logger.exception(f"App command error: {cmd_name}")
+        if self.notifier and interaction.guild_id:
+            ctx = f"Command: /{cmd_name}" if interaction.command else "Unknown command"
+            await self.notifier.notify_error(
+                interaction.guild_id,
+                error,
+                ctx,
+                user_id=interaction.user.id,
+                channel_id=interaction.channel_id,
+            )
+        if interaction.response.is_done():
+            await interaction.followup.send("An error occurred.", ephemeral=True)
+        else:
+            await interaction.response.send_message("An error occurred.", ephemeral=True)
