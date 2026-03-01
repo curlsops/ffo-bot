@@ -130,16 +130,14 @@ class TestFFOBotGuildEvents:
 
     @pytest.mark.asyncio
     async def test_on_guild_join(self, bot):
-        bot._guilds = {1: MagicMock(), 2: MagicMock()}
         bot.metrics = MagicMock()
-
+        guild = MagicMock(id=123, name="New")
         with patch.object(bot, "_register_server", new_callable=AsyncMock) as mock_reg:
-            with patch.object(bot.tree, "copy_global_to"):
+            with patch.object(bot.tree, "copy_global_to") as mock_copy:
                 with patch.object(bot.tree, "sync", new_callable=AsyncMock):
-                    guild = MagicMock(id=123, name="New")
                     await bot.on_guild_join(guild)
                     mock_reg.assert_called_once_with(guild)
-                    bot.tree.copy_global_to.assert_called_once_with(guild=guild)
+                    mock_copy.assert_called_once_with(guild=guild)
                     bot.tree.sync.assert_called_once_with(guild=guild)
                     bot.metrics.set_guild_count.assert_called()
 
@@ -152,14 +150,12 @@ class TestFFOBotGuildEvents:
 
     @pytest.mark.asyncio
     async def test_guild_events_without_metrics(self, bot):
-        bot._guilds = {}
         bot.metrics = None
         with patch.object(bot, "_register_server", new_callable=AsyncMock):
             with patch.object(bot.tree, "copy_global_to"):
                 with patch.object(bot.tree, "sync", new_callable=AsyncMock):
                     await bot.on_guild_join(MagicMock(id=123, name="New"))
         await bot.on_guild_remove(MagicMock(id=123, name="Removed"))
-
 
 class TestFFOBotExtensions:
     @pytest.mark.asyncio
@@ -245,11 +241,11 @@ class TestFFOBotOnReady:
 
         with patch.object(FFOBot, "guilds", new_callable=PropertyMock, return_value=guilds):
             with patch.object(bot, "_register_server", new_callable=AsyncMock) as mock_reg:
-                with patch.object(bot.tree, "copy_global_to"):
+                with patch.object(bot.tree, "copy_global_to") as mock_copy:
                     with patch.object(bot.tree, "sync", new_callable=AsyncMock):
                         await bot.on_ready()
                         assert mock_reg.call_count == 2
-                        assert bot.tree.copy_global_to.call_count == 2
+                        assert mock_copy.call_count == 2
                         assert bot.tree.sync.call_count == 2
                         bot.metrics.set_guild_count.assert_called_with(2)
                         bot.metrics.set_connection_status.assert_called_with(1)

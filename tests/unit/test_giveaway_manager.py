@@ -200,9 +200,37 @@ class TestEndGiveaway:
         manager.bot.notifier.notify_giveaway_ended.assert_awaited_once_with(999, "Prize", [100], 1)
 
     @pytest.mark.asyncio
+    async def test_notifier_exception_logged(self, manager, caplog):
+        manager.bot.db_pool = _db_ctx(MagicMock(
+            execute=AsyncMock(), executemany=AsyncMock(),
+            fetch=AsyncMock(return_value=[{"user_id": 100, "entries": 1}])
+        ))
+        channel, _ = _channel_with_msg()
+        manager.bot.get_channel.return_value = channel
+        manager.bot.notifier = MagicMock(notify_giveaway_ended=AsyncMock(side_effect=Exception("notify")))
+        await manager._end_giveaway(_giveaway())
+        assert "Notify giveaway ended failed" in caplog.text
+
+    @pytest.mark.asyncio
     async def test_no_channel(self, manager):
         manager.bot.db_pool = _db_ctx(MagicMock(execute=AsyncMock(), fetch=AsyncMock(return_value=[])))
         await manager._end_giveaway(_giveaway())
+
+    @pytest.mark.asyncio
+    async def test_fetch_channel_forbidden(self, manager, caplog):
+        manager.bot.db_pool = _db_ctx(MagicMock(execute=AsyncMock(), fetch=AsyncMock(return_value=[])))
+        manager.bot.get_channel.return_value = None
+        manager.bot.fetch_channel = AsyncMock(side_effect=discord.Forbidden(MagicMock(), ""))
+        await manager._end_giveaway(_giveaway())
+        assert "Could not fetch channel" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_fetch_channel_not_found(self, manager, caplog):
+        manager.bot.db_pool = _db_ctx(MagicMock(execute=AsyncMock(), fetch=AsyncMock(return_value=[])))
+        manager.bot.get_channel.return_value = None
+        manager.bot.fetch_channel = AsyncMock(side_effect=discord.NotFound(MagicMock(), ""))
+        await manager._end_giveaway(_giveaway())
+        assert "Could not fetch channel" in caplog.text
 
     @pytest.mark.asyncio
     async def test_message_not_found(self, manager):
