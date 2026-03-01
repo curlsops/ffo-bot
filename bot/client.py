@@ -219,6 +219,7 @@ class FFOBot(commands.Bot):
                 return arg.guild_id
             if isinstance(arg, discord.Guild):
                 return arg.id
+        return None
 
     async def _on_app_command_error(
         self, interaction: discord.Interaction, error: discord.app_commands.AppCommandError

@@ -28,7 +28,7 @@ def fastapi_container():
         "fixtures",
         "fastapi_app",
     )
-    with DockerImage(path=fixture_path, tag="ffobot-fastapi-test:latest") as image:
+    with DockerImage(path=fixture_path, tag="ffobot-fastapi-test:latest", clean_up=False) as image:
         with FastAPIContainer(str(image), port=8000) as container:
             yield container
 

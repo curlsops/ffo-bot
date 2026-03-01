@@ -36,7 +36,6 @@ def build_embed(giveaway, entry_count: int, ended: bool = False) -> discord.Embe
 
     lines = [
         f"**{giveaway['prize']}**",
-        "",
         "Click join button below to enter!" if not ended else "",
         f"**Ends:** {ts_rel} ({ts_full})" if not ended else f"**Ended:** {ts_full}",
         f"**Hosted by:** <@{giveaway['host_id']}>",
