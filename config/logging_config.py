@@ -3,7 +3,7 @@
 import logging
 import sys
 
-from pythonjsonlogger import jsonlogger
+from pythonjsonlogger.json import JsonFormatter
 
 
 def setup_logging(log_level: str = "INFO", log_format: str = "json") -> logging.Logger:
@@ -14,7 +14,7 @@ def setup_logging(log_level: str = "INFO", log_format: str = "json") -> logging.
     handler = logging.StreamHandler(sys.stdout)
     if log_format == "json":
         handler.setFormatter(
-            jsonlogger.JsonFormatter(
+            JsonFormatter(
                 "%(asctime)s %(levelname)s %(name)s %(funcName)s %(lineno)d %(message)s",
                 datefmt="%Y-%m-%dT%H:%M:%S",
             )
