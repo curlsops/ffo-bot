@@ -1,1 +1,0 @@
-"""Message event handlers module."""

@@ -1,5 +1,3 @@
-"""Regex validation with ReDoS protection."""
-
 import re
 import time
 

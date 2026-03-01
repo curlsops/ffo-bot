@@ -1,5 +1,3 @@
-"""Utilities module."""
-
 from bot.utils.health import HealthCheckServer
 from bot.utils.metrics import BotMetrics
 from bot.utils.rate_limiter import RateLimiter

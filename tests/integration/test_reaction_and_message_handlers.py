@@ -393,7 +393,6 @@ async def test_message_handler_check_user_opt_out_error_continues_processing():
 
 @pytest.mark.asyncio
 async def test_message_handler_phrase_match_log_failure_still_reacts(caplog):
-    """When _log_phrase_match fails (DB error), reaction is still added and user is not impacted."""
     db_pool, conn = make_db_pool()
     conn.execute = AsyncMock(side_effect=Exception("DB down"))
     bot = MagicMock()

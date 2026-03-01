@@ -1,5 +1,3 @@
-"""Input validation and sanitization."""
-
 import re
 from typing import Any
 

@@ -1,5 +1,3 @@
-"""Database connection pool management."""
-
 import json
 import logging
 from typing import Optional

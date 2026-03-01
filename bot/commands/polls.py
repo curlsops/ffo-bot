@@ -1,5 +1,3 @@
-"""Poll commands."""
-
 import logging
 import re
 from datetime import timedelta
@@ -16,7 +14,6 @@ logger = logging.getLogger(__name__)
 
 
 def _parse_duration(s: str) -> Optional[timedelta]:
-    """Parse duration string (e.g. 1h, 30m, 1d) to timedelta. Polls require hour granularity."""
     m = re.match(r"^(\d+)([mhd])$", s.strip().lower())
     if not m:
         return None

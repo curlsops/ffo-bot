@@ -1,5 +1,3 @@
-"""Permission checking and authorization."""
-
 import json
 import logging
 from dataclasses import dataclass
@@ -15,16 +13,12 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class PermissionContext:
-    """Context for permission checks."""
-
     server_id: int
     user_id: int
     command_name: Optional[str] = None
 
 
 class PermissionChecker:
-    """Authorization enforcement with caching."""
-
     def __init__(self, db_pool, cache, bot: "Bot" = None):
         self.db_pool = db_pool
         self.cache = cache

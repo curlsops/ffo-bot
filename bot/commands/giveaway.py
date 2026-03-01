@@ -541,9 +541,8 @@ class GiveawayCommands(commands.Cog):
                 return
 
             old_winner_ids = {r["user_id"] for r in old_winners}
-            reroll_count = (
-                (len(old_winner_ids) or giveaway["winners_count"]) if count is None else count
-            )
+            default_reroll_count = len(old_winner_ids) or giveaway["winners_count"]
+            reroll_count = default_reroll_count if count is None else count
             if reroll_count < 1:
                 await interaction.followup.send("Count must be at least 1.", ephemeral=True)
                 return
@@ -554,11 +553,10 @@ class GiveawayCommands(commands.Cog):
                 )
                 return
 
-            winners_to_remove = (
-                set(random.sample(list(old_winner_ids), reroll_count))
-                if reroll_count < len(old_winner_ids)
-                else old_winner_ids
-            )
+            if reroll_count < len(old_winner_ids):
+                winners_to_remove = set(random.sample(list(old_winner_ids), reroll_count))
+            else:
+                winners_to_remove = old_winner_ids
             non_winners = [e for e in entries if e["user_id"] not in old_winner_ids]
             if not non_winners:
                 await interaction.followup.send(
@@ -566,9 +564,7 @@ class GiveawayCommands(commands.Cog):
                     ephemeral=True,
                 )
                 return
-            pool = non_winners + [
-                e for e in entries if e["user_id"] in winners_to_remove
-            ]
+            pool = non_winners + [e for e in entries if e["user_id"] in winners_to_remove]
             new_winners = self._select_winners(pool, reroll_count)
             final_winners = (old_winner_ids - winners_to_remove) | set(new_winners)
 
@@ -587,9 +583,7 @@ class GiveawayCommands(commands.Cog):
             if channel:
                 try:
                     msg = await channel.fetch_message(giveaway["message_id"])
-                    g = dict(giveaway)
-                    g["ended_at"] = giveaway["ended_at"]
-                    embed = build_embed(g, len(entries), ended=True)
+                    embed = build_embed(dict(giveaway), len(entries), ended=True)
                     if new_winners:
                         embed.add_field(
                             name="Winners (Rerolled)",

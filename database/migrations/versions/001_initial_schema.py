@@ -1,18 +1,9 @@
-"""Initial schema
-
-Revision ID: 001_initial
-Revises:
-Create Date: 2026-01-11 00:00:00.000000
-
-"""
-
 from typing import Sequence, Union
 
 import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-# revision identifiers, used by Alembic.
 revision: str = "001_initial"
 down_revision: Union[str, None] = None
 branch_labels: Union[str, Sequence[str], None] = None
@@ -20,10 +11,8 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    # Enable UUID extension
     op.execute('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"')
 
-    # Servers table
     op.create_table(
         "servers",
         sa.Column("server_id", sa.BigInteger(), nullable=False),
@@ -67,7 +56,6 @@ def upgrade() -> None:
         "idx_servers_config", "servers", ["config"], unique=False, postgresql_using="gin"
     )
 
-    # User permissions table
     op.create_table(
         "user_permissions",
         sa.Column(
@@ -127,7 +115,6 @@ def upgrade() -> None:
         postgresql_where=sa.text("is_active = true"),
     )
 
-    # Command permissions table
     op.create_table(
         "command_permissions",
         sa.Column(
@@ -178,7 +165,6 @@ def upgrade() -> None:
         postgresql_where=sa.text("is_active = true"),
     )
 
-    # Reaction roles table
     op.create_table(
         "reaction_roles",
         sa.Column(
@@ -231,7 +217,6 @@ def upgrade() -> None:
         postgresql_where=sa.text("is_active = true"),
     )
 
-    # Phrase reactions table
     op.create_table(
         "phrase_reactions",
         sa.Column(
@@ -285,7 +270,6 @@ def upgrade() -> None:
         postgresql_where=sa.text("is_active = true"),
     )
 
-    # Message metadata table
     op.create_table(
         "message_metadata",
         sa.Column(
@@ -334,7 +318,6 @@ def upgrade() -> None:
         unique=False,
     )
 
-    # User preferences table
     op.create_table(
         "user_preferences",
         sa.Column(
@@ -376,7 +359,6 @@ def upgrade() -> None:
         postgresql_where=sa.text("message_tracking_opt_out = true"),
     )
 
-    # Media files table
     op.create_table(
         "media_files",
         sa.Column(
@@ -427,7 +409,6 @@ def upgrade() -> None:
     )
     op.create_index("idx_media_files_storage", "media_files", ["storage_path"], unique=False)
 
-    # Notifiarr failures table
     op.create_table(
         "notifiarr_failures",
         sa.Column(
@@ -479,7 +460,6 @@ def upgrade() -> None:
         postgresql_where=sa.text("alert_sent = false"),
     )
 
-    # Bot config table
     op.create_table(
         "bot_config",
         sa.Column("key", sa.String(length=100), nullable=False),
@@ -501,7 +481,6 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("key"),
     )
 
-    # Audit log table
     op.create_table(
         "audit_log",
         sa.Column(
@@ -540,7 +519,6 @@ def upgrade() -> None:
     )
     op.create_index("idx_audit_log_retention", "audit_log", ["occurred_at"], unique=False)
 
-    # Create function for updating updated_at timestamp
     op.execute("""
         CREATE OR REPLACE FUNCTION update_updated_at_column()
         RETURNS TRIGGER AS $$
@@ -551,7 +529,6 @@ def upgrade() -> None:
         $$ LANGUAGE plpgsql;
     """)
 
-    # Create triggers
     for table in [
         "servers",
         "user_permissions",
@@ -569,7 +546,6 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # Drop triggers
     for table in [
         "servers",
         "user_permissions",
@@ -581,10 +557,8 @@ def downgrade() -> None:
     ]:
         op.execute(f"DROP TRIGGER IF EXISTS update_{table}_updated_at ON {table}")
 
-    # Drop function
     op.execute("DROP FUNCTION IF EXISTS update_updated_at_column()")
 
-    # Drop tables in reverse order
     op.drop_table("audit_log")
     op.drop_table("bot_config")
     op.drop_table("notifiarr_failures")
@@ -597,5 +571,4 @@ def downgrade() -> None:
     op.drop_table("user_permissions")
     op.drop_table("servers")
 
-    # Drop UUID extension
     op.execute('DROP EXTENSION IF EXISTS "uuid-ossp"')

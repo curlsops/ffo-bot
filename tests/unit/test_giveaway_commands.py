@@ -1,5 +1,3 @@
-"""Tests for giveaway commands."""
-
 import uuid
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock

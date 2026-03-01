@@ -1,5 +1,3 @@
-"""Tests for phrase matcher."""
-
 import asyncio
 import re
 from contextlib import asynccontextmanager

@@ -9,9 +9,11 @@ from discord.ext import commands
 
 from bot.auth.permissions import PermissionChecker
 from bot.cache.memory import InMemoryCache
+from bot.commands.giveaway import GiveawayView
 from bot.processors.media_downloader import MediaDownloader
 from bot.processors.phrase_matcher import PhraseMatcher
 from bot.processors.voice_transcriber import VoiceTranscriber
+from bot.utils.health import HealthCheckServer
 from bot.utils.metrics import BotMetrics
 from bot.utils.notifier import AdminNotifier
 from bot.utils.rate_limiter import RateLimiter
@@ -101,16 +103,12 @@ class FFOBot(commands.Bot):
                 logger.error(f"Failed to load extension {extension}: {e}", exc_info=True)
 
     async def _start_health_server(self):
-        from bot.utils.health import HealthCheckServer
-
         health_server = HealthCheckServer(self, port=self.settings.health_check_port)
         await health_server.start()
         self._health_server = health_server.runner
 
     async def _register_persistent_views(self):
         if self.settings.feature_giveaways:
-            from bot.commands.giveaway import GiveawayView
-
             async with self.db_pool.acquire() as conn:
                 active = await conn.fetch(
                     "SELECT id, message_id FROM giveaways WHERE is_active = true AND message_id IS NOT NULL"

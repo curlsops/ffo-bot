@@ -1,5 +1,3 @@
-"""Media file download and storage."""
-
 import hashlib
 import logging
 from dataclasses import dataclass

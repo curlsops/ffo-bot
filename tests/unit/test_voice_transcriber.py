@@ -1,5 +1,3 @@
-"""Tests for voice transcriber (OpenAI Whisper API)."""
-
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest

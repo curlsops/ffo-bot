@@ -1,5 +1,3 @@
-"""Reaction role management commands."""
-
 import logging
 import re
 from typing import Optional
@@ -17,7 +15,6 @@ MESSAGE_LINK_RE = re.compile(r"discord\.com/channels/(\d+)/(\d+)/(\d+)")
 
 
 def _parse_message_ref(s: str, guild_id: int, channel_id: int) -> Optional[tuple[int, int]]:
-    """Parse message link or raw ID. Returns (channel_id, message_id) or None."""
     s = s.strip()
     m = MESSAGE_LINK_RE.search(s)
     if m:

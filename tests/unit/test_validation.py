@@ -1,5 +1,3 @@
-"""Tests for input validation."""
-
 import pytest
 
 from bot.utils.validation import InputValidator, ValidationError

@@ -1,5 +1,3 @@
-"""Phrase matching with ReDoS protection."""
-
 import asyncio
 import logging
 import re

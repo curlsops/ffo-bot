@@ -1,5 +1,3 @@
-"""Message event handler."""
-
 import logging
 
 import discord
@@ -112,7 +110,6 @@ class MessageHandler(commands.Cog):
             logger.error(f"Failed to log phrase match: {e}")
 
     async def _transcribe_voice_messages(self, message: discord.Message):
-        """Transcribe voice message attachments and reply with the text."""
         vt = getattr(self.bot, "voice_transcriber", None)
         if not vt:
             return

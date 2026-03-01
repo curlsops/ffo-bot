@@ -1,5 +1,3 @@
-"""Tests for giveaway manager."""
-
 import uuid
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -33,7 +31,6 @@ def _db_ctx(conn):
 
 
 class ImmutableRecord:
-    """Simulates asyncpg.Record - supports item access but not assignment."""
     def __init__(self, data: dict):
         self._data = dict(data)
 

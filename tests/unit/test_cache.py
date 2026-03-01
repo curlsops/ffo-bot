@@ -1,5 +1,3 @@
-"""Tests for in-memory cache."""
-
 from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 

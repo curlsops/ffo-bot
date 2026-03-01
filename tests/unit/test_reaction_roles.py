@@ -1,5 +1,3 @@
-"""Tests for reaction role commands."""
-
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock
 

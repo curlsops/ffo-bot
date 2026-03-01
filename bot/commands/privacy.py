@@ -1,5 +1,3 @@
-"""Privacy commands."""
-
 import logging
 
 import discord

@@ -1,5 +1,3 @@
-"""Voice message transcription using OpenAI Whisper API."""
-
 import logging
 from typing import Optional
 
@@ -7,13 +5,10 @@ import aiohttp
 
 logger = logging.getLogger(__name__)
 
-# Discord voice messages are OGG Opus; Whisper API supports various formats
 SUPPORTED_CONTENT_TYPES = {"audio/ogg", "audio/opus", "audio/webm", "audio/mpeg", "audio/wav"}
 
 
 class VoiceTranscriber:
-    """Transcribe voice message attachments using OpenAI Whisper API."""
-
     def __init__(self, api_key: Optional[str] = None):
         self.api_key = api_key
         self._enabled = bool(api_key)
@@ -23,7 +18,6 @@ class VoiceTranscriber:
         return self._enabled
 
     def is_voice_attachment(self, filename: str, content_type: Optional[str]) -> bool:
-        """Check if attachment appears to be a voice message."""
         fn_lower = filename.lower()
         if fn_lower.endswith((".ogg", ".opus", ".webm", ".mp3", ".wav", ".m4a")):
             return True
@@ -32,7 +26,6 @@ class VoiceTranscriber:
         return False
 
     async def transcribe(self, url: str, filename: str) -> Optional[str]:
-        """Download audio from URL and transcribe via OpenAI API. Returns text or None on failure."""
         if not self._enabled:
             return None
 

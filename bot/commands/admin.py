@@ -1,5 +1,3 @@
-"""Admin commands."""
-
 import importlib.metadata
 import os
 

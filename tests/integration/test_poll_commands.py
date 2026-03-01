@@ -1,5 +1,3 @@
-"""Integration tests for poll commands."""
-
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest

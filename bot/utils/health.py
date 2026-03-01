@@ -1,8 +1,8 @@
-"""Health check HTTP server."""
-
 import logging
 
 from aiohttp import web
+
+from bot.utils.metrics import generate_metrics_response
 
 logger = logging.getLogger(__name__)
 
@@ -33,8 +33,6 @@ class HealthCheckServer:
         return web.Response(status=200, text="Ready")
 
     async def metrics(self, request):
-        from bot.utils.metrics import generate_metrics_response
-
         if self.bot.cache and self.bot.metrics:
             self.bot.metrics.set_cache_size(self.bot.cache.size())
         return web.Response(

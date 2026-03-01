@@ -1,5 +1,3 @@
-"""Tests for rate limiter."""
-
 from datetime import UTC, datetime, timedelta
 from unittest.mock import patch
 

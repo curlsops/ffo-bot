@@ -1,5 +1,3 @@
-"""Tests for health check server."""
-
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 

@@ -1,1 +1,0 @@
-"""Database migrations versions directory."""

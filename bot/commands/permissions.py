@@ -1,5 +1,3 @@
-"""Permission management commands."""
-
 import logging
 
 import discord

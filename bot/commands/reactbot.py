@@ -1,5 +1,3 @@
-"""Reactbot configuration commands."""
-
 import logging
 from typing import List
 
@@ -33,7 +31,6 @@ class ReactBotCommands(commands.Cog):
     async def _validate_emoji_accessible(
         self, interaction: discord.Interaction, emoji_str: str
     ) -> tuple[bool, str]:
-        """Check if the bot can use the given emoji."""
         if emoji_str.startswith("<") and emoji_str.endswith(">"):
             parts = emoji_str.strip("<>").split(":")
             if len(parts) >= 3:
@@ -139,7 +136,6 @@ class ReactBotCommands(commands.Cog):
     async def phrase_autocomplete(
         self, interaction: discord.Interaction, current: str
     ) -> List[app_commands.Choice[str]]:
-        """Autocomplete for phrase patterns."""
         try:
             async with self.bot.db_pool.acquire() as conn:
                 rows = await conn.fetch(

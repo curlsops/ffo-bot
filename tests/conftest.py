@@ -1,14 +1,36 @@
-"""Test suite configuration."""
-
+import os
+import subprocess
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 
+@pytest.fixture(scope="session")
+def postgres_container():
+    from testcontainers.postgres import PostgresContainer
+
+    with PostgresContainer("postgres:18", driver=None) as postgres:
+        yield postgres
+
+
+@pytest.fixture(scope="session")
+def database_url(postgres_container):
+    url = postgres_container.get_connection_url()
+    env = os.environ.copy()
+    env["DATABASE_URL"] = url
+    subprocess.run(
+        ["alembic", "upgrade", "head"],
+        env=env,
+        cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+        check=True,
+        capture_output=True,
+    )
+    return url
+
+
 @pytest.fixture
 def mock_db_pool():
-    """Mock database pool for testing."""
     conn = MagicMock()
     conn.fetchval = AsyncMock()
     conn.fetch = AsyncMock(return_value=[])
@@ -26,7 +48,6 @@ def mock_db_pool():
 
 @pytest.fixture
 def mock_cache():
-    """Mock cache for testing."""
     from bot.cache.memory import InMemoryCache
 
     return InMemoryCache(max_size=100, default_ttl=60)
@@ -34,7 +55,6 @@ def mock_cache():
 
 @pytest.fixture
 def mock_bot():
-    """Mock Discord bot for testing."""
     bot = MagicMock()
     bot.is_closed.return_value = False
     bot.is_ready.return_value = True
@@ -47,7 +67,6 @@ def mock_bot():
 
 @pytest.fixture
 def mock_discord_message():
-    """Mock Discord message for testing."""
     message = MagicMock()
     message.id = 123456789
     message.content = "Test message content"
@@ -65,7 +84,6 @@ def mock_discord_message():
 
 @pytest.fixture
 def mock_discord_guild():
-    """Mock Discord guild for testing."""
     guild = MagicMock()
     guild.id = 111222333
     guild.name = "Test Server"

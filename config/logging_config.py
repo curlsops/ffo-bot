@@ -1,5 +1,3 @@
-"""Logging configuration."""
-
 import logging
 import sys
 

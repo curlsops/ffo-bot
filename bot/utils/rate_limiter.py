@@ -1,5 +1,3 @@
-"""Rate limiting with token bucket algorithm."""
-
 import asyncio
 import logging
 from collections import defaultdict
@@ -10,21 +8,17 @@ logger = logging.getLogger(__name__)
 
 
 class RateLimiter:
-    """Token bucket rate limiter per-user and per-server."""
-
     def __init__(
         self,
         user_capacity: int = 10,
-        user_refill_rate: float = 10 / 60,  # 10 per minute
+        user_refill_rate: float = 10 / 60,
         server_capacity: int = 100,
-        server_refill_rate: float = 100 / 60,  # 100 per minute
+        server_refill_rate: float = 100 / 60,
     ):
-        # user_id -> (tokens, last_refill)
         self._user_buckets: Dict[int, Tuple[float, datetime]] = defaultdict(
             lambda: (user_capacity, datetime.now(UTC))
         )
 
-        # server_id -> (tokens, last_refill)
         self._server_buckets: Dict[int, Tuple[float, datetime]] = defaultdict(
             lambda: (server_capacity, datetime.now(UTC))
         )

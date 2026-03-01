@@ -184,7 +184,7 @@ class TestFFOBotPersistentViews:
         conn.fetch = AsyncMock(return_value=[{"id": gid, "message_id": mid}])
         conn.fetchval = AsyncMock(return_value=0)
         bot.db_pool = make_db_ctx(conn)
-        with patch("bot.commands.giveaway.GiveawayView"):
+        with patch("bot.client.GiveawayView"):
             with patch.object(bot, "add_view") as mock_add:
                 await bot._register_persistent_views()
                 mock_add.assert_called_once()
@@ -220,7 +220,7 @@ class TestFFOBotPersistentViews:
         conn.fetch = AsyncMock(return_value=rows)
         conn.fetchval = AsyncMock(return_value=0)
         bot.db_pool = make_db_ctx(conn)
-        with patch("bot.commands.giveaway.GiveawayView"):
+        with patch("bot.client.GiveawayView"):
             with patch.object(bot, "add_view") as mock_add:
                 await bot._register_persistent_views()
                 assert mock_add.call_count == 3
@@ -418,7 +418,7 @@ class TestFFOBotSetupHook:
 class TestFFOBotHealthServer:
     @pytest.mark.asyncio
     async def test_start_health_server(self, bot, mock_settings):
-        with patch("bot.utils.health.HealthCheckServer") as mock_cls:
+        with patch("bot.client.HealthCheckServer") as mock_cls:
             mock_server = MagicMock(start=AsyncMock(), runner=MagicMock())
             mock_cls.return_value = mock_server
 

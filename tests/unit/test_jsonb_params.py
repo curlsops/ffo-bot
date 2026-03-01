@@ -1,5 +1,3 @@
-"""JSONB codec tests - native types for JSONB columns, strings for explicit ::jsonb casts."""
-
 import json
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch

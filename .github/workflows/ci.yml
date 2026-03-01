@@ -10,21 +10,6 @@ jobs:
   test:
     runs-on: ubuntu-latest
 
-    services:
-      postgres:
-        image: postgres:18
-        env:
-          POSTGRES_USER: test
-          POSTGRES_PASSWORD: test
-          POSTGRES_DB: ffobot_test
-        ports:
-          - 5432:5432
-        options: >-
-          --health-cmd pg_isready
-          --health-interval 10s
-          --health-timeout 5s
-          --health-retries 5
-
     steps:
       - name: Generate GitHub App token
         id: app-token
@@ -77,8 +62,6 @@ jobs:
           isort --check-only bot/ config/ database/ main.py
 
       - name: Run tests with coverage
-        env:
-          DATABASE_URL: postgresql://test:test@localhost:5432/ffobot_test
         run: |
           pytest tests/ -v --cov=bot --cov=config --cov=database --cov-report=xml --cov-report=term
 

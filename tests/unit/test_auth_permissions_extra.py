@@ -1,5 +1,3 @@
-"""Tests for permission checking."""
-
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock
 

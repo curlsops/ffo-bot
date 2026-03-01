@@ -1,5 +1,3 @@
-"""In-memory cache implementation."""
-
 import asyncio
 import logging
 from dataclasses import dataclass
@@ -11,8 +9,6 @@ logger = logging.getLogger(__name__)
 
 @dataclass
 class CacheEntry:
-    """Cache entry with expiration."""
-
     value: Any
     expires_at: datetime
 
@@ -21,8 +17,6 @@ class CacheEntry:
 
 
 class InMemoryCache:
-    """Simple in-memory cache with TTL support."""
-
     def __init__(self, max_size: int = 10000, default_ttl: int = 300):
         self._store: Dict[str, CacheEntry] = {}
         self.max_size = max_size

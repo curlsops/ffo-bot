@@ -1,11 +1,3 @@
-"""Giveaways schema
-
-Revision ID: 002_giveaways
-Revises: 001_initial
-Create Date: 2026-02-28 00:00:00.000000
-
-"""
-
 from typing import Sequence, Union
 
 import sqlalchemy as sa
