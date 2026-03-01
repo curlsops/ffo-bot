@@ -1,5 +1,14 @@
 # Changelog
 
+## [1.3.6](https://github.com/curlsops/ffo-bot/compare/v1.3.5...v1.3.6) (2026-03-01)
+
+
+### Bug Fixes
+
+* convert asyncpg Record to dict before mutating in giveaway manager ([8c4ecfb](https://github.com/curlsops/ffo-bot/commit/8c4ecfb370f0a09ed8585e15e9ad521a2058fb80))
+* convert asyncpg Record to dict before mutating in giveaway manager ([054d14b](https://github.com/curlsops/ffo-bot/commit/054d14b4e800ecab65868d8c33729a2cffa3fa1b))
+* deslop giveaway manager tests ([083c0fe](https://github.com/curlsops/ffo-bot/commit/083c0fe9df234827e745b358a29d7c38c66c5748))
+
 ## [1.3.5](https://github.com/curlsops/ffo-bot/compare/v1.3.4...v1.3.5) (2026-03-01)
 
 
