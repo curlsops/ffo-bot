@@ -7,6 +7,27 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 
+class ImmutableRecord:
+    """Simulates asyncpg.Record - supports item access but not assignment."""
+
+    def __init__(self, data: dict):
+        self._data = dict(data)
+
+    def __getitem__(self, key):
+        return self._data[key]
+
+    def get(self, key, default=None):
+        return self._data.get(key, default)
+
+    def keys(self):
+        return self._data.keys()
+
+    def __setitem__(self, key, value):
+        raise TypeError(
+            "'asyncpg.protocol.record.Record' object does not support item assignment"
+        )
+
+
 @pytest.fixture
 def mock_bot():
     bot = MagicMock()
@@ -302,6 +323,40 @@ class TestEndGiveaway:
         manager.bot.db_pool = make_db_ctx(conn)
         await manager._end_giveaway(giveaway)
         assert "End giveaway error" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_end_giveaway_handles_asyncpg_record_immutability(self, manager):
+        """asyncpg.Record is immutable; _end_giveaway must not mutate it."""
+        giveaway = ImmutableRecord({
+            "id": uuid.uuid4(),
+            "server_id": 999,
+            "channel_id": 123,
+            "message_id": 456,
+            "host_id": 789,
+            "donor_id": None,
+            "prize": "Prize",
+            "winners_count": 1,
+            "ended_at": datetime.now(timezone.utc),
+        })
+        conn = MagicMock()
+        conn.execute = AsyncMock()
+        conn.executemany = AsyncMock()
+        conn.fetch = AsyncMock(return_value=[{"user_id": 100, "entries": 1}])
+        manager.bot.db_pool = make_db_ctx(conn)
+        channel = MagicMock()
+        msg = MagicMock()
+        msg.edit = AsyncMock()
+        channel.fetch_message = AsyncMock(return_value=msg)
+        channel.send = AsyncMock()
+        manager.bot.get_channel.return_value = channel
+        manager.bot.notifier = MagicMock()
+        manager.bot.notifier.notify_giveaway_ended = AsyncMock()
+
+        await manager._end_giveaway(giveaway)
+
+        msg.edit.assert_called_once()
+        assert "Congratulations" in str(channel.send.call_args)
+        manager.bot.notifier.notify_giveaway_ended.assert_awaited_once()
 
 
 class TestSetup:
