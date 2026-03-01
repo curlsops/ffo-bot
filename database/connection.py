@@ -10,9 +10,7 @@ logger = logging.getLogger(__name__)
 
 
 async def _init_connection(conn: asyncpg.Connection) -> None:
-    await conn.set_type_codec(
-        "jsonb", encoder=json.dumps, decoder=json.loads, schema="pg_catalog"
-    )
+    await conn.set_type_codec("jsonb", encoder=json.dumps, decoder=json.loads, schema="pg_catalog")
 
 
 class DatabasePool:
