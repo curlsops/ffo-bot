@@ -66,9 +66,7 @@ class GiveawayManager(commands.Cog):
                 msg = await channel.fetch_message(giveaway["message_id"])
                 g = dict(giveaway)
                 g["ended_at"] = now
-                await msg.edit(
-                    embed=self._build_ended_embed(g, winners, len(entries)), view=None
-                )
+                await msg.edit(embed=self._build_ended_embed(g, winners, len(entries)), view=None)
             except discord.NotFound:
                 pass
 
