@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.4](https://github.com/curlsops/ffo-bot/compare/v1.5.3...v1.5.4) (2026-03-01)
+
+
+### Bug Fixes
+
+* remove button param from giveaway callbacks (manual assignment receives only interaction) ([7de8649](https://github.com/curlsops/ffo-bot/commit/7de8649b2f91fc25d49757fee7ce558b22591ffa))
+
 ## [1.5.3](https://github.com/curlsops/ffo-bot/compare/v1.5.2...v1.5.3) (2026-03-01)
 
 
