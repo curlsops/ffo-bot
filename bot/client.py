@@ -61,7 +61,7 @@ class FFOBot(commands.Bot):
             )
             await self.media_downloader.initialize()
 
-        self.permission_checker = PermissionChecker(self.db_pool, self.cache)
+        self.permission_checker = PermissionChecker(self.db_pool, self.cache, self)
         self.rate_limiter = RateLimiter(
             user_capacity=self.settings.rate_limit_user_capacity,
             server_capacity=self.settings.rate_limit_server_capacity,
@@ -72,8 +72,19 @@ class FFOBot(commands.Bot):
         await self._start_health_server()
         await self._load_extensions()
         await self._register_persistent_views()
-        await self.tree.sync()
+        await self._sync_commands()
         logger.info("Ready")
+
+    async def _sync_commands(self):
+        """Sync commands globally and to specific guilds for instant updates."""
+        guild_ids = [566729141466955789, 1454280374351036521]
+        for guild_id in guild_ids:
+            guild = discord.Object(id=guild_id)
+            self.tree.copy_global_to(guild=guild)
+            await self.tree.sync(guild=guild)
+            logger.info(f"Synced commands to guild {guild_id}")
+        await self.tree.sync()
+        logger.info("Synced global commands")
 
     async def _load_extensions(self):
         extensions = [

@@ -2,9 +2,12 @@
 
 import logging
 from dataclasses import dataclass
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from config.constants import Role
+
+if TYPE_CHECKING:
+    from discord.ext.commands import Bot
 
 logger = logging.getLogger(__name__)
 
@@ -21,11 +24,26 @@ class PermissionContext:
 class PermissionChecker:
     """Authorization enforcement with caching."""
 
-    def __init__(self, db_pool, cache):
+    def __init__(self, db_pool, cache, bot: "Bot" = None):
         self.db_pool = db_pool
         self.cache = cache
+        self.bot = bot
+
+    def _is_discord_admin(self, server_id: int, user_id: int) -> bool:
+        if not self.bot:
+            return False
+        guild = self.bot.get_guild(server_id)
+        if not guild:
+            return False
+        member = guild.get_member(user_id)
+        if not member:
+            return False
+        return member.guild_permissions.administrator
 
     async def check_role(self, ctx: PermissionContext, required_role: Role) -> bool:
+        if self._is_discord_admin(ctx.server_id, ctx.user_id):
+            return True
+
         user_role = await self.get_user_role(ctx.server_id, ctx.user_id)
         if not user_role:
             return False
