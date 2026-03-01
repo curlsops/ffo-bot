@@ -1,5 +1,17 @@
 # Changelog
 
+## [1.3.0](https://github.com/curlsops/ffo-bot/compare/v1.2.0...v1.3.0) (2026-03-01)
+
+
+### Features
+
+* **auth:** treat Discord server admins as super admin by default ([#50](https://github.com/curlsops/ffo-bot/issues/50)) ([3c65d7d](https://github.com/curlsops/ffo-bot/commit/3c65d7d5b29a2bf0e06e587939efb2e2a1160d7f))
+
+
+### Bug Fixes
+
+* **docker:** set execute permission on entrypoint.sh ([#48](https://github.com/curlsops/ffo-bot/issues/48)) ([82cf620](https://github.com/curlsops/ffo-bot/commit/82cf62002e6bcbbd49210fea501ab72fcd76908d))
+
 ## [1.2.0](https://github.com/curlsops/ffo-bot/compare/v1.1.0...v1.2.0) (2026-03-01)
 
 
