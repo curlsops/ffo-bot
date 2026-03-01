@@ -6,11 +6,11 @@
 </p>
 
 <p align="center">
-  <a href="https://github.com/MrCurlsTTV/ffo-bot/actions/workflows/ci.yml"><img src="https://github.com/MrCurlsTTV/ffo-bot/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
-  <a href="https://codecov.io/github/MrCurlsTTV/ffo-bot"><img src="https://codecov.io/github/MrCurlsTTV/ffo-bot/graph/badge.svg?token=X4PwF9Boi9" alt="codecov"></a>
+  <a href="https://github.com/curlsops/ffo-bot/actions/workflows/ci.yml"><img src="https://github.com/curlsops/ffo-bot/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
+  <a href="https://app.codecov.io/github/curlsops/ffo-bot"><img src="https://codecov.io/github/curlsops/ffo-bot/graph/badge.svg" alt="codecov"></a>
   <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.12+-blue.svg" alt="Python 3.12+"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-CC%20BY--NC--SA%204.0-green.svg" alt="License"></a>
-  <a href="https://github.com/MrCurlsTTV/ffo-bot/pkgs/container/ffo-bot"><img src="https://img.shields.io/badge/ghcr.io-ffo--bot-blue?logo=docker" alt="Docker"></a>
+  <a href="https://github.com/curlsops/ffo-bot/pkgs/container/ffo-bot"><img src="https://img.shields.io/badge/ghcr.io-ffo--bot-blue?logo=docker" alt="Docker"></a>
 </p>
 
 ---
@@ -33,7 +33,7 @@
 ## Quick Start
 
 ```bash
-docker pull ghcr.io/mrcurlsttv/ffo-bot:latest
+docker pull ghcr.io/curlsops/ffo-bot:latest
 ```
 
 <details>
@@ -41,7 +41,7 @@ docker pull ghcr.io/mrcurlsttv/ffo-bot:latest
 
 ```bash
 # Clone and configure
-git clone https://github.com/MrCurlsTTV/ffo-bot.git
+git clone https://github.com/curlsops/ffo-bot.git
 cd ffo-bot/examples/docker-compose
 cp .env.example .env
 # Edit .env with your credentials
@@ -79,7 +79,7 @@ See [examples/kubernetes/](examples/kubernetes/) for full documentation includin
 
 ```bash
 # Clone repository
-git clone https://github.com/MrCurlsTTV/ffo-bot.git
+git clone https://github.com/curlsops/ffo-bot.git
 cd ffo-bot
 
 # Create virtual environment
@@ -191,7 +191,7 @@ The bot exposes endpoints on port 8080:
 <details>
 <summary><b>Testing</b></summary>
 
-Run the test suite (257 tests, 100% coverage):
+Run the test suite (377 tests, 100% coverage):
 
 ```bash
 # All tests with coverage
@@ -306,5 +306,5 @@ See [LICENSE](LICENSE) for details.
 ---
 
 <p align="center">
-  <sub>Built with ❤️ by <a href="https://github.com/MrCurlsTTV">MrCurlsTTV</a></sub>
+  <sub>Built with ❤️ by <a href="https://github.com/curlsops">curlsops</a></sub>
 </p>
