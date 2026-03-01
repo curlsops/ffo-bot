@@ -74,14 +74,27 @@ docker run --rm ffobot:test python -c "
 import bot
 import config
 import database
-from bot.client import FFOBot
-from config.settings import Settings
-from bot.commands.giveaway import GiveawayCommands, GiveawayView
-from bot.tasks.giveaway_manager import GiveawayManager
-from bot.commands.reactbot import ReactBotCommands
-from bot.processors.phrase_matcher import PhraseMatcher
 from bot.auth.permissions import PermissionChecker
+from bot.cache.memory import InMemoryCache
+from bot.client import FFOBot
+from bot.commands.admin import AdminCommands
+from bot.commands.giveaway import GiveawayCommands, GiveawayView
+from bot.commands.permissions import PermissionCommands
+from bot.commands.privacy import PrivacyCommands
+from bot.commands.reactbot import ReactBotCommands
+from bot.handlers.messages import MessageHandler
+from bot.handlers.reactions import ReactionHandler
+from bot.processors.media_downloader import MediaDownloader
+from bot.processors.phrase_matcher import PhraseMatcher
+from bot.tasks.giveaway_manager import GiveawayManager
+from bot.utils.health import HealthCheckServer
+from bot.utils.metrics import BotMetrics
 from bot.utils.notifier import AdminNotifier
+from bot.utils.rate_limiter import RateLimiter
+from bot.utils.regex_validator import RegexValidator
+from bot.utils.validation import InputValidator
+from config.settings import Settings
+from database.connection import DatabasePool
 print('All modules imported successfully')
 "
 echo "✓ Container smoke test passed"
