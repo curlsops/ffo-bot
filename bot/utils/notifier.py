@@ -18,14 +18,20 @@ class AdminNotifier:
         if not row or not row["config"]:
             return None
         if channel_id := row["config"].get("notify_channel_id"):
-            return self.bot.get_channel(int(channel_id))
+            ch = self.bot.get_channel(int(channel_id))
+            if ch is None:
+                try:
+                    ch = await self.bot.fetch_channel(int(channel_id))
+                except Exception:
+                    logger.warning("Could not fetch notify channel %s", channel_id)
+            return ch
 
     async def set_notify_channel(self, server_id: int, channel_id: Optional[int]) -> bool:
         try:
             async with self.bot.db_pool.acquire() as conn:
                 if channel_id:
                     await conn.execute(
-                        "UPDATE servers SET config = config || $1::jsonb, updated_at = NOW() WHERE server_id = $2",
+                        "UPDATE servers SET config = COALESCE(config, '{}'::jsonb) || $1::jsonb, updated_at = NOW() WHERE server_id = $2",
                         json.dumps({"notify_channel_id": channel_id}),
                         server_id,
                     )

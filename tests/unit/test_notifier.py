@@ -57,8 +57,20 @@ class TestGetNotifyChannel:
     async def test_cases(self, notifier, bot, config, channel_exists, expected):
         bot.db_pool.acquire.return_value = _db_ctx(_conn_with_config(config))
         bot.get_channel.return_value = MagicMock(spec=discord.TextChannel) if channel_exists and config else None
+        if config and not channel_exists and config.get("notify_channel_id"):
+            bot.fetch_channel = AsyncMock(side_effect=Exception())
         result = await notifier.get_notify_channel(999)
         assert (result is not None) == (expected is True)
+
+    @pytest.mark.asyncio
+    async def test_fetch_channel_fallback_when_get_channel_misses(self, notifier, bot):
+        bot.db_pool.acquire.return_value = _db_ctx(_conn_with_config({"notify_channel_id": 123}))
+        bot.get_channel.return_value = None
+        fetched = MagicMock(spec=discord.TextChannel)
+        bot.fetch_channel = AsyncMock(return_value=fetched)
+        result = await notifier.get_notify_channel(999)
+        assert result is fetched
+        bot.fetch_channel.assert_awaited_once_with(123)
 
     @pytest.mark.asyncio
     async def test_config_must_be_dict(self, notifier, bot):
