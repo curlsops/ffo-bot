@@ -84,6 +84,8 @@ class FFOBot(commands.Bot):
             "bot.commands.reactbot",
             "bot.commands.privacy",
             "bot.commands.giveaway",
+            "bot.commands.polls",
+            "bot.commands.reaction_roles",
             "bot.tasks.giveaway_manager",
             "bot.tasks.status_rotator",
         ]
