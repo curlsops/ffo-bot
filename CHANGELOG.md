@@ -1,5 +1,12 @@
 # Changelog
 
+## [1.5.3](https://github.com/curlsops/ffo-bot/compare/v1.5.2...v1.5.3) (2026-03-01)
+
+
+### Bug Fixes
+
+* giveaway embed footer, button callbacks, and participant list ([ce8eeec](https://github.com/curlsops/ffo-bot/commit/ce8eeec39e24dded821508e4cab834845d787763))
+
 ## [1.5.2](https://github.com/curlsops/ffo-bot/compare/v1.5.1...v1.5.2) (2026-03-01)
 
 
