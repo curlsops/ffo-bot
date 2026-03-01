@@ -19,7 +19,7 @@ class GiveawayManager(commands.Cog):
     async def cog_unload(self):
         self.check_giveaways.cancel()
 
-    @tasks.loop(seconds=30)
+    @tasks.loop(seconds=15)
     async def check_giveaways(self):
         try:
             async with self.bot.db_pool.acquire() as conn:
@@ -60,7 +60,11 @@ class GiveawayManager(commands.Cog):
 
             channel = self.bot.get_channel(giveaway["channel_id"])
             if not channel:
-                return
+                try:
+                    channel = await self.bot.fetch_channel(giveaway["channel_id"])
+                except (discord.NotFound, discord.Forbidden):
+                    logger.warning("Could not fetch channel %s for giveaway %s", giveaway["channel_id"], giveaway["id"])
+                    return
 
             try:
                 msg = await channel.fetch_message(giveaway["message_id"])
@@ -79,9 +83,12 @@ class GiveawayManager(commands.Cog):
                 await channel.send(f"No entries for **{giveaway['prize']}**. No winners.")
 
             if getattr(self.bot, "notifier", None):
-                await self.bot.notifier.notify_giveaway_ended(
-                    giveaway["server_id"], giveaway["prize"], winners, len(entries)
-                )
+                try:
+                    await self.bot.notifier.notify_giveaway_ended(
+                        giveaway["server_id"], giveaway["prize"], winners, len(entries)
+                    )
+                except Exception as ne:
+                    logger.warning("Notify giveaway ended failed: %s", ne)
         except Exception as e:
             logger.error(f"End giveaway error {giveaway['id']}: {e}", exc_info=True)
 
@@ -127,9 +134,11 @@ class GiveawayManager(commands.Cog):
             )
         else:
             embed.add_field(name="Winners", value="No valid entries", inline=False)
-        footer = f"{entry_count} entries"
+        entry_word = "entry" if entry_count == 1 else "entries"
+        winner_word = "winner" if len(winners) == 1 else "winners"
+        footer = f"{entry_count} {entry_word}"
         if winners:
-            footer = f"{len(winners)} winners • {footer}"
+            footer = f"{len(winners)} {winner_word} • {footer}"
         embed.set_footer(text=footer)
         return embed
 

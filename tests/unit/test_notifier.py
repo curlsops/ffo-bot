@@ -69,10 +69,11 @@ class TestGetNotifyChannel:
         bot.fetch_channel.assert_awaited_once_with(123)
 
     @pytest.mark.asyncio
-    async def test_config_must_be_dict(self, notifier, bot):
-        bot.db_pool.acquire.return_value = _db_ctx(_conn_with_config("{}"))
-        with pytest.raises(AttributeError, match="'str' object has no attribute 'get'"):
-            await notifier.get_notify_channel(999)
+    @pytest.mark.parametrize("config", [[], "{}", 1])
+    async def test_config_non_dict_returns_none(self, notifier, bot, config):
+        bot.db_pool.acquire.return_value = _db_ctx(_conn_with_config(config))
+        result = await notifier.get_notify_channel(999)
+        assert result is None
 
 
 class TestSetNotifyChannel:

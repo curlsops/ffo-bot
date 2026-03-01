@@ -17,7 +17,10 @@ class AdminNotifier:
             row = await conn.fetchrow("SELECT config FROM servers WHERE server_id = $1", server_id)
         if not row or not row["config"]:
             return None
-        if channel_id := row["config"].get("notify_channel_id"):
+        config = row["config"]
+        if not isinstance(config, dict):
+            return None
+        if channel_id := config.get("notify_channel_id"):
             ch = self.bot.get_channel(int(channel_id))
             if ch is None:
                 try:

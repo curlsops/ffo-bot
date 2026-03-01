@@ -25,7 +25,7 @@ def parse_duration(duration: str) -> Optional[int]:
 
 
 def _discord_timestamp(dt: datetime, fmt: str = "R") -> str:
-    """Format datetime as Discord timestamp (R=relative, F=long date/time, f=short date/time)."""
+    """Discord timestamp (R=relative, F=long, f=short)."""
     return f"<t:{int(dt.timestamp())}:{fmt}>"
 
 
@@ -33,7 +33,6 @@ def build_embed(giveaway, entry_count: int, ended: bool = False) -> discord.Embe
     ends_at = giveaway.get("ended_at") or giveaway["ends_at"]
     ts_rel = _discord_timestamp(ends_at, "R")
     ts_full = _discord_timestamp(ends_at, "F")
-    ts_short = _discord_timestamp(ends_at, "f")
 
     lines = [
         f"**{giveaway['prize']}**",
@@ -55,12 +54,16 @@ def build_embed(giveaway, entry_count: int, ended: bool = False) -> discord.Embe
         color=discord.Color.dark_grey() if ended else discord.Color.gold(),
         timestamp=ends_at,
     )
+    w = giveaway.get("winners_count") or 1
+    winner_word = "winner" if w == 1 else "winners"
+    entry_word = "entry" if entry_count == 1 else "entries"
     if ended:
-        footer = f"{entry_count} entries"
-        if giveaway.get("winners_count"):
-            footer = f"{giveaway['winners_count']} winners • {footer}"
+        footer = f"{entry_count} {entry_word}"
+        if w:
+            footer = f"{w} {winner_word} • {footer}"
     else:
-        footer = f"{giveaway['winners_count']} winners | Ends {ts_short}"
+        ends_str = ends_at.strftime("%b %d at %H:%M")
+        footer = f"{w} {winner_word} | Ends {ends_str}"
     embed.set_footer(text=footer)
     if giveaway.get("image_url"):
         embed.set_image(url=giveaway["image_url"])
@@ -169,7 +172,7 @@ class AlreadyJoinedView(discord.ui.View):
         self.bot = bot
 
     @discord.ui.button(label="Leave", style=discord.ButtonStyle.danger, row=0)
-    async def leave_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def leave_button(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         try:
             removed = await self._remove_entry(interaction)
@@ -234,7 +237,7 @@ class GiveawayView(discord.ui.View):
         entries_btn.callback = self.entries_button
         self.add_item(entries_btn)
 
-    async def join_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def join_button(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         try:
             giveaway = await self._get_giveaway(interaction.message.id)
@@ -272,7 +275,7 @@ class GiveawayView(discord.ui.View):
             logger.error(f"Join error: {e}", exc_info=True)
             await interaction.followup.send("Error joining giveaway.", ephemeral=True)
 
-    async def entries_button(self, interaction: discord.Interaction, button: discord.ui.Button):
+    async def entries_button(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         try:
             giveaway = await self._get_giveaway(interaction.message.id)
