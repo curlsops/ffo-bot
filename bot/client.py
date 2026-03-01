@@ -77,7 +77,6 @@ class FFOBot(commands.Bot):
         await self._start_health_server()
         await self._load_extensions()
         await self._register_persistent_views()
-        await self.tree.sync()
         logger.info("Ready")
 
     async def _load_extensions(self):
@@ -130,9 +129,6 @@ class FFOBot(commands.Bot):
 
         for guild in self.guilds:
             await self._register_server(guild)
-
-        # Overwrite guild-specific commands with global set (removes duplicate/stale guild commands)
-        for guild in self.guilds:
             self.tree.copy_global_to(guild=guild)
             await self.tree.sync(guild=guild)
         if self.guilds:
