@@ -81,6 +81,7 @@ from bot.tasks.giveaway_manager import GiveawayManager
 from bot.commands.reactbot import ReactBotCommands
 from bot.processors.phrase_matcher import PhraseMatcher
 from bot.auth.permissions import PermissionChecker
+from bot.utils.notifier import AdminNotifier
 print('All modules imported successfully')
 "
 echo "✓ Container smoke test passed"

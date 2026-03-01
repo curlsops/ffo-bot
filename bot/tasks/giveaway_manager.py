@@ -78,6 +78,11 @@ class GiveawayManager(commands.Cog):
                 )
             else:
                 await channel.send(f"No entries for **{giveaway['prize']}**. No winners.")
+
+            if getattr(self.bot, "notifier", None):
+                await self.bot.notifier.notify_giveaway_ended(
+                    giveaway["server_id"], giveaway["prize"], winners, len(entries)
+                )
         except Exception as e:
             logger.error(f"End giveaway error {giveaway['id']}: {e}", exc_info=True)
 

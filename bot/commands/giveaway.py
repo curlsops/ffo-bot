@@ -278,6 +278,15 @@ class GiveawayCommands(commands.Cog):
                 self.bot.metrics.commands_executed.labels(
                     command_name="gstart", server_id=str(interaction.guild_id), status="success"
                 ).inc()
+
+            if self.bot.notifier:
+                await self.bot.notifier.notify_giveaway_created(
+                    interaction.guild_id,
+                    prize,
+                    interaction.user.id,
+                    interaction.channel_id,
+                    ends_at,
+                )
         except Exception as e:
             logger.error(f"gstart error: {e}", exc_info=True)
             await interaction.followup.send("Error starting giveaway.", ephemeral=True)

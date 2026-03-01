@@ -11,6 +11,7 @@ from bot.cache.memory import InMemoryCache
 from bot.processors.media_downloader import MediaDownloader
 from bot.processors.phrase_matcher import PhraseMatcher
 from bot.utils.metrics import BotMetrics
+from bot.utils.notifier import AdminNotifier
 from bot.utils.rate_limiter import RateLimiter
 from config.settings import Settings
 from database.connection import DatabasePool
@@ -35,6 +36,7 @@ class FFOBot(commands.Bot):
         self.media_downloader: Optional[MediaDownloader] = None
         self.permission_checker: Optional[PermissionChecker] = None
         self.rate_limiter: Optional[RateLimiter] = None
+        self.notifier: Optional[AdminNotifier] = None
         self._shutdown_event = asyncio.Event()
         self._health_server: Optional[web.AppRunner] = None
 
@@ -63,6 +65,7 @@ class FFOBot(commands.Bot):
             user_capacity=self.settings.rate_limit_user_capacity,
             server_capacity=self.settings.rate_limit_server_capacity,
         )
+        self.notifier = AdminNotifier(self)
 
         await self._start_health_server()
         await self._load_extensions()
