@@ -1,3 +1,5 @@
+"""Tests for admin notifier."""
+
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
@@ -6,6 +8,8 @@ import pytest
 
 from bot.utils.notifier import AdminNotifier
 
+
+# --- Fixtures & Helpers ---
 
 @pytest.fixture
 def bot():
@@ -30,12 +34,16 @@ def _conn_with_config(config):
     return conn
 
 
-def _setup_channel(bot, config={"notify_channel_id": 123}):
+def _setup_channel(bot, config=None):
+    if config is None:
+        config = {"notify_channel_id": 123}
     bot.db_pool.acquire.return_value = _db_ctx(_conn_with_config(config))
     channel = AsyncMock(spec=discord.TextChannel)
     bot.get_channel.return_value = channel
     return channel
 
+
+# --- get_notify_channel ---
 
 class TestGetNotifyChannel:
     @pytest.mark.asyncio
@@ -59,12 +67,12 @@ class TestGetNotifyChannel:
             await notifier.get_notify_channel(999)
 
 
+# --- set_notify_channel ---
+
 class TestSetNotifyChannel:
     @pytest.mark.asyncio
     @pytest.mark.parametrize("channel_id,error,expected", [
-        (123, False, True),
-        (None, False, True),
-        (123, True, False),
+        (123, False, True), (None, False, True), (123, True, False),
     ])
     async def test_cases(self, notifier, bot, channel_id, error, expected):
         conn = AsyncMock()
@@ -73,6 +81,8 @@ class TestSetNotifyChannel:
         bot.db_pool.acquire.return_value = _db_ctx(conn)
         assert await notifier.set_notify_channel(999, channel_id) is expected
 
+
+# --- send ---
 
 class TestSend:
     @pytest.mark.asyncio
@@ -93,7 +103,9 @@ class TestSend:
         assert await notifier.send(999, discord.Embed()) is False
 
 
-class TestNotifyGiveaway:
+# --- Giveaway Notifications ---
+
+class TestGiveawayNotifications:
     @pytest.mark.asyncio
     async def test_created(self, notifier, bot):
         channel = _setup_channel(bot)
@@ -101,19 +113,19 @@ class TestNotifyGiveaway:
         assert channel.send.call_args[1]["embed"].title == "Giveaway Created"
 
     @pytest.mark.asyncio
-    async def test_ended_with_winners(self, notifier, bot):
+    @pytest.mark.parametrize("winners,expected_text", [
+        ([111], "<@111>"), ([], "No valid"),
+    ])
+    async def test_ended(self, notifier, bot, winners, expected_text):
         channel = _setup_channel(bot)
-        await notifier.notify_giveaway_ended(999, "Prize", [111], 10)
-        assert any("<@111>" in f.value for f in channel.send.call_args[1]["embed"].fields)
-
-    @pytest.mark.asyncio
-    async def test_ended_no_winners(self, notifier, bot):
-        channel = _setup_channel(bot)
-        await notifier.notify_giveaway_ended(999, "Prize", [], 0)
-        assert any("No valid" in f.value for f in channel.send.call_args[1]["embed"].fields)
+        await notifier.notify_giveaway_ended(999, "Prize", winners, 10)
+        fields = str([f.value for f in channel.send.call_args[1]["embed"].fields])
+        assert expected_text in fields
 
 
-class TestNotifyError:
+# --- Error Notifications ---
+
+class TestErrorNotifications:
     @pytest.mark.asyncio
     async def test_basic(self, notifier, bot):
         channel = _setup_channel(bot)
@@ -138,11 +150,15 @@ class TestNotifyError:
         assert len(tb.value) <= 1032
 
 
-class TestNotifyErrorAllServers:
+# --- Error All Servers ---
+
+class TestErrorAllServers:
     @pytest.mark.asyncio
     async def test_notifies_all(self, notifier, bot):
-        conn = AsyncMock(fetch=AsyncMock(return_value=[{"server_id": 1}, {"server_id": 2}]),
-                         fetchrow=AsyncMock(return_value={"config": {"notify_channel_id": 123}}))
+        conn = AsyncMock(
+            fetch=AsyncMock(return_value=[{"server_id": 1}, {"server_id": 2}]),
+            fetchrow=AsyncMock(return_value={"config": {"notify_channel_id": 123}})
+        )
         bot.db_pool.acquire.return_value = _db_ctx(conn)
         bot.get_channel.return_value = AsyncMock(spec=discord.TextChannel)
         await notifier.notify_error_all_servers(Exception("err"), "ctx")
@@ -152,3 +168,27 @@ class TestNotifyErrorAllServers:
     async def test_handles_db_error(self, notifier, bot):
         bot.db_pool.acquire.return_value = _db_ctx(AsyncMock(fetch=AsyncMock(side_effect=Exception())))
         await notifier.notify_error_all_servers(Exception("err"), "ctx")
+
+
+# --- Edge Cases ---
+
+class TestEdgeCases:
+    @pytest.mark.asyncio
+    async def test_get_notify_channel_non_integer_channel_id(self, notifier, bot):
+        bot.db_pool.acquire.return_value = _db_ctx(_conn_with_config({"notify_channel_id": "abc"}))
+        with pytest.raises((ValueError, TypeError)):
+            await notifier.get_notify_channel(999)
+
+    @pytest.mark.asyncio
+    async def test_get_notify_channel_channel_id_zero(self, notifier, bot):
+        bot.db_pool.acquire.return_value = _db_ctx(_conn_with_config({"notify_channel_id": 0}))
+        bot.get_channel.return_value = None
+        result = await notifier.get_notify_channel(999)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_notify_error_very_long_exception(self, notifier, bot):
+        channel = _setup_channel(bot)
+        await notifier.notify_error(999, ValueError("x" * 5000), "ctx")
+        tb = next(f for f in channel.send.call_args[1]["embed"].fields if f.name == "Traceback")
+        assert len(tb.value) <= 1032

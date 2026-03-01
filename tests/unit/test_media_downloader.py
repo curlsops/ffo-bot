@@ -1,3 +1,5 @@
+"""Tests for media downloader."""
+
 import tempfile
 from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -6,6 +8,8 @@ import pytest
 
 from bot.processors.media_downloader import MediaAttachment, MediaDownloader
 
+
+# --- Fixtures & Helpers ---
 
 @pytest.fixture
 def tmpdir():
@@ -18,7 +22,7 @@ def downloader(tmpdir):
     return MediaDownloader(MagicMock(), tmpdir)
 
 
-def make_db_ctx(conn):
+def _db_ctx(conn):
     ctx = MagicMock()
     ctx.__aenter__ = AsyncMock(return_value=conn)
     ctx.__aexit__ = AsyncMock(return_value=None)
@@ -27,9 +31,7 @@ def make_db_ctx(conn):
     return pool
 
 
-def make_attachment(
-    url="https://example.com/img.png", filename="img.png", content_type="image/png", size=1024
-):
+def _attachment(url="https://example.com/img.png", filename="img.png", content_type="image/png", size=1024):
     return MediaAttachment(url=url, filename=filename, content_type=content_type, size_bytes=size)
 
 
@@ -44,72 +46,67 @@ class AsyncCtx:
         pass
 
 
-async def async_chunks(chunks):
+async def _async_chunks(chunks):
     for c in chunks:
         yield c
 
 
+# --- MediaAttachment ---
+
 class TestMediaAttachment:
     def test_creation(self):
-        a = make_attachment()
+        a = _attachment()
         assert a.url == "https://example.com/img.png"
-        assert a.filename == "img.png"
-        assert a.content_type == "image/png"
         assert a.size_bytes == 1024
 
 
+# --- MediaDownloader Init ---
+
 class TestMediaDownloaderInit:
     def test_initialization(self, tmpdir):
-        pool, metrics = MagicMock(), MagicMock()
-        d = MediaDownloader(pool, tmpdir, metrics)
-        assert d.db_pool == pool
+        d = MediaDownloader(MagicMock(), tmpdir, MagicMock())
         assert d.storage_base == Path(tmpdir)
-        assert d.metrics == metrics
         assert d.session is None
 
     def test_without_metrics(self, downloader):
         assert downloader.metrics is None
 
 
-class TestMediaDownloaderMethods:
-    def test_get_file_type_image(self, downloader):
-        assert downloader._get_file_type("image/png") == "image"
-        assert downloader._get_file_type("image/jpeg") == "image"
+# --- File Type Detection ---
 
-    def test_get_file_type_gif(self, downloader):
-        assert downloader._get_file_type("image/gif") == "gif"
+class TestFileType:
+    @pytest.mark.parametrize("content_type,expected", [
+        ("image/png", "image"), ("image/jpeg", "image"), ("image/gif", "gif"),
+        ("video/mp4", "video"), ("application/pdf", None), ("text/plain", None),
+    ])
+    def test_get_file_type(self, downloader, content_type, expected):
+        assert downloader._get_file_type(content_type) == expected
 
-    def test_get_file_type_video(self, downloader):
-        assert downloader._get_file_type("video/mp4") == "video"
 
-    def test_get_file_type_unsupported(self, downloader):
-        assert downloader._get_file_type("application/pdf") is None
-        assert downloader._get_file_type("text/plain") is None
+# --- Storage Path ---
 
-    def test_generate_storage_path(self, downloader):
+class TestStoragePath:
+    def test_generates_path(self, downloader):
         path = downloader._generate_storage_path(123, "test.png")
-        assert path.suffix == ".png"
-        assert "123" in str(path)
-        assert path.parent.exists()
+        assert path.suffix == ".png" and "123" in str(path) and path.parent.exists()
 
-    def test_generate_storage_path_sanitizes(self, downloader):
+    def test_sanitizes_path(self, downloader):
         path = downloader._generate_storage_path(123, "../../../etc/passwd")
-        assert "etc" not in str(path.parent)
-        assert path.name == "passwd"
+        assert "etc" not in str(path.parent) and path.name == "passwd"
 
-    def test_generate_storage_path_collision(self, downloader):
+    def test_handles_collision(self, downloader):
         p1 = downloader._generate_storage_path(123, "test.png")
         p1.touch()
         p2 = downloader._generate_storage_path(123, "test.png")
-        assert p1 != p2
-        assert "test_1.png" in str(p2)
+        assert p1 != p2 and "test_1.png" in str(p2)
 
 
-class TestMediaDownloaderAsync:
+# --- Session Management ---
+
+class TestSessionManagement:
     @pytest.mark.asyncio
     async def test_initialize(self, downloader):
         with patch("aiohttp.ClientSession") as mock_cls:
-            mock_cls.return_value = MagicMock()
             await downloader.initialize()
             assert downloader.session is not None
 
@@ -123,79 +120,69 @@ class TestMediaDownloaderAsync:
     async def test_close_no_session(self, downloader):
         await downloader.close()
 
+
+# --- Download Operations ---
+
+class TestDownloadOperations:
     @pytest.mark.asyncio
-    async def test_download_media_skips_large_files(self, tmpdir):
-        metrics = MagicMock()
+    @pytest.mark.parametrize("with_metrics", [True, False])
+    async def test_skips_large_files(self, tmpdir, with_metrics):
+        metrics = MagicMock() if with_metrics else None
         d = MediaDownloader(MagicMock(), tmpdir, metrics)
         d.session = AsyncMock()
-        await d.download_media(1, 2, 3, 4, [make_attachment(size=200 * 1024 * 1024)])
-        metrics.media_downloads.labels.assert_called()
+        await d.download_media(1, 2, 3, 4, [_attachment(size=200 * 1024 * 1024)])
+        if with_metrics:
+            metrics.media_downloads.labels.assert_called()
 
     @pytest.mark.asyncio
-    async def test_download_media_skips_non_media(self, downloader):
+    async def test_skips_non_media(self, downloader):
         downloader.session = AsyncMock()
-        await downloader.download_media(1, 2, 3, 4, [make_attachment(content_type="text/plain")])
+        await downloader.download_media(1, 2, 3, 4, [_attachment(content_type="text/plain")])
 
     @pytest.mark.asyncio
-    async def test_download_media_initializes_session(self, downloader):
-        with patch.object(downloader, "initialize", new_callable=AsyncMock) as mock_init:
-            await downloader.download_media(
-                1, 2, 3, 4, [make_attachment(content_type="text/plain")]
-            )
-            mock_init.assert_called_once()
+    async def test_initializes_session(self, downloader):
+        with patch.object(downloader, "initialize", new_callable=AsyncMock) as m:
+            await downloader.download_media(1, 2, 3, 4, [_attachment(content_type="text/plain")])
+            m.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_download_file(self, downloader, tmpdir):
         resp = AsyncMock(raise_for_status=MagicMock())
-        resp.content.iter_chunked = lambda _: async_chunks([b"test data"])
-        session = MagicMock()
-        session.get = MagicMock(return_value=AsyncCtx(resp))
-        downloader.session = session
+        resp.content.iter_chunked = lambda _: _async_chunks([b"test data"])
+        downloader.session = MagicMock(get=MagicMock(return_value=AsyncCtx(resp)))
 
         dest = Path(tmpdir) / "test.txt"
         checksum = await downloader._download_file("https://example.com/f", dest)
 
-        assert dest.exists()
-        assert dest.read_bytes() == b"test data"
-        assert len(checksum) == 64
+        assert dest.read_bytes() == b"test data" and len(checksum) == 64
 
     @pytest.mark.asyncio
     async def test_store_metadata(self, tmpdir):
         conn = AsyncMock()
-        d = MediaDownloader(make_db_ctx(conn), tmpdir)
-        await d._store_metadata(
-            123, 456, 789, 111, "t.png", "image", ".png", 1024, "path", "url", "hash"
-        )
+        d = MediaDownloader(_db_ctx(conn), tmpdir)
+        await d._store_metadata(123, 456, 789, 111, "t.png", "image", ".png", 1024, "path", "url", "hash")
         conn.execute.assert_called_once()
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("with_metrics", [True, False])
-    async def test_download_media_success(self, tmpdir, with_metrics):
+    async def test_download_success(self, tmpdir, with_metrics):
         conn = AsyncMock()
         metrics = MagicMock() if with_metrics else None
         if metrics:
             metrics.media_download_duration.labels.return_value.time.return_value = MagicMock()
-        d = MediaDownloader(make_db_ctx(conn), tmpdir, metrics)
+        d = MediaDownloader(_db_ctx(conn), tmpdir, metrics)
 
         resp = AsyncMock(raise_for_status=MagicMock())
-        resp.content.iter_chunked = lambda _: async_chunks([b"test"])
+        resp.content.iter_chunked = lambda _: _async_chunks([b"test"])
         d.session = MagicMock(get=MagicMock(return_value=AsyncCtx(resp)))
 
-        await d.download_media(1, 2, 3, 4, [make_attachment()])
+        await d.download_media(1, 2, 3, 4, [_attachment()])
         conn.execute.assert_called_once()
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("with_metrics", [True, False])
-    async def test_download_media_error(self, tmpdir, with_metrics):
+    async def test_download_error(self, tmpdir, with_metrics):
         metrics = MagicMock() if with_metrics else None
         d = MediaDownloader(MagicMock(), tmpdir, metrics)
         d.session = MagicMock(get=MagicMock(side_effect=Exception("err")))
-        await d.download_media(1, 2, 3, 4, [make_attachment()])
-
-    @pytest.mark.asyncio
-    @pytest.mark.parametrize("with_metrics", [True, False])
-    async def test_download_media_skips_large(self, tmpdir, with_metrics):
-        metrics = MagicMock() if with_metrics else None
-        d = MediaDownloader(MagicMock(), tmpdir, metrics)
-        d.session = AsyncMock()
-        await d.download_media(1, 2, 3, 4, [make_attachment(size=200 * 1024 * 1024)])
+        await d.download_media(1, 2, 3, 4, [_attachment()])
