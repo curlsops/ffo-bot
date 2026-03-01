@@ -19,6 +19,7 @@
 
 | Feature | Description |
 |---------|-------------|
+| 🎉 **Giveaways** | Create giveaways with role requirements, bonus entries, and automatic winner selection |
 | 🤖 **Automated Reactions** | Configure regex patterns to automatically react to messages |
 | 📁 **Media Archival** | Download and archive media from monitored channels |
 | 👥 **Reaction Roles** | Self-service role assignment via reactions |
@@ -107,6 +108,39 @@ python main.py
 
 ---
 
+## Bot Setup
+
+### Required Permissions
+
+When adding the bot to your Discord server, it needs the following permissions:
+
+| Permission | Reason |
+|------------|--------|
+| Send Messages | Send giveaway announcements and responses |
+| Embed Links | Display rich embeds for giveaways |
+| Add Reactions | React to messages with configured patterns |
+| Read Message History | Process messages for phrase matching |
+| Use External Emojis | Use custom emojis from other servers |
+| View Channels | Access channels for monitoring |
+
+### Invite URL
+
+Generate your invite URL from the [Discord Developer Portal](https://discord.com/developers/applications):
+
+1. Go to **OAuth2 > URL Generator**
+2. Select scopes: `bot`, `applications.commands`
+3. Select the permissions above (or use permission integer: `277025704000`)
+4. Copy the generated URL and open it to add the bot
+
+**Direct URL template:**
+```
+https://discord.com/api/oauth2/authorize?client_id=YOUR_CLIENT_ID&permissions=277025704000&scope=bot%20applications.commands
+```
+
+Replace `YOUR_CLIENT_ID` with your bot's application ID.
+
+---
+
 ## Configuration
 
 <details>
@@ -157,7 +191,7 @@ The bot exposes endpoints on port 8080:
 <details>
 <summary><b>Testing</b></summary>
 
-Run the test suite (196 tests, ~86% coverage):
+Run the test suite (257 tests, 100% coverage):
 
 ```bash
 # All tests with coverage
@@ -186,6 +220,7 @@ ffo-bot/
 │   ├── commands/          # Slash commands
 │   ├── handlers/          # Event handlers
 │   ├── processors/        # Message processors
+│   ├── tasks/             # Background tasks
 │   └── utils/             # Utilities and helpers
 ├── config/                # Configuration management
 ├── database/              # Database layer and migrations

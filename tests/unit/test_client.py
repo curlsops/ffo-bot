@@ -159,7 +159,7 @@ class TestFFOBotExtensions:
     async def test_load_extensions_success(self, bot):
         with patch.object(bot, "load_extension", new_callable=AsyncMock) as mock_load:
             await bot._load_extensions()
-            assert mock_load.call_count == 6
+            assert mock_load.call_count == 8
 
     @pytest.mark.asyncio
     async def test_load_extensions_handles_failure(self, bot):
@@ -169,6 +169,37 @@ class TestFFOBotExtensions:
 
         with patch.object(bot, "load_extension", side_effect=fail_on_messages):
             await bot._load_extensions()
+
+
+class TestFFOBotPersistentViews:
+    @pytest.mark.asyncio
+    async def test_register_persistent_views_enabled(self, bot):
+        import uuid
+        bot.settings.feature_giveaways = True
+        conn = MagicMock()
+        conn.fetch = AsyncMock(return_value=[{"id": uuid.uuid4()}])
+        bot.db_pool = make_db_ctx(conn)
+        with patch("bot.commands.giveaway.GiveawayView"):
+            with patch.object(bot, "add_view") as mock_add:
+                await bot._register_persistent_views()
+                mock_add.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_register_persistent_views_disabled(self, bot):
+        bot.settings.feature_giveaways = False
+        with patch.object(bot, "add_view") as mock_add:
+            await bot._register_persistent_views()
+            mock_add.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_register_persistent_views_no_active(self, bot):
+        bot.settings.feature_giveaways = True
+        conn = MagicMock()
+        conn.fetch = AsyncMock(return_value=[])
+        bot.db_pool = make_db_ctx(conn)
+        with patch.object(bot, "add_view") as mock_add:
+            await bot._register_persistent_views()
+            mock_add.assert_not_called()
 
 
 class TestFFOBotOnReady:

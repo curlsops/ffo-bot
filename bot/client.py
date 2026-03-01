@@ -66,6 +66,7 @@ class FFOBot(commands.Bot):
 
         await self._start_health_server()
         await self._load_extensions()
+        await self._register_persistent_views()
         await self.tree.sync()
         logger.info("Ready")
 
@@ -77,6 +78,8 @@ class FFOBot(commands.Bot):
             "bot.commands.permissions",
             "bot.commands.reactbot",
             "bot.commands.privacy",
+            "bot.commands.giveaway",
+            "bot.tasks.giveaway_manager",
         ]
 
         for extension in extensions:
@@ -91,6 +94,15 @@ class FFOBot(commands.Bot):
         health_server = HealthCheckServer(self, port=self.settings.health_check_port)
         await health_server.start()
         self._health_server = health_server.runner
+
+    async def _register_persistent_views(self):
+        if self.settings.feature_giveaways:
+            from bot.commands.giveaway import GiveawayView
+
+            async with self.db_pool.acquire() as conn:
+                active = await conn.fetch("SELECT id FROM giveaways WHERE is_active = true")
+            for row in active:
+                self.add_view(GiveawayView(row["id"], self))
 
     async def on_ready(self):
         logger.info(f"Connected as {self.user} (ID: {self.user.id}) to {len(self.guilds)} servers")

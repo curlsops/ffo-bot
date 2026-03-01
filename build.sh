@@ -76,6 +76,11 @@ import config
 import database
 from bot.client import FFOBot
 from config.settings import Settings
+from bot.commands.giveaway import GiveawayCommands, GiveawayView
+from bot.tasks.giveaway_manager import GiveawayManager
+from bot.commands.reactbot import ReactBotCommands
+from bot.processors.phrase_matcher import PhraseMatcher
+from bot.auth.permissions import PermissionChecker
 print('All modules imported successfully')
 "
 echo "✓ Container smoke test passed"
