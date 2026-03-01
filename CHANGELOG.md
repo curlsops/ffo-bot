@@ -1,5 +1,13 @@
 # Changelog
 
+## [1.5.5](https://github.com/curlsops/ffo-bot/compare/v1.5.4...v1.5.5) (2026-03-01)
+
+
+### Bug Fixes
+
+* docker image race condition ([0cd4fae](https://github.com/curlsops/ffo-bot/commit/0cd4fae9239379ca6d5ef5debd33e7ea865c5d7e))
+* duplicate commands, clear global ([7e5da61](https://github.com/curlsops/ffo-bot/commit/7e5da6100ef91b2c612d5cec039f68a2105df485))
+
 ## [1.5.4](https://github.com/curlsops/ffo-bot/compare/v1.5.3...v1.5.4) (2026-03-01)
 
 
