@@ -29,6 +29,7 @@ class PermissionCommands(commands.Cog):
         name="grant_role",
         description="Grant a role to a user (Super Admin only)",
     )
+    @app_commands.guild_only()
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(user="User to grant role to", role="Role to grant")
     @app_commands.choices(
@@ -60,6 +61,7 @@ class PermissionCommands(commands.Cog):
         name="revoke_role",
         description="Revoke a role from a user (Super Admin only)",
     )
+    @app_commands.guild_only()
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(user="User to revoke role from", role="Role to revoke")
     @app_commands.choices(
@@ -97,6 +99,7 @@ class PermissionCommands(commands.Cog):
         name="list_permissions",
         description="List all user permissions",
     )
+    @app_commands.guild_only()
     @app_commands.default_permissions(administrator=True)
     async def list_permissions(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)

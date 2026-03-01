@@ -379,6 +379,17 @@ class TestAlreadyJoinedView:
         await leave_view.leave_button.callback(i)
         msg.edit.assert_called_once()
 
+    @pytest.mark.asyncio
+    async def test_leave_button_db_error(self, leave_view, mock_bot, caplog):
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(side_effect=Exception("DB unavailable"))
+        ctx.__aexit__ = AsyncMock(return_value=None)
+        mock_bot.db_pool = MagicMock(acquire=MagicMock(return_value=ctx))
+        i = _interaction()
+        await leave_view.leave_button.callback(i)
+        assert "Error leaving" in str(i.followup.send.call_args)
+        assert "Leave giveaway error" in caplog.text
+
 
 class TestEntriesPaginatedView:
     @pytest.mark.parametrize("n,expected", [

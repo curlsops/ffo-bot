@@ -4,6 +4,7 @@ import uuid
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import asyncpg
 import discord
 import pytest
 
@@ -105,6 +106,20 @@ class TestCheckGiveaways:
         manager.bot.db_pool = _db_ctx(MagicMock(fetch=AsyncMock(side_effect=Exception("DB error"))))
         await manager.check_giveaways()
         assert "Giveaway check error" in caplog.text
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("exc", [
+        asyncpg.CannotConnectNowError("pool closed"),
+        asyncpg.ConnectionDoesNotExistError("connection lost"),
+    ])
+    async def test_db_unavailable_logs_warning(self, manager, caplog, exc):
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(side_effect=exc)
+        ctx.__aexit__ = AsyncMock(return_value=None)
+        manager.bot.db_pool = MagicMock(acquire=MagicMock(return_value=ctx))
+        await manager.check_giveaways()
+        assert "Giveaway check skipped" in caplog.text
+        assert "DB unavailable" in caplog.text
 
 
 class TestSelectWinners:

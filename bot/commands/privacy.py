@@ -17,6 +17,7 @@ class PrivacyCommands(commands.Cog):
         name="privacy_optout",
         description="Opt out of message tracking",
     )
+    @app_commands.guild_only()
     @app_commands.default_permissions(administrator=True)
     async def privacy_optout(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
@@ -43,6 +44,7 @@ class PrivacyCommands(commands.Cog):
         name="privacy_optin",
         description="Opt back in to message tracking",
     )
+    @app_commands.guild_only()
     @app_commands.default_permissions(administrator=True)
     async def privacy_optin(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)

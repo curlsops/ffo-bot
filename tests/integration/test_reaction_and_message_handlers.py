@@ -392,6 +392,34 @@ async def test_message_handler_check_user_opt_out_error_continues_processing():
 
 
 @pytest.mark.asyncio
+async def test_message_handler_phrase_match_log_failure_still_reacts(caplog):
+    """When _log_phrase_match fails (DB error), reaction is still added and user is not impacted."""
+    db_pool, conn = make_db_pool()
+    conn.execute = AsyncMock(side_effect=Exception("DB down"))
+    bot = MagicMock()
+    bot.is_shutting_down.return_value = False
+    bot.metrics = MagicMock()
+    bot.metrics.messages_processed.labels.return_value.inc = MagicMock()
+    bot.metrics.phrase_matches.labels.return_value.inc = MagicMock()
+    bot.phrase_matcher.match_phrases = AsyncMock(return_value=[("id-1", "✅")])
+    bot.db_pool = db_pool
+    bot.media_downloader = None
+    bot.voice_transcriber = None
+    handler = MessageHandler(bot)
+    message = MagicMock()
+    message.author.bot = False
+    message.author.id = 42
+    message.id = 100
+    message.content = "test"
+    message.guild.id = 1
+    message.channel.id = 2
+    message.attachments = []
+    message.add_reaction = AsyncMock()
+    await handler.on_message(message)
+    message.add_reaction.assert_awaited_once()
+    assert "Failed to log phrase match" in caplog.text
+
+@pytest.mark.asyncio
 async def test_message_handler_phrase_match_http_exception_logged(caplog):
     bot = MagicMock()
     bot.is_shutting_down.return_value = False

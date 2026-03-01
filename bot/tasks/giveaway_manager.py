@@ -2,6 +2,7 @@ import logging
 import random
 from datetime import datetime, timezone
 
+import asyncpg
 import discord
 from discord.ext import commands, tasks
 
@@ -29,6 +30,8 @@ class GiveawayManager(commands.Cog):
                 )
             for g in expired:
                 await self._end_giveaway(g)
+        except (asyncpg.CannotConnectNowError, asyncpg.ConnectionDoesNotExistError) as e:
+            logger.warning("Giveaway check skipped (DB unavailable): %s", e)
         except Exception as e:
             logger.error(f"Giveaway check error: {e}", exc_info=True)
 

@@ -177,9 +177,7 @@ class AlreadyJoinedView(discord.ui.View):
             removed = await self._remove_entry(interaction)
             if removed:
                 await self._update_giveaway_embed(interaction)
-                await interaction.followup.send(
-                    "Your entry for this giveaway has been removed.", ephemeral=True
-                )
+                await interaction.followup.send("Your entry for this giveaway has been removed.", ephemeral=True)
             else:
                 await interaction.followup.send("You are not in this giveaway.", ephemeral=True)
         except Exception as e:
@@ -205,9 +203,7 @@ class AlreadyJoinedView(discord.ui.View):
                 count = await conn.fetchval(
                     "SELECT COUNT(*) FROM giveaway_entries WHERE giveaway_id = $1", self.giveaway_id
                 )
-                giveaway = await conn.fetchrow(
-                    "SELECT * FROM giveaways WHERE id = $1", self.giveaway_id
-                )
+                giveaway = await conn.fetchrow("SELECT * FROM giveaways WHERE id = $1", self.giveaway_id)
             if giveaway:
                 view = GiveawayView(self.giveaway_id, self.bot, entry_count=count or 0)
                 await msg.edit(embed=build_embed(giveaway, count or 0), view=view)
@@ -260,11 +256,11 @@ class GiveawayView(discord.ui.View):
             entries = self._calculate_entries(interaction.user.roles, giveaway)
             if await self._add_entry(giveaway["id"], interaction.user.id, entries):
                 await self._update_embed(interaction.message, giveaway["id"])
-                await interaction.followup.send(
-                    "You have successfully joined this giveaway.", ephemeral=True
-                )
+                await interaction.followup.send("You have successfully joined this giveaway.", ephemeral=True)
             else:
-                view = AlreadyJoinedView(giveaway["id"], interaction.message.id, self.bot)
+                view = AlreadyJoinedView(
+                    giveaway["id"], interaction.message.id, self.bot
+                )
                 await interaction.followup.send(
                     "🚫 **You have already joined this giveaway!**",
                     ephemeral=True,
@@ -366,6 +362,7 @@ class GiveawayCommands(commands.Cog):
         return True
 
     @app_commands.command(name="gstart", description="Start a giveaway")
+    @app_commands.guild_only()
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(
         duration="Duration (e.g. 1h, 2d, 1w)",
@@ -488,6 +485,7 @@ class GiveawayCommands(commands.Cog):
             await interaction.followup.send("Error starting giveaway.", ephemeral=True)
 
     @app_commands.command(name="greroll", description="Reroll winners for an ended giveaway")
+    @app_commands.guild_only()
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(
         message_id="The giveaway message ID (from the message link, or right-click → Copy ID)"
@@ -531,7 +529,9 @@ class GiveawayCommands(commands.Cog):
                 )
 
             if not entries:
-                await interaction.followup.send("No entries to reroll from.", ephemeral=True)
+                await interaction.followup.send(
+                    "No entries to reroll from.", ephemeral=True
+                )
                 return
 
             old_winner_ids = {r["user_id"] for r in old_winners}
@@ -579,7 +579,9 @@ class GiveawayCommands(commands.Cog):
                         f"🎉 Reroll! New winners for **{giveaway['prize']}**: {mentions}"
                     )
                 else:
-                    await channel.send(f"Reroll for **{giveaway['prize']}** — no valid entries.")
+                    await channel.send(
+                        f"Reroll for **{giveaway['prize']}** — no valid entries."
+                    )
 
             await interaction.followup.send(
                 f"Rerolled! New winner(s): {', '.join(f'<@{w}>' for w in new_winners) if new_winners else 'None'}",
