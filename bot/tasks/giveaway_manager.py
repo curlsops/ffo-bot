@@ -63,7 +63,11 @@ class GiveawayManager(commands.Cog):
                 try:
                     channel = await self.bot.fetch_channel(giveaway["channel_id"])
                 except (discord.NotFound, discord.Forbidden):
-                    logger.warning("Could not fetch channel %s for giveaway %s", giveaway["channel_id"], giveaway["id"])
+                    logger.warning(
+                        "Could not fetch channel %s for giveaway %s",
+                        giveaway["channel_id"],
+                        giveaway["id"],
+                    )
                     return
 
             try:
