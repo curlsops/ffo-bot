@@ -647,6 +647,63 @@ class TestGreroll:
         await cog.greroll.callback(cog, i, "123456789012345678")
         assert "Admin" in str(i.followup.send.call_args)
 
+    @pytest.mark.asyncio
+    async def test_greroll_partial_count(self, cog):
+        giveaway = {
+            "id": 1,
+            "is_active": False,
+            "message_id": 123,
+            "channel_id": 2,
+            "prize": "Prize",
+            "winners_count": 3,
+            "ended_at": datetime.now(timezone.utc),
+        }
+        entries = [
+            {"user_id": 1, "entries": 1},
+            {"user_id": 2, "entries": 1},
+            {"user_id": 3, "entries": 1},
+            {"user_id": 4, "entries": 1},
+        ]
+        old_winners = [{"user_id": 1}, {"user_id": 2}, {"user_id": 3}]
+        conn = AsyncMock(
+            fetchrow=AsyncMock(return_value=giveaway),
+            fetch=AsyncMock(side_effect=[entries, old_winners]),
+            execute=AsyncMock(),
+            executemany=AsyncMock(),
+        )
+        cog.bot.db_pool = _db_ctx(conn)
+        cog.bot.get_channel = MagicMock(return_value=None)
+        i = _interaction()
+        await cog.greroll.callback(cog, i, "123456789012345678", 1)
+        assert "Rerolled" in str(i.followup.send.call_args)
+        executemany_args = conn.executemany.call_args[0][1]
+        assert len(executemany_args) == 3
+
+    @pytest.mark.asyncio
+    async def test_greroll_count_exceeds_winners(self, cog):
+        giveaway = {
+            "id": 1,
+            "is_active": False,
+            "message_id": 123,
+            "channel_id": 2,
+            "prize": "Prize",
+            "winners_count": 2,
+            "ended_at": datetime.now(timezone.utc),
+        }
+        conn = AsyncMock(
+            fetchrow=AsyncMock(return_value=giveaway),
+            fetch=AsyncMock(
+                side_effect=[
+                    [{"user_id": 1, "entries": 1}, {"user_id": 2, "entries": 1}],
+                    [{"user_id": 1}, {"user_id": 2}],
+                ]
+            ),
+        )
+        cog.bot.db_pool = _db_ctx(conn)
+        i = _interaction()
+        await cog.greroll.callback(cog, i, "123456789012345678", 5)
+        assert "Cannot reroll more than 2" in str(i.followup.send.call_args)
+
 
 class TestSetup:
     @pytest.mark.asyncio

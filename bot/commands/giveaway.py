@@ -1,4 +1,5 @@
 import logging
+import random
 import re
 import uuid
 from datetime import datetime, timedelta, timezone
@@ -492,9 +493,12 @@ class GiveawayCommands(commands.Cog):
     @app_commands.guild_only()
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(
-        message_id="The giveaway message ID (from the message link, or right-click → Copy ID)"
+        message_id="The giveaway message ID (from the message link, or right-click → Copy ID)",
+        count="Number of winners to reroll (default: all). Use when some winners didn't claim.",
     )
-    async def greroll(self, interaction: discord.Interaction, message_id: str):
+    async def greroll(
+        self, interaction: discord.Interaction, message_id: str, count: Optional[int] = None
+    ):
         await interaction.response.defer(ephemeral=True)
         try:
             if not await self._check_admin(interaction, "greroll"):
@@ -537,25 +541,46 @@ class GiveawayCommands(commands.Cog):
                 return
 
             old_winner_ids = {r["user_id"] for r in old_winners}
-            pool = [e for e in entries if e["user_id"] not in old_winner_ids]
-            if not pool:
+            reroll_count = (
+                (len(old_winner_ids) or giveaway["winners_count"]) if count is None else count
+            )
+            if reroll_count < 1:
+                await interaction.followup.send("Count must be at least 1.", ephemeral=True)
+                return
+            if old_winner_ids and reroll_count > len(old_winner_ids):
+                await interaction.followup.send(
+                    f"Cannot reroll more than {len(old_winner_ids)} winner(s).",
+                    ephemeral=True,
+                )
+                return
+
+            winners_to_remove = (
+                set(random.sample(list(old_winner_ids), reroll_count))
+                if reroll_count < len(old_winner_ids)
+                else old_winner_ids
+            )
+            non_winners = [e for e in entries if e["user_id"] not in old_winner_ids]
+            if not non_winners:
                 await interaction.followup.send(
                     "All entrants were winners. No one left to reroll.",
                     ephemeral=True,
                 )
                 return
-
-            new_winners = self._select_winners(pool, giveaway["winners_count"])
+            pool = non_winners + [
+                e for e in entries if e["user_id"] in winners_to_remove
+            ]
+            new_winners = self._select_winners(pool, reroll_count)
+            final_winners = (old_winner_ids - winners_to_remove) | set(new_winners)
 
             async with self.bot.db_pool.acquire() as conn:
                 await conn.execute(
                     "UPDATE giveaway_entries SET is_winner = false WHERE giveaway_id = $1",
                     giveaway["id"],
                 )
-                if new_winners:
+                if final_winners:
                     await conn.executemany(
                         "UPDATE giveaway_entries SET is_winner = true WHERE giveaway_id = $1 AND user_id = $2",
-                        [(giveaway["id"], w) for w in new_winners],
+                        [(giveaway["id"], w) for w in final_winners],
                     )
 
             channel = self.bot.get_channel(giveaway["channel_id"])
@@ -601,8 +626,6 @@ class GiveawayCommands(commands.Cog):
         return None
 
     def _select_winners(self, entries: list, count: int) -> list:
-        import random
-
         if not entries or count < 1:
             return []
         weighted = []
