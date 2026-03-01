@@ -32,6 +32,48 @@ async def test_check_role_no_role_returns_false():
 
 
 @pytest.mark.asyncio
+async def test_check_role_discord_admin_returns_true():
+    member = MagicMock()
+    member.guild_permissions.administrator = True
+    checker = _checker_with_bot(guild=MagicMock(), member=member)
+    ctx = PermissionContext(server_id=1, user_id=2)
+    assert await checker.check_role(ctx, Role.SUPER_ADMIN) is True
+
+
+def _checker_with_bot(guild=None, member=None):
+    db_pool, _ = make_db_pool()
+    cache = MagicMock()
+    bot = MagicMock()
+    bot.get_guild.return_value = guild
+    if guild is not None:
+        guild.get_member.return_value = member
+    return PermissionChecker(db_pool, cache, bot)
+
+
+def test_is_discord_admin_no_bot():
+    db_pool, _ = make_db_pool()
+    checker = PermissionChecker(db_pool, MagicMock())
+    assert checker._is_discord_admin(1, 2) is False
+
+
+def test_is_discord_admin_no_guild():
+    checker = _checker_with_bot(guild=None)
+    assert checker._is_discord_admin(1, 2) is False
+
+
+def test_is_discord_admin_no_member():
+    checker = _checker_with_bot(guild=MagicMock(), member=None)
+    assert checker._is_discord_admin(1, 2) is False
+
+
+def test_is_discord_admin_not_admin():
+    member = MagicMock()
+    member.guild_permissions.administrator = False
+    checker = _checker_with_bot(guild=MagicMock(), member=member)
+    assert checker._is_discord_admin(1, 2) is False
+
+
+@pytest.mark.asyncio
 async def test_check_command_permission_uses_cache():
     db_pool, _ = make_db_pool()
     cache = MagicMock()
