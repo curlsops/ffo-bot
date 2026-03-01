@@ -326,6 +326,16 @@ class TestGiveawayView:
         assert ok is False
 
     @pytest.mark.asyncio
+    async def test_check_eligibility_empty_required_allows_everyone(self, view):
+        """When required_roles is [], everyone can join (default behavior)."""
+        interaction = MagicMock()
+        interaction.user = MagicMock(id=1, roles=[])
+        giveaway = {"bypass_roles": [], "required_roles": [], "blacklist_roles": []}
+        ok, reason = await view._check_eligibility(interaction, giveaway)
+        assert ok is True
+        assert reason == ""
+
+    @pytest.mark.asyncio
     async def test_check_eligibility_donor_blocked(self, view):
         interaction = MagicMock()
         interaction.user = MagicMock(id=123, roles=[])

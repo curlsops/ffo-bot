@@ -119,3 +119,23 @@ class TestAuditLogJsonbParams:
         assert isinstance(details_param, str), "details must be JSON string, not dict"
         parsed = json.loads(details_param)
         assert parsed == {"command": "test_cmd", "required_role": "super_admin"}
+
+
+class TestDatabasePoolJsonbCodec:
+    """DatabasePool must register JSONB codec so asyncpg returns dict/list on read."""
+
+    @pytest.mark.asyncio
+    async def test_create_pool_passes_init(self):
+        from unittest.mock import patch
+
+        mock_pool = MagicMock()
+        with patch("database.connection.asyncpg.create_pool", new_callable=AsyncMock) as mock_create:
+            mock_create.return_value = mock_pool
+            from database.connection import DatabasePool
+
+            await DatabasePool.create("postgresql://localhost/test", min_size=1, max_size=2)
+
+            mock_create.assert_awaited_once()
+            call_kwargs = mock_create.call_args[1]
+            assert "init" in call_kwargs
+            assert call_kwargs["init"].__name__ == "_init_connection"

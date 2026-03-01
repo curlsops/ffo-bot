@@ -62,6 +62,14 @@ class TestGetNotifyChannel:
         bot.get_channel.return_value = None
         assert await notifier.get_notify_channel(999) is None
 
+    @pytest.mark.asyncio
+    async def test_config_must_be_dict_not_string(self, notifier, bot):
+        """Config from DB must be dict (JSONB codec). String causes AttributeError."""
+        conn = conn_with_config("{}")
+        bot.db_pool.acquire.return_value = db_ctx(conn)
+        with pytest.raises(AttributeError, match="'str' object has no attribute 'get'"):
+            await notifier.get_notify_channel(999)
+
 
 class TestSetNotifyChannel:
     @pytest.mark.asyncio
