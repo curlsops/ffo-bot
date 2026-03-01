@@ -268,7 +268,7 @@ class TestGiveawayView:
     async def test_join_button_early_exit(self, view, mock_bot, giveaway, expected):
         mock_bot.db_pool = _db_ctx(AsyncMock(fetchrow=AsyncMock(return_value=giveaway)))
         i = _interaction()
-        await view.join_button(i)
+        await view.join_button(i, MagicMock())
         assert expected in str(i.followup.send.call_args)
 
     @pytest.mark.asyncio
@@ -276,14 +276,14 @@ class TestGiveawayView:
         mock_bot.db_pool = _db_ctx(AsyncMock(fetchrow=AsyncMock(return_value=_active_giveaway(view, blacklist_roles=[111]))))
         i = _interaction()
         i.user.roles = [MagicMock(id=111)]
-        await view.join_button(i)
+        await view.join_button(i, MagicMock())
         assert "blacklisted" in str(i.followup.send.call_args)
 
     @pytest.mark.asyncio
     async def test_join_button_already_joined(self, view, mock_bot):
         mock_bot.db_pool = _db_ctx(AsyncMock(fetchrow=AsyncMock(return_value=_active_giveaway(view)), execute=AsyncMock(side_effect=Exception("dup"))))
         i = _interaction()
-        await view.join_button(i)
+        await view.join_button(i, MagicMock())
         call = i.followup.send.call_args
         assert "already joined" in str(call).lower()
         assert call.kwargs.get("view") is not None
@@ -293,14 +293,14 @@ class TestGiveawayView:
     async def test_join_button_success(self, view, mock_bot):
         mock_bot.db_pool = _db_ctx(AsyncMock(fetchrow=AsyncMock(return_value=_active_giveaway(view)), execute=AsyncMock(), fetchval=AsyncMock(return_value=1)))
         i = _interaction()
-        await view.join_button(i)
+        await view.join_button(i, MagicMock())
         assert "joined" in str(i.followup.send.call_args)
 
     @pytest.mark.asyncio
     async def test_join_button_error(self, view, mock_bot):
         mock_bot.db_pool = _db_ctx(AsyncMock(fetchrow=AsyncMock(side_effect=Exception("DB"))))
         i = _interaction()
-        await view.join_button(i)
+        await view.join_button(i, MagicMock())
         assert "Error" in str(i.followup.send.call_args)
 
     @pytest.mark.asyncio
@@ -311,7 +311,7 @@ class TestGiveawayView:
     async def test_entries_button_early_exit(self, view, mock_bot, giveaway, entries_rows, expected):
         mock_bot.db_pool = _db_ctx(AsyncMock(fetchrow=AsyncMock(return_value=giveaway), fetch=AsyncMock(return_value=entries_rows)))
         i = _interaction()
-        await view.entries_button(i)
+        await view.entries_button(i, MagicMock())
         assert expected in str(i.followup.send.call_args)
 
     @pytest.mark.asyncio
@@ -321,7 +321,7 @@ class TestGiveawayView:
             fetch=AsyncMock(return_value=[{"user_id": 1, "entries": 1}, {"user_id": 2, "entries": 2}])
         ))
         i = _interaction()
-        await view.entries_button(i)
+        await view.entries_button(i, MagicMock())
         call = str(i.followup.send.call_args)
         assert "Giveaway Participants" in call and "<@1>" in call and "<@2>" in call
 
@@ -329,7 +329,7 @@ class TestGiveawayView:
     async def test_entries_button_error(self, view, mock_bot):
         mock_bot.db_pool = _db_ctx(AsyncMock(fetchrow=AsyncMock(side_effect=Exception("DB"))))
         i = _interaction()
-        await view.entries_button(i)
+        await view.entries_button(i, MagicMock())
         assert "Error" in str(i.followup.send.call_args)
 
 
@@ -404,7 +404,7 @@ class TestEntriesPaginatedView:
 
     def test_row_with_zero_entries(self):
         view = EntriesPaginatedView([{"user_id": 1, "entries": 0}])
-        assert view.total_entries == 0 and "(0)" in view._format_page()
+        assert view.total_entries == 0 and "<@1>" in view._format_page()
 
     def test_update_buttons(self):
         view = EntriesPaginatedView(_entries(15))

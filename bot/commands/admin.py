@@ -1,6 +1,7 @@
 """Admin commands."""
 
 import importlib.metadata
+import os
 
 import discord
 from discord import app_commands
@@ -38,7 +39,7 @@ class AdminCommands(commands.Cog):
         try:
             ver = importlib.metadata.version("ffo-bot")
         except importlib.metadata.PackageNotFoundError:
-            ver = "unknown"
+            ver = os.environ.get("FFO_BOT_VERSION", "unknown")
         await interaction.followup.send(f"Running **ffo-bot** v{ver}", ephemeral=True)
 
     @app_commands.command(
