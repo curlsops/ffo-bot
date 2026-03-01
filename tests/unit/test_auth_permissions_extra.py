@@ -9,8 +9,6 @@ from bot.auth.permissions import PermissionChecker, PermissionContext
 from config.constants import Role
 
 
-# --- Fixtures & Helpers ---
-
 def _make_db_pool(fetchval_result=None, execute_side_effect=None):
     conn = MagicMock()
     conn.fetchval = AsyncMock(return_value=fetchval_result)
@@ -45,8 +43,6 @@ def _ctx(server_id=1, user_id=2, command_name=None):
     return PermissionContext(server_id=server_id, user_id=user_id, command_name=command_name)
 
 
-# --- _is_discord_admin ---
-
 class TestIsDiscordAdmin:
     @pytest.mark.parametrize("guild,member,is_admin,expected", [
         (None, None, False, False),
@@ -68,8 +64,6 @@ class TestIsDiscordAdmin:
         checker = _checker_with_bot(guild, None)
         assert checker._is_discord_admin(1, 2) is False
 
-
-# --- check_role ---
 
 class TestCheckRole:
     @pytest.mark.asyncio
@@ -102,8 +96,6 @@ class TestCheckRole:
             conn.execute.assert_not_awaited()
 
 
-# --- check_command_permission ---
-
 class TestCheckCommandPermission:
     @pytest.mark.asyncio
     async def test_super_admin_bypasses(self):
@@ -133,8 +125,6 @@ class TestCheckCommandPermission:
         cache.set.assert_called_once()
 
 
-# --- get_user_role ---
-
 class TestGetUserRole:
     @pytest.mark.asyncio
     async def test_uses_cache(self):
@@ -154,8 +144,6 @@ class TestGetUserRole:
         assert await checker.get_user_role(1, 2) is None
 
 
-# --- _log_permission_denial ---
-
 class TestLogPermissionDenial:
     @pytest.mark.asyncio
     async def test_handles_db_error(self):
@@ -164,8 +152,6 @@ class TestLogPermissionDenial:
         conn.execute.assert_awaited()
 
 
-# --- invalidate_user_cache ---
-
 class TestInvalidateUserCache:
     def test_deletes_cache_key(self):
         checker, _, cache = _checker()
@@ -173,15 +159,11 @@ class TestInvalidateUserCache:
         cache.delete.assert_called_once_with("user_role:1:2")
 
 
-# --- Role hierarchy ---
-
 class TestRoleHierarchy:
     def test_order(self):
         assert Role.SUPER_ADMIN.hierarchy > Role.ADMIN.hierarchy > Role.MODERATOR.hierarchy
         assert (Role.SUPER_ADMIN.hierarchy, Role.ADMIN.hierarchy, Role.MODERATOR.hierarchy) == (3, 2, 1)
 
-
-# --- Edge Cases ---
 
 class TestEdgeCases:
     @pytest.mark.asyncio

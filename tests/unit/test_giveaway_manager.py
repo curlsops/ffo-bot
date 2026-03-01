@@ -8,8 +8,6 @@ import discord
 import pytest
 
 
-# --- Fixtures & Helpers ---
-
 def _giveaway(**overrides):
     return {
         "id": uuid.uuid4(), "server_id": 999, "channel_id": 123, "message_id": 456,
@@ -67,8 +65,6 @@ def manager(mock_bot):
     return GiveawayManager(mock_bot)
 
 
-# --- Lifecycle ---
-
 class TestGiveawayManagerLifecycle:
     @pytest.mark.asyncio
     @pytest.mark.parametrize("enabled,should_start", [(True, True), (False, False)])
@@ -90,8 +86,6 @@ class TestGiveawayManagerLifecycle:
         manager.bot.wait_until_ready.assert_called_once()
 
 
-# --- check_giveaways ---
-
 class TestCheckGiveaways:
     @pytest.mark.asyncio
     async def test_no_expired(self, manager):
@@ -112,8 +106,6 @@ class TestCheckGiveaways:
         await manager.check_giveaways()
         assert "Giveaway check error" in caplog.text
 
-
-# --- _select_winners ---
 
 class TestSelectWinners:
     @pytest.mark.parametrize("entries,winners_count,expected_len,expected_set", [
@@ -154,8 +146,6 @@ class TestSelectWinners:
         assert len(winners) == 50 and len(set(winners)) == 50
 
 
-# --- _build_ended_embed ---
-
 class TestBuildEndedEmbed:
     @pytest.mark.parametrize("winners,entries,expected_text", [
         ([100, 200], 10, None),
@@ -176,8 +166,6 @@ class TestBuildEndedEmbed:
         assert "<@10>" in embed.fields[0].value and "<@20>" in embed.fields[0].value
         assert "2 winners" in embed.footer.text
 
-
-# --- _end_giveaway ---
 
 class TestEndGiveaway:
     @pytest.mark.asyncio
@@ -259,8 +247,6 @@ class TestEndGiveaway:
         msg.edit.assert_called_once()
         assert "Congratulations" in str(channel.send.call_args)
 
-
-# --- Setup ---
 
 class TestSetup:
     @pytest.mark.asyncio

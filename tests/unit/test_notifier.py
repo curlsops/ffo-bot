@@ -9,8 +9,6 @@ import pytest
 from bot.utils.notifier import AdminNotifier
 
 
-# --- Fixtures & Helpers ---
-
 @pytest.fixture
 def bot():
     return MagicMock(db_pool=MagicMock())
@@ -42,8 +40,6 @@ def _setup_channel(bot, config=None):
     bot.get_channel.return_value = channel
     return channel
 
-
-# --- get_notify_channel ---
 
 class TestGetNotifyChannel:
     @pytest.mark.asyncio
@@ -79,8 +75,6 @@ class TestGetNotifyChannel:
             await notifier.get_notify_channel(999)
 
 
-# --- set_notify_channel ---
-
 class TestSetNotifyChannel:
     @pytest.mark.asyncio
     @pytest.mark.parametrize("channel_id,error,expected", [
@@ -93,8 +87,6 @@ class TestSetNotifyChannel:
         bot.db_pool.acquire.return_value = _db_ctx(conn)
         assert await notifier.set_notify_channel(999, channel_id) is expected
 
-
-# --- send ---
 
 class TestSend:
     @pytest.mark.asyncio
@@ -115,8 +107,6 @@ class TestSend:
         assert await notifier.send(999, discord.Embed()) is False
 
 
-# --- Giveaway Notifications ---
-
 class TestGiveawayNotifications:
     @pytest.mark.asyncio
     async def test_created(self, notifier, bot):
@@ -134,8 +124,6 @@ class TestGiveawayNotifications:
         fields = str([f.value for f in channel.send.call_args[1]["embed"].fields])
         assert expected_text in fields
 
-
-# --- Error Notifications ---
 
 class TestErrorNotifications:
     @pytest.mark.asyncio
@@ -162,8 +150,6 @@ class TestErrorNotifications:
         assert len(tb.value) <= 1032
 
 
-# --- Error All Servers ---
-
 class TestErrorAllServers:
     @pytest.mark.asyncio
     async def test_notifies_all(self, notifier, bot):
@@ -181,8 +167,6 @@ class TestErrorAllServers:
         bot.db_pool.acquire.return_value = _db_ctx(AsyncMock(fetch=AsyncMock(side_effect=Exception())))
         await notifier.notify_error_all_servers(Exception("err"), "ctx")
 
-
-# --- Edge Cases ---
 
 class TestEdgeCases:
     @pytest.mark.asyncio

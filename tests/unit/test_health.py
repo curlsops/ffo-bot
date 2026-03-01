@@ -8,8 +8,6 @@ import pytest
 from bot.utils.health import HealthCheckServer
 
 
-# --- Fixtures ---
-
 @pytest.fixture
 def mock_bot():
     return MagicMock()
@@ -25,8 +23,6 @@ async def _db_ctx(conn):
     yield conn
 
 
-# --- Init ---
-
 class TestHealthCheckServerInit:
     def test_initialization(self, server, mock_bot):
         assert server.bot == mock_bot
@@ -41,8 +37,6 @@ class TestHealthCheckServerInit:
         assert "/healthz" in routes and "/readyz" in routes and "/metrics" in routes
 
 
-# --- Liveness ---
-
 class TestLiveness:
     @pytest.mark.asyncio
     @pytest.mark.parametrize("is_closed,expected_status", [(False, 200), (True, 500)])
@@ -51,8 +45,6 @@ class TestLiveness:
         response = await server.liveness(MagicMock())
         assert response.status == expected_status
 
-
-# --- Readiness ---
 
 class TestReadiness:
     @pytest.mark.asyncio
@@ -78,8 +70,6 @@ class TestReadiness:
         assert response.status == 200 and response.text == "Ready"
 
 
-# --- Metrics ---
-
 class TestMetrics:
     @pytest.mark.asyncio
     @pytest.mark.parametrize("has_cache", [True, False])
@@ -104,8 +94,6 @@ class TestMetrics:
         assert response.status == 200
 
 
-# --- HTTP via TestServer ---
-
 class TestHealthViaTestServer:
     @pytest.mark.asyncio
     async def test_healthz_200_via_http(self):
@@ -120,8 +108,6 @@ class TestHealthViaTestServer:
                 assert resp.status == 200
                 assert await resp.text() == "OK"
 
-
-# --- Start ---
 
 class TestStart:
     @pytest.mark.asyncio

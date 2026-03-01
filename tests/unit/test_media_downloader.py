@@ -9,8 +9,6 @@ import pytest
 from bot.processors.media_downloader import MediaAttachment, MediaDownloader
 
 
-# --- Fixtures & Helpers ---
-
 @pytest.fixture
 def tmpdir():
     with tempfile.TemporaryDirectory() as d:
@@ -51,16 +49,12 @@ async def _async_chunks(chunks):
         yield c
 
 
-# --- MediaAttachment ---
-
 class TestMediaAttachment:
     def test_creation(self):
         a = _attachment()
         assert a.url == "https://example.com/img.png"
         assert a.size_bytes == 1024
 
-
-# --- MediaDownloader Init ---
 
 class TestMediaDownloaderInit:
     def test_initialization(self, tmpdir):
@@ -72,8 +66,6 @@ class TestMediaDownloaderInit:
         assert downloader.metrics is None
 
 
-# --- File Type Detection ---
-
 class TestFileType:
     @pytest.mark.parametrize("content_type,expected", [
         ("image/png", "image"), ("image/jpeg", "image"), ("image/gif", "gif"),
@@ -83,8 +75,6 @@ class TestFileType:
     def test_get_file_type(self, downloader, content_type, expected):
         assert downloader._get_file_type(content_type) == expected
 
-
-# --- Storage Path ---
 
 class TestStoragePath:
     def test_generates_path(self, downloader):
@@ -101,8 +91,6 @@ class TestStoragePath:
         p2 = downloader._generate_storage_path(123, "test.png")
         assert p1 != p2 and "test_1.png" in str(p2)
 
-
-# --- Session Management ---
 
 class TestSessionManagement:
     @pytest.mark.asyncio
@@ -121,8 +109,6 @@ class TestSessionManagement:
     async def test_close_no_session(self, downloader):
         await downloader.close()
 
-
-# --- Download Operations ---
 
 class TestDownloadOperations:
     @pytest.mark.asyncio

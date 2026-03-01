@@ -17,8 +17,6 @@ from bot.commands.giveaway import (
 )
 
 
-# --- Fixtures & Helpers ---
-
 @pytest.fixture
 def mock_bot():
     bot = MagicMock()
@@ -76,8 +74,6 @@ def _entries(n):
     return [{"user_id": i, "entries": 1} for i in range(n)]
 
 
-# --- _discord_timestamp ---
-
 class TestDiscordTimestamp:
     def test_default_format(self):
         dt = datetime(2025, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
@@ -89,8 +85,6 @@ class TestDiscordTimestamp:
         out = _discord_timestamp(dt, "F")
         assert ":F>" in out
 
-
-# --- parse_duration ---
 
 class TestParseDuration:
     @pytest.mark.parametrize("inp,expected", [
@@ -110,8 +104,6 @@ class TestParseDuration:
     def test_59s_below_min(self):
         assert parse_duration("59s") == 59
 
-
-# --- Parse Helpers ---
 
 class TestParseHelpers:
     @pytest.mark.parametrize("inp,expected", [
@@ -136,8 +128,6 @@ class TestParseHelpers:
         assert cog._parse_messages(inp) == expected
 
 
-# --- build_embed ---
-
 class TestBuildEmbed:
     def test_basic(self):
         embed = build_embed(_giveaway(prize="Test Prize"), 0)
@@ -161,8 +151,6 @@ class TestBuildEmbed:
         embed = build_embed(_giveaway(winners_count=2), 10, ended=True)
         assert "2 winners" in embed.footer.text and "10 entries" in embed.footer.text
 
-
-# --- GiveawayCommands ---
 
 class TestGiveawayCommands:
     @pytest.mark.asyncio
@@ -216,8 +204,6 @@ class TestGiveawayCommands:
         await cog.gstart.callback(cog, i, "1h", 1, "Prize")
         assert "Error starting" in str(i.followup.send.call_args)
 
-
-# --- GiveawayView ---
 
 class TestGiveawayView:
     @pytest.mark.asyncio
@@ -347,8 +333,6 @@ class TestGiveawayView:
         assert "Error" in str(i.followup.send.call_args)
 
 
-# --- AlreadyJoinedView ---
-
 class TestAlreadyJoinedView:
     @pytest.fixture
     def leave_view(self, mock_bot):
@@ -395,8 +379,6 @@ class TestAlreadyJoinedView:
         await leave_view.leave_button.callback(i)
         msg.edit.assert_called_once()
 
-
-# --- EntriesPaginatedView ---
 
 class TestEntriesPaginatedView:
     @pytest.mark.parametrize("n,expected", [
@@ -482,8 +464,6 @@ class TestEntriesPaginatedView:
         assert "3" in msg and "entries" in msg and "chances of winning" in msg
 
 
-# --- Edge Cases ---
-
 class TestEdgeCases:
     def test_parse_duration_very_large_value(self):
         result = parse_duration("9999999d")
@@ -513,8 +493,6 @@ class TestEdgeCases:
         out = view._format_page()
         assert "Giveaway Participants" in out
 
-
-# --- greroll: _parse_message_id, _select_winners ---
 
 class TestParseMessageId:
     def test_raw_id(self, cog):
@@ -658,8 +636,6 @@ class TestGreroll:
         await cog.greroll.callback(cog, i, "123456789012345678")
         assert "Admin" in str(i.followup.send.call_args)
 
-
-# --- Setup ---
 
 class TestSetup:
     @pytest.mark.asyncio
