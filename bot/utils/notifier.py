@@ -24,13 +24,13 @@ class AdminNotifier:
             async with self.bot.db_pool.acquire() as conn:
                 if channel_id:
                     await conn.execute(
-                        "UPDATE servers SET config = config || $1::jsonb, updated_at = NOW() WHERE server_id = $2",
+                        "UPDATE servers SET config = COALESCE(config, '{}'::jsonb) || $1::jsonb, updated_at = NOW() WHERE server_id = $2",
                         {"notify_channel_id": channel_id},
                         server_id,
                     )
                 else:
                     await conn.execute(
-                        "UPDATE servers SET config = config - 'notify_channel_id', updated_at = NOW() WHERE server_id = $1",
+                        "UPDATE servers SET config = COALESCE(config, '{}'::jsonb) - 'notify_channel_id', updated_at = NOW() WHERE server_id = $1",
                         server_id,
                     )
             return True
