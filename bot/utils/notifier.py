@@ -109,14 +109,3 @@ class AdminNotifier:
         tb = tb[-1021:] + "..." if len(tb) > 1024 else tb
         embed.add_field(name="Traceback", value=f"```\n{tb}\n```", inline=False)
         await self.send(server_id, embed)
-
-    async def notify_error_all_servers(self, error: Exception, context: str):
-        try:
-            async with self.bot.db_pool.acquire() as conn:
-                rows = await conn.fetch(
-                    "SELECT server_id FROM servers WHERE config->>'notify_channel_id' IS NOT NULL"
-                )
-            for r in rows:
-                await self.notify_error(r["server_id"], error, context)
-        except Exception:
-            logger.exception("Failed to notify all servers")

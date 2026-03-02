@@ -165,24 +165,6 @@ class TestErrorNotifications:
         assert len(tb.value) <= 1032
 
 
-class TestErrorAllServers:
-    @pytest.mark.asyncio
-    async def test_notifies_all(self, notifier, bot):
-        conn = AsyncMock(
-            fetch=AsyncMock(return_value=[{"server_id": 1}, {"server_id": 2}]),
-            fetchrow=AsyncMock(return_value={"config": {"notify_channel_id": 123}})
-        )
-        bot.db_pool.acquire.return_value = _db_ctx(conn)
-        bot.get_channel.return_value = AsyncMock(spec=discord.TextChannel)
-        await notifier.notify_error_all_servers(Exception("err"), "ctx")
-        assert bot.get_channel.return_value.send.call_count == 2
-
-    @pytest.mark.asyncio
-    async def test_handles_db_error(self, notifier, bot):
-        bot.db_pool.acquire.return_value = _db_ctx(AsyncMock(fetch=AsyncMock(side_effect=Exception())))
-        await notifier.notify_error_all_servers(Exception("err"), "ctx")
-
-
 class TestEdgeCases:
     @pytest.mark.asyncio
     async def test_get_notify_channel_non_integer_channel_id(self, notifier, bot):
