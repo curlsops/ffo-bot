@@ -16,3 +16,16 @@ async def test_database_connection(database_url):
         assert servers == 1
     finally:
         await conn.close()
+
+
+@pytest.mark.integration
+@pytest.mark.asyncio
+async def test_database_pool_create(database_url):
+    from database.connection import DatabasePool
+
+    pool = await DatabasePool.create(database_url)
+    try:
+        version = await pool.fetchval("SELECT version()")
+        assert "PostgreSQL" in version
+    finally:
+        await pool.close()

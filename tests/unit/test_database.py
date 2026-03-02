@@ -20,6 +20,16 @@ class TestDatabasePoolCreate:
             pool = await DatabasePool.create("postgresql://localhost/test")
             assert pool._pool == mock_pool
 
+    @pytest.mark.asyncio
+    async def test_create_uses_valid_asyncpg_params(self):
+        mock_pool = MagicMock()
+        with patch("database.connection.asyncpg.create_pool", new_callable=AsyncMock, return_value=mock_pool) as m:
+            await DatabasePool.create("postgresql://localhost/test", connection_timeout=5.0)
+            m.assert_awaited_once()
+            call_kwargs = m.call_args[1]
+            assert "connect_kwargs" not in call_kwargs
+            assert call_kwargs.get("timeout") == 5.0
+
 
 class TestDatabasePoolClose:
     @pytest.mark.asyncio
