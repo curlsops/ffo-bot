@@ -1,9 +1,9 @@
-name: Nightly Build
+name: Edge Build
 
 on:
-  schedule:
-    # Run daily at midnight UTC
-    - cron: "0 0 * * *"
+  push:
+    branches:
+      - main
   workflow_dispatch: # Allow manual trigger
 
 jobs:
@@ -66,14 +66,14 @@ jobs:
         id: sha
         run: echo "short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
 
-      - name: Build and push nightly image
+      - name: Build and push edge image
         uses: docker/build-push-action@10e90e3645eae34f1e60eeb005ba3a3d33f178e8 # v6
         with:
           context: .
           push: true
           tags: |
-            ghcr.io/${{ github.repository }}:nightly
-            ghcr.io/${{ github.repository }}:nightly-${{ steps.sha.outputs.short }}
+            ghcr.io/${{ github.repository }}:edge
+            ghcr.io/${{ github.repository }}:edge-${{ steps.sha.outputs.short }}
           labels: |
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
