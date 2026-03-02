@@ -335,14 +335,15 @@ class TestCreatePrizeThread:
         )
         assert thread.add_user.await_count == 3  # host + 2 winners
         thread.send.assert_awaited_once()
-        call_args = thread.send.call_args
-        assert "<@789>" in call_args[0][0]
-        assert "<@100>" in call_args[0][0]
-        assert "<@200>" in call_args[0][0]
-        assert "giveaway has ended" in call_args[0][0]
-        assert "Congratulations" in call_args[0][0]
-        assert "Prizes will be handled" in call_args[0][0]
-        assert call_args[1]["view"] is not None
+        call_kw = thread.send.call_args[1]
+        assert "<@789>" in call_kw["content"]
+        assert "<@100>" in call_kw["content"]
+        assert "<@200>" in call_kw["content"]
+        embed = call_kw["embed"]
+        assert "Giveaway Ended" in embed.title
+        assert "Cool Prize" in embed.description
+        assert "Congratulations" in embed.description
+        assert call_kw["view"] is not None
 
     @pytest.mark.asyncio
     async def test_truncates_long_prize_name(self, manager):
@@ -412,6 +413,19 @@ def _mock_thread(edit_side_effect=None):
 
 
 class TestCloseGiveawayThreadView:
+    def _interaction(self, *, is_admin=False, is_moderator=False, is_host=False, user_id=999, in_thread=True):
+        interaction = MagicMock()
+        interaction.guild_id = 1
+        interaction.response.send_message = AsyncMock()
+        interaction.response.defer = AsyncMock()
+        interaction.followup.send = AsyncMock()
+        interaction.user.id = 789 if is_host else user_id
+        interaction.user.guild_permissions.administrator = is_admin
+        interaction.channel = _mock_thread() if in_thread else MagicMock()
+        interaction.client.permission_checker = MagicMock()
+        interaction.client.permission_checker.check_role = AsyncMock(return_value=is_moderator)
+        return interaction
+
     @pytest.fixture
     def view(self):
         from bot.tasks.giveaway_manager import CloseGiveawayThreadView
@@ -419,65 +433,57 @@ class TestCloseGiveawayThreadView:
 
     @pytest.mark.asyncio
     async def test_host_can_close(self, view):
-        interaction = MagicMock()
-        interaction.response.defer = AsyncMock()
-        interaction.followup.send = AsyncMock()
-        interaction.user.id = 789
-        interaction.user.guild_permissions.manage_threads = False
-        interaction.channel = _mock_thread()
+        interaction = self._interaction(is_host=True)
 
         await view._close_callback(interaction)
 
         interaction.channel.edit.assert_awaited_once_with(locked=True, archived=True)
-        interaction.followup.send.assert_awaited_with("Thread closed.", ephemeral=True)
+        call_kw = interaction.followup.send.call_args[1]
+        assert call_kw["embed"].title == "🔒 Thread Closed"
 
     @pytest.mark.asyncio
-    async def test_manage_threads_can_close(self, view):
-        interaction = MagicMock()
-        interaction.response.defer = AsyncMock()
-        interaction.followup.send = AsyncMock()
-        interaction.user.id = 999
-        interaction.user.guild_permissions.manage_threads = True
-        interaction.channel = _mock_thread()
+    async def test_moderator_can_close(self, view):
+        interaction = self._interaction(is_moderator=True)
 
         await view._close_callback(interaction)
 
         interaction.channel.edit.assert_awaited_once_with(locked=True, archived=True)
+        call_kw = interaction.followup.send.call_args[1]
+        assert call_kw["embed"].title == "🔒 Thread Closed"
+
+    @pytest.mark.asyncio
+    async def test_admin_can_close(self, view):
+        interaction = self._interaction(is_admin=True)
+
+        await view._close_callback(interaction)
+
+        interaction.channel.edit.assert_awaited_once_with(locked=True, archived=True)
+        call_kw = interaction.followup.send.call_args[1]
+        assert call_kw["embed"].title == "🔒 Thread Closed"
 
     @pytest.mark.asyncio
     async def test_unauthorized_denied(self, view):
-        interaction = MagicMock()
-        interaction.response.defer = AsyncMock()
-        interaction.followup.send = AsyncMock()
-        interaction.user.id = 999
-        interaction.user.guild_permissions.manage_threads = False
-        interaction.channel = _mock_thread()
+        interaction = self._interaction()
 
         await view._close_callback(interaction)
 
-        interaction.followup.send.assert_awaited_with(
-            "Only the host or users with Manage Threads can close this.",
+        interaction.response.send_message.assert_awaited_with(
+            "Only the host, server admins, or bot moderators can close this thread.",
             ephemeral=True,
         )
 
     @pytest.mark.asyncio
     async def test_not_in_thread_denied(self, view):
-        interaction = MagicMock()
-        interaction.response.defer = AsyncMock()
-        interaction.followup.send = AsyncMock()
-        interaction.user.id = 789
-        interaction.user.guild_permissions.manage_threads = False
-        interaction.channel = MagicMock()  # Not a Thread
+        interaction = self._interaction(in_thread=False)
 
         await view._close_callback(interaction)
 
-        interaction.followup.send.assert_awaited_with("Not in a thread.", ephemeral=True)
+        interaction.response.send_message.assert_awaited_with("Not in a thread.", ephemeral=True)
 
     @pytest.mark.asyncio
     async def test_defer_not_found_returns_early(self, view):
-        interaction = MagicMock()
+        interaction = self._interaction(is_moderator=True)
         interaction.response.defer = AsyncMock(side_effect=discord.NotFound(MagicMock(), ""))
-        interaction.followup = MagicMock()
 
         await view._close_callback(interaction)
 
@@ -485,11 +491,7 @@ class TestCloseGiveawayThreadView:
 
     @pytest.mark.asyncio
     async def test_edit_failure_sends_error(self, view):
-        interaction = MagicMock()
-        interaction.response.defer = AsyncMock()
-        interaction.followup.send = AsyncMock()
-        interaction.user.id = 789
-        interaction.user.guild_permissions.manage_threads = False
+        interaction = self._interaction(is_moderator=True)
         interaction.channel = _mock_thread(edit_side_effect=Exception("locked"))
 
         await view._close_callback(interaction)

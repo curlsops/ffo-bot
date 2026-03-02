@@ -6,7 +6,9 @@ from datetime import datetime, timezone
 import discord
 from discord.ext import commands, tasks
 
+from bot.auth.permissions import PermissionContext
 from bot.utils.db import TRANSIENT_DB_ERRORS
+from config.constants import Role
 
 logger = logging.getLogger(__name__)
 
@@ -20,7 +22,7 @@ def _parse_host_from_message(msg: discord.Message) -> int | None:
 
 
 class CloseGiveawayThreadView(discord.ui.View):
-    """Lock button to close and archive a giveaway prize thread. Host or Manage Threads can close."""
+    """Lock button to close and archive a giveaway prize thread. Host, server admins, or bot moderators."""
 
     def __init__(self, host_id: int, timeout: float = None):
         super().__init__(timeout=timeout)
@@ -35,26 +37,42 @@ class CloseGiveawayThreadView(discord.ui.View):
         self.add_item(btn)
 
     async def _close_callback(self, interaction: discord.Interaction):
-        try:
-            await interaction.response.defer(ephemeral=True)
-        except discord.NotFound:
-            return
-        host_id = self.host_id or _parse_host_from_message(interaction.message)
-        can_close = interaction.user.guild_permissions.manage_threads or (
-            host_id and interaction.user.id == host_id
-        )
-        if not can_close:
-            await interaction.followup.send(
-                "Only the host or users with Manage Threads can close this.", ephemeral=True
-            )
-            return
         thread = interaction.channel
         if not isinstance(thread, discord.Thread):
-            await interaction.followup.send("Not in a thread.", ephemeral=True)
+            await interaction.response.send_message("Not in a thread.", ephemeral=True)
+            return
+
+        bot = interaction.client
+        host_id = self.host_id or _parse_host_from_message(interaction.message)
+        ctx = PermissionContext(server_id=interaction.guild_id, user_id=interaction.user.id)
+        can_close = (
+            interaction.user.guild_permissions.administrator
+            or (
+                getattr(bot, "permission_checker", None)
+                and await bot.permission_checker.check_role(ctx, Role.MODERATOR)
+            )
+            or (host_id and interaction.user.id == host_id)
+        )
+
+        if not can_close:
+            await interaction.response.send_message(
+                "Only the host, server admins, or bot moderators can close this thread.",
+                ephemeral=True,
+            )
+            return
+
+        try:
+            await interaction.response.defer(ephemeral=False)
+        except discord.NotFound:
             return
         try:
             await thread.edit(locked=True, archived=True)
-            await interaction.followup.send("Thread closed.", ephemeral=True)
+            closed_embed = discord.Embed(
+                title="🔒 Thread Closed",
+                description="This thread has been closed and archived.",
+                color=discord.Color.dark_grey(),
+            )
+            await interaction.followup.send(embed=closed_embed)
             self.stop()
         except Exception as e:
             logger.warning("Could not close giveaway thread %s: %s", thread.id, e)
@@ -160,6 +178,7 @@ class GiveawayManager(commands.Cog):
             thread = await channel.create_thread(
                 name=f"Prize: {giveaway['prize'][:80]}",
                 message=None,
+                invitable=False,
             )
             host_id = giveaway["host_id"]
             for user_id in [host_id] + winners:
@@ -170,13 +189,23 @@ class GiveawayManager(commands.Cog):
 
             host_mention = f"<@{host_id}>"
             winner_mentions = " ".join(f"<@{w}>" for w in winners)
-            content = (
-                f"{host_mention} The giveaway has ended!\n\n"
-                f"{winner_mentions} Congratulations! You've won this giveaway. "
-                "Prizes will be handled in this thread."
-            )
             view = CloseGiveawayThreadView(host_id=host_id, timeout=None)
-            await thread.send(content, view=view)
+
+            embed = discord.Embed(
+                title="🎉 Giveaway Ended",
+                description=(
+                    f"**Prize:** {giveaway['prize']}\n\n"
+                    f"**Host:** {host_mention}\n"
+                    f"**Winners:** {winner_mentions}\n\n"
+                    "Congratulations! Prizes will be handled in this thread."
+                ),
+                color=discord.Color.gold(),
+            )
+            await thread.send(
+                content=f"{host_mention} {winner_mentions}",
+                embed=embed,
+                view=view,
+            )
         except discord.Forbidden:
             logger.warning(
                 "Cannot create prize thread (missing create_private_threads?): %s",
