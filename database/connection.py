@@ -36,8 +36,8 @@ class DatabasePool:
                 min_size=min_size,
                 max_size=max_size,
                 command_timeout=command_timeout,
+                timeout=connection_timeout,
                 init=_init_connection,
-                connect_kwargs={"timeout": connection_timeout},
             )
             return cls(pool, acquire_timeout=acquire_timeout)
         except Exception as e:
