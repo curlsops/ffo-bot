@@ -9,11 +9,9 @@ from discord.ext import commands
 
 from bot.auth.permissions import PermissionChecker
 from bot.cache.memory import InMemoryCache
-from bot.commands.giveaway import GiveawayView
 from bot.processors.media_downloader import MediaDownloader
 from bot.processors.phrase_matcher import PhraseMatcher
 from bot.processors.voice_transcriber import VoiceTranscriber
-from bot.utils.health import HealthCheckServer
 from bot.utils.metrics import BotMetrics
 from bot.utils.notifier import AdminNotifier
 from bot.utils.rate_limiter import RateLimiter
@@ -51,6 +49,8 @@ class FFOBot(commands.Bot):
             self.settings.database_url,
             min_size=self.settings.db_pool_min_size,
             max_size=self.settings.db_pool_max_size,
+            connection_timeout=self.settings.db_connection_timeout,
+            acquire_timeout=self.settings.db_acquire_timeout,
         )
         self.cache = InMemoryCache(
             max_size=self.settings.cache_max_size, default_ttl=self.settings.cache_default_ttl
@@ -103,12 +103,19 @@ class FFOBot(commands.Bot):
                 logger.error(f"Failed to load extension {extension}: {e}", exc_info=True)
 
     async def _start_health_server(self):
+        from bot.utils.health import HealthCheckServer
+
         health_server = HealthCheckServer(self, port=self.settings.health_check_port)
         await health_server.start()
         self._health_server = health_server.runner
 
     async def _register_persistent_views(self):
         if self.settings.feature_giveaways:
+            from bot.commands.giveaway import GiveawayView
+            from bot.tasks.giveaway_manager import CloseGiveawayThreadView
+
+            self.add_view(CloseGiveawayThreadView(host_id=0))
+
             async with self.db_pool.acquire() as conn:
                 active = await conn.fetch(
                     "SELECT id, message_id FROM giveaways WHERE is_active = true AND message_id IS NOT NULL"
@@ -128,12 +135,14 @@ class FFOBot(commands.Bot):
         for guild in self.guilds:
             await self._register_server(guild)
 
-        await self._connection.http.bulk_upsert_global_commands(self.application_id, [])
+        # Sync only to guilds (not globally) to avoid duplicate commands in the UI
         for guild in self.guilds:
             self.tree.copy_global_to(guild=guild)
             await self.tree.sync(guild=guild)
         if self.guilds:
             logger.info(f"Synced slash commands to {len(self.guilds)} guild(s)")
+        else:
+            await self.tree.sync()
 
         if self.metrics:
             self.metrics.set_guild_count(len(self.guilds))
@@ -219,7 +228,6 @@ class FFOBot(commands.Bot):
                 return arg.guild_id
             if isinstance(arg, discord.Guild):
                 return arg.id
-        return None
 
     async def _on_app_command_error(
         self, interaction: discord.Interaction, error: discord.app_commands.AppCommandError

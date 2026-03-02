@@ -5,12 +5,12 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
-import asyncpg
 import discord
 from discord import app_commands
 from discord.ext import commands
 
 from bot.auth.permissions import PermissionContext
+from bot.utils.db import TRANSIENT_DB_ERRORS
 from config.constants import Role
 
 logger = logging.getLogger(__name__)
@@ -313,7 +313,7 @@ class GiveawayView(discord.ui.View):
             if cache:
                 cache.set(cache_key, [dict(r) for r in rows], ttl=60)
             return rows
-        except (asyncpg.CannotConnectNowError, asyncpg.ConnectionDoesNotExistError):
+        except TRANSIENT_DB_ERRORS:
             if cache:
                 cached = cache.get(cache_key)
                 if cached is not None:
@@ -332,7 +332,7 @@ class GiveawayView(discord.ui.View):
             if row and cache:
                 cache.set(cache_key, dict(row), ttl=300)
             return row
-        except (asyncpg.CannotConnectNowError, asyncpg.ConnectionDoesNotExistError):
+        except TRANSIENT_DB_ERRORS:
             if cache:
                 cached = cache.get(cache_key)
                 if cached is not None:

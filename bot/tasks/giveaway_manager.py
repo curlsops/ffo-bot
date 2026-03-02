@@ -1,12 +1,64 @@
 import logging
 import random
+import re
 from datetime import datetime, timezone
 
-import asyncpg
 import discord
 from discord.ext import commands, tasks
 
+from bot.utils.db import TRANSIENT_DB_ERRORS
+
 logger = logging.getLogger(__name__)
+
+
+def _parse_host_from_message(msg: discord.Message) -> int | None:
+    """Extract host user id from message content (first mention)."""
+    if not msg.content:
+        return None
+    m = re.search(r"<@!?(\d+)>", msg.content)
+    return int(m.group(1)) if m else None
+
+
+class CloseGiveawayThreadView(discord.ui.View):
+    """Lock button to close and archive a giveaway prize thread. Host or Manage Threads can close."""
+
+    def __init__(self, host_id: int, timeout: float = None):
+        super().__init__(timeout=timeout)
+        self.host_id = host_id
+
+        btn = discord.ui.Button(
+            style=discord.ButtonStyle.secondary,
+            emoji="🔒",
+            custom_id="giveaway:close_thread",
+        )
+        btn.callback = self._close_callback
+        self.add_item(btn)
+
+    async def _close_callback(self, interaction: discord.Interaction):
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except discord.NotFound:
+            return
+        host_id = self.host_id or _parse_host_from_message(interaction.message)
+        can_close = interaction.user.guild_permissions.manage_threads or (
+            host_id and interaction.user.id == host_id
+        )
+        if not can_close:
+            await interaction.followup.send(
+                "Only the host or users with Manage Threads can close this.", ephemeral=True
+            )
+            return
+        thread = interaction.channel
+        if not isinstance(thread, discord.Thread):
+            await interaction.followup.send("Not in a thread.", ephemeral=True)
+            return
+        try:
+            await thread.edit(locked=True, archived=True)
+            await interaction.followup.send("Thread closed.", ephemeral=True)
+            self.stop()
+        except Exception as e:
+            logger.warning("Could not close giveaway thread %s: %s", thread.id, e)
+            await interaction.followup.send("Failed to close thread.", ephemeral=True)
 
 
 class GiveawayManager(commands.Cog):
@@ -30,7 +82,7 @@ class GiveawayManager(commands.Cog):
                 )
             for g in expired:
                 await self._end_giveaway(g)
-        except (asyncpg.CannotConnectNowError, asyncpg.ConnectionDoesNotExistError) as e:
+        except TRANSIENT_DB_ERRORS as e:
             logger.warning("Giveaway check skipped (DB unavailable): %s", e)
         except Exception as e:
             logger.error(f"Giveaway check error: {e}", exc_info=True)
@@ -86,6 +138,7 @@ class GiveawayManager(commands.Cog):
                 await channel.send(
                     f"🎉 Congratulations {mentions}! You won **{giveaway['prize']}**!"
                 )
+                await self._create_prize_thread(channel, giveaway, winners)
             else:
                 await channel.send(f"No entries for **{giveaway['prize']}**. No winners.")
 
@@ -98,6 +151,39 @@ class GiveawayManager(commands.Cog):
                     logger.warning("Notify giveaway ended failed: %s", e)
         except Exception as e:
             logger.error(f"End giveaway error {giveaway['id']}: {e}", exc_info=True)
+
+    async def _create_prize_thread(
+        self, channel: discord.TextChannel, giveaway: dict, winners: list
+    ):
+        """Create a private thread for host + winners to handle prizes."""
+        try:
+            thread = await channel.create_thread(
+                name=f"Prize: {giveaway['prize'][:80]}",
+                message=None,
+            )
+            host_id = giveaway["host_id"]
+            for user_id in [host_id] + winners:
+                try:
+                    await thread.add_user(discord.Object(id=user_id))
+                except (discord.Forbidden, discord.HTTPException) as e:
+                    logger.warning("Could not add user %s to prize thread: %s", user_id, e)
+
+            host_mention = f"<@{host_id}>"
+            winner_mentions = " ".join(f"<@{w}>" for w in winners)
+            content = (
+                f"{host_mention} The giveaway has ended!\n\n"
+                f"{winner_mentions} Congratulations! You've won this giveaway. "
+                "Prizes will be handled in this thread."
+            )
+            view = CloseGiveawayThreadView(host_id=host_id, timeout=None)
+            await thread.send(content, view=view)
+        except discord.Forbidden:
+            logger.warning(
+                "Cannot create prize thread (missing create_private_threads?): %s",
+                giveaway["id"],
+            )
+        except Exception as e:
+            logger.warning("Could not create prize thread for giveaway %s: %s", giveaway["id"], e)
 
     def _select_winners(self, entries: list, count: int) -> list:
         if not entries:

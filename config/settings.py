@@ -21,6 +21,12 @@ class Settings(BaseSettings):
     database_url: str = Field(..., description="PostgreSQL connection URL")
     db_pool_min_size: int = Field(default=5, description="Minimum database pool size")
     db_pool_max_size: int = Field(default=20, description="Maximum database pool size")
+    db_connection_timeout: float = Field(
+        default=10.0, description="Timeout in seconds for establishing new DB connections"
+    )
+    db_acquire_timeout: float = Field(
+        default=5.0, description="Timeout in seconds for acquiring a connection from the pool"
+    )
 
     media_storage_path: str = Field(default="/media", description="Base path for media storage")
     media_max_file_size: int = Field(

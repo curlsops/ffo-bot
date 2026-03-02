@@ -3,12 +3,17 @@ import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING, Optional
 
+from bot.utils.db import TRANSIENT_DB_ERRORS
 from config.constants import Role
 
 if TYPE_CHECKING:
     from discord.ext.commands import Bot
 
 logger = logging.getLogger(__name__)
+
+
+def _log_audit_failure(e: Exception) -> None:
+    logger.error("Failed to log permission denial: %s", e)
 
 
 @dataclass
@@ -58,18 +63,21 @@ class PermissionChecker:
         if cached is not None:
             return cached
 
-        async with self.db_pool.acquire() as conn:
-            has_permission = await conn.fetchval(
-                """
-                SELECT EXISTS(
-                    SELECT 1 FROM command_permissions
-                    WHERE server_id = $1 AND user_id = $2 AND command_name = $3 AND is_active = true
+        try:
+            async with self.db_pool.acquire() as conn:
+                has_permission = await conn.fetchval(
+                    """
+                    SELECT EXISTS(
+                        SELECT 1 FROM command_permissions
+                        WHERE server_id = $1 AND user_id = $2 AND command_name = $3 AND is_active = true
+                    )
+                    """,
+                    ctx.server_id,
+                    ctx.user_id,
+                    ctx.command_name,
                 )
-                """,
-                ctx.server_id,
-                ctx.user_id,
-                ctx.command_name,
-            )
+        except TRANSIENT_DB_ERRORS:
+            return False
 
         self.cache.set(cache_key, has_permission, ttl=60)
         return has_permission
@@ -80,17 +88,20 @@ class PermissionChecker:
         if cached is not None:
             return cached
 
-        async with self.db_pool.acquire() as conn:
-            role_str = await conn.fetchval(
-                """
-                SELECT role FROM user_permissions
-                WHERE server_id = $1 AND user_id = $2 AND is_active = true
-                ORDER BY CASE role WHEN 'super_admin' THEN 3 WHEN 'admin' THEN 2 WHEN 'moderator' THEN 1 END DESC
-                LIMIT 1
-                """,
-                server_id,
-                user_id,
-            )
+        try:
+            async with self.db_pool.acquire() as conn:
+                role_str = await conn.fetchval(
+                    """
+                    SELECT role FROM user_permissions
+                    WHERE server_id = $1 AND user_id = $2 AND is_active = true
+                    ORDER BY CASE role WHEN 'super_admin' THEN 3 WHEN 'admin' THEN 2 WHEN 'moderator' THEN 1 END DESC
+                    LIMIT 1
+                    """,
+                    server_id,
+                    user_id,
+                )
+        except TRANSIENT_DB_ERRORS:
+            return None
 
         role = Role(role_str) if role_str else None
         self.cache.set(cache_key, role, ttl=300)
@@ -98,7 +109,7 @@ class PermissionChecker:
 
     async def _log_permission_denial(self, ctx: PermissionContext, required_role: Role):
         try:
-            async with self.db_pool.acquire() as conn:
+            async with self.db_pool.acquire(timeout=2) as conn:
                 await conn.execute(
                     """
                     INSERT INTO audit_log (server_id, user_id, action, target_type, details)
@@ -108,8 +119,10 @@ class PermissionChecker:
                     ctx.user_id,
                     json.dumps({"command": ctx.command_name, "required_role": required_role.value}),
                 )
+        except TRANSIENT_DB_ERRORS:
+            pass
         except Exception as e:
-            logger.error(f"Failed to log permission denial: {e}")
+            _log_audit_failure(e)
 
     def invalidate_user_cache(self, server_id: int, user_id: int):
         self.cache.delete(f"user_role:{server_id}:{user_id}")

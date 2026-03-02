@@ -17,7 +17,12 @@ def _giveaway(**overrides):
 
 def _channel_with_msg():
     msg = MagicMock(edit=AsyncMock())
-    channel = MagicMock(fetch_message=AsyncMock(return_value=msg), send=AsyncMock())
+    thread = MagicMock(add_user=AsyncMock(), send=AsyncMock())
+    channel = MagicMock(
+        fetch_message=AsyncMock(return_value=msg),
+        send=AsyncMock(),
+        create_thread=AsyncMock(return_value=thread),
+    )
     return channel, msg
 
 
@@ -286,6 +291,210 @@ class TestEndGiveaway:
 
         msg.edit.assert_called_once()
         assert "Congratulations" in str(channel.send.call_args)
+
+
+class TestParseHostFromMessage:
+    def test_extracts_host_from_mention(self):
+        from bot.tasks.giveaway_manager import _parse_host_from_message
+
+        msg = MagicMock(content="<@789> The giveaway has ended!")
+        assert _parse_host_from_message(msg) == 789
+
+    def test_extracts_host_from_nickname_mention(self):
+        from bot.tasks.giveaway_manager import _parse_host_from_message
+
+        msg = MagicMock(content="<@!789> The giveaway has ended!")
+        assert _parse_host_from_message(msg) == 789
+
+    def test_returns_none_for_empty_content(self):
+        from bot.tasks.giveaway_manager import _parse_host_from_message
+
+        msg = MagicMock(content="")
+        assert _parse_host_from_message(msg) is None
+
+    def test_returns_none_for_no_mentions(self):
+        from bot.tasks.giveaway_manager import _parse_host_from_message
+
+        msg = MagicMock(content="No mentions here")
+        assert _parse_host_from_message(msg) is None
+
+
+class TestCreatePrizeThread:
+    @pytest.mark.asyncio
+    async def test_creates_thread_and_adds_members(self, manager):
+        channel, _ = _channel_with_msg()
+        thread = channel.create_thread.return_value
+        giveaway = _giveaway(host_id=789, prize="Cool Prize")
+        winners = [100, 200]
+
+        await manager._create_prize_thread(channel, giveaway, winners)
+
+        channel.create_thread.assert_awaited_once_with(
+            name="Prize: Cool Prize",
+            message=None,
+        )
+        assert thread.add_user.await_count == 3  # host + 2 winners
+        thread.send.assert_awaited_once()
+        call_args = thread.send.call_args
+        assert "<@789>" in call_args[0][0]
+        assert "<@100>" in call_args[0][0]
+        assert "<@200>" in call_args[0][0]
+        assert "giveaway has ended" in call_args[0][0]
+        assert "Congratulations" in call_args[0][0]
+        assert "Prizes will be handled" in call_args[0][0]
+        assert call_args[1]["view"] is not None
+
+    @pytest.mark.asyncio
+    async def test_truncates_long_prize_name(self, manager):
+        channel, _ = _channel_with_msg()
+        long_prize = "A" * 100
+        giveaway = _giveaway(prize=long_prize)
+        await manager._create_prize_thread(channel, giveaway, [1])
+        channel.create_thread.assert_awaited_once_with(
+            name=f"Prize: {'A' * 80}",
+            message=None,
+        )
+
+    @pytest.mark.asyncio
+    async def test_handles_add_user_failure(self, manager, caplog):
+        channel, _ = _channel_with_msg()
+        thread = channel.create_thread.return_value
+        thread.add_user = AsyncMock(side_effect=discord.Forbidden(MagicMock(), "nope"))
+        await manager._create_prize_thread(channel, _giveaway(), [100])
+        assert "Could not add user" in caplog.text
+        thread.send.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_handles_forbidden_create_thread(self, manager, caplog):
+        channel, _ = _channel_with_msg()
+        channel.create_thread = AsyncMock(side_effect=discord.Forbidden(MagicMock(), ""))
+        await manager._create_prize_thread(channel, _giveaway(), [100])
+        assert "Cannot create prize thread" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_handles_generic_exception(self, manager, caplog):
+        channel, _ = _channel_with_msg()
+        channel.create_thread = AsyncMock(side_effect=Exception("boom"))
+        await manager._create_prize_thread(channel, _giveaway(), [100])
+        assert "Could not create prize thread" in caplog.text
+
+
+class TestEndGiveawayPrizeThread:
+    @pytest.mark.asyncio
+    async def test_creates_prize_thread_when_winners(self, manager):
+        manager.bot.db_pool = _db_ctx(MagicMock(
+            execute=AsyncMock(), executemany=AsyncMock(),
+            fetch=AsyncMock(return_value=[{"user_id": 100, "entries": 1}])
+        ))
+        channel, _ = _channel_with_msg()
+        manager.bot.get_channel.return_value = channel
+        await manager._end_giveaway(_giveaway())
+        channel.create_thread.assert_awaited_once()
+        thread = channel.create_thread.return_value
+        thread.send.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_no_prize_thread_when_no_winners(self, manager):
+        manager.bot.db_pool = _db_ctx(MagicMock(execute=AsyncMock(), fetch=AsyncMock(return_value=[])))
+        channel, _ = _channel_with_msg()
+        manager.bot.get_channel.return_value = channel
+        await manager._end_giveaway(_giveaway())
+        channel.create_thread.assert_not_called()
+
+
+def _mock_thread(edit_side_effect=None):
+    """Create a mock that passes isinstance(x, discord.Thread)."""
+    thread = MagicMock(edit=AsyncMock(side_effect=edit_side_effect))
+    thread.id = 12345
+    # Make isinstance(thread, discord.Thread) True for the callback
+    thread.__class__ = type("FakeThread", (discord.Thread,), {})
+    return thread
+
+
+class TestCloseGiveawayThreadView:
+    @pytest.fixture
+    def view(self):
+        from bot.tasks.giveaway_manager import CloseGiveawayThreadView
+        return CloseGiveawayThreadView(host_id=789)
+
+    @pytest.mark.asyncio
+    async def test_host_can_close(self, view):
+        interaction = MagicMock()
+        interaction.response.defer = AsyncMock()
+        interaction.followup.send = AsyncMock()
+        interaction.user.id = 789
+        interaction.user.guild_permissions.manage_threads = False
+        interaction.channel = _mock_thread()
+
+        await view._close_callback(interaction)
+
+        interaction.channel.edit.assert_awaited_once_with(locked=True, archived=True)
+        interaction.followup.send.assert_awaited_with("Thread closed.", ephemeral=True)
+
+    @pytest.mark.asyncio
+    async def test_manage_threads_can_close(self, view):
+        interaction = MagicMock()
+        interaction.response.defer = AsyncMock()
+        interaction.followup.send = AsyncMock()
+        interaction.user.id = 999
+        interaction.user.guild_permissions.manage_threads = True
+        interaction.channel = _mock_thread()
+
+        await view._close_callback(interaction)
+
+        interaction.channel.edit.assert_awaited_once_with(locked=True, archived=True)
+
+    @pytest.mark.asyncio
+    async def test_unauthorized_denied(self, view):
+        interaction = MagicMock()
+        interaction.response.defer = AsyncMock()
+        interaction.followup.send = AsyncMock()
+        interaction.user.id = 999
+        interaction.user.guild_permissions.manage_threads = False
+        interaction.channel = _mock_thread()
+
+        await view._close_callback(interaction)
+
+        interaction.followup.send.assert_awaited_with(
+            "Only the host or users with Manage Threads can close this.",
+            ephemeral=True,
+        )
+
+    @pytest.mark.asyncio
+    async def test_not_in_thread_denied(self, view):
+        interaction = MagicMock()
+        interaction.response.defer = AsyncMock()
+        interaction.followup.send = AsyncMock()
+        interaction.user.id = 789
+        interaction.user.guild_permissions.manage_threads = False
+        interaction.channel = MagicMock()  # Not a Thread
+
+        await view._close_callback(interaction)
+
+        interaction.followup.send.assert_awaited_with("Not in a thread.", ephemeral=True)
+
+    @pytest.mark.asyncio
+    async def test_defer_not_found_returns_early(self, view):
+        interaction = MagicMock()
+        interaction.response.defer = AsyncMock(side_effect=discord.NotFound(MagicMock(), ""))
+        interaction.followup = MagicMock()
+
+        await view._close_callback(interaction)
+
+        interaction.followup.send.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_edit_failure_sends_error(self, view):
+        interaction = MagicMock()
+        interaction.response.defer = AsyncMock()
+        interaction.followup.send = AsyncMock()
+        interaction.user.id = 789
+        interaction.user.guild_permissions.manage_threads = False
+        interaction.channel = _mock_thread(edit_side_effect=Exception("locked"))
+
+        await view._close_callback(interaction)
+
+        interaction.followup.send.assert_awaited_with("Failed to close thread.", ephemeral=True)
 
 
 class TestSetup:

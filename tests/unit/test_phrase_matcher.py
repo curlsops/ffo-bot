@@ -1,8 +1,11 @@
+"""Tests for phrase matcher."""
+
 import asyncio
 import re
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import asyncpg
 import pytest
 
 from bot.processors.phrase_matcher import PhraseMatcher, PhrasePattern
@@ -94,6 +97,23 @@ class TestPatternLoading:
         await matcher.load_patterns(789)
         assert len(matcher._patterns_by_server[789]) == 1
 
+    @pytest.mark.asyncio
+    async def test_db_unavailable_sets_empty(self, mock_cache, caplog):
+        conn = AsyncMock(fetch=AsyncMock(side_effect=asyncpg.CannotConnectNowError("starting up")))
+        matcher = PhraseMatcher(_make_db_pool(conn), mock_cache)
+        await matcher.load_patterns(999)
+        assert matcher._patterns_by_server[999] == []
+        assert "DB unavailable" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_db_unavailable_keeps_existing(self, mock_cache, caplog):
+        conn = AsyncMock(fetch=AsyncMock(side_effect=asyncpg.CannotConnectNowError("shutting down")))
+        matcher = PhraseMatcher(_make_db_pool(conn), mock_cache)
+        matcher._patterns_by_server[888] = [_pattern(server_id=888)]
+        await matcher.load_patterns(888)
+        assert len(matcher._patterns_by_server[888]) == 1
+        assert "DB unavailable" in caplog.text
+
 
 class TestPatternMatching:
     @pytest.mark.asyncio
@@ -134,6 +154,13 @@ class TestPatternMatching:
 
 
 class TestDisablePattern:
+    @pytest.mark.asyncio
+    async def test_db_unavailable_logs_warning(self, mock_cache, caplog):
+        conn = AsyncMock(execute=AsyncMock(side_effect=asyncpg.CannotConnectNowError("down")))
+        matcher = PhraseMatcher(_make_db_pool(conn), mock_cache)
+        await matcher._disable_pattern("p1")
+        assert "DB unavailable" in caplog.text
+
     @pytest.mark.asyncio
     async def test_disable(self, mock_cache):
         conn = AsyncMock()

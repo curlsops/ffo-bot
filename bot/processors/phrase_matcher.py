@@ -4,6 +4,7 @@ import re
 from dataclasses import dataclass
 from typing import Dict, List, Optional, Tuple
 
+from bot.utils.db import TRANSIENT_DB_ERRORS
 from bot.utils.regex_validator import RegexValidationError, RegexValidator
 
 logger = logging.getLogger(__name__)
@@ -33,11 +34,19 @@ class PhraseMatcher:
             self._patterns_by_server[server_id] = cached
             return
 
-        async with self.db_pool.acquire() as conn:
-            rows = await conn.fetch(
-                "SELECT id, phrase, emoji FROM phrase_reactions WHERE server_id = $1 AND is_active = true",
-                server_id,
-            )
+        try:
+            async with self.db_pool.acquire() as conn:
+                rows = await conn.fetch(
+                    "SELECT id, phrase, emoji FROM phrase_reactions WHERE server_id = $1 AND is_active = true",
+                    server_id,
+                )
+        except TRANSIENT_DB_ERRORS as e:
+            logger.warning("Phrase patterns load skipped (DB unavailable): %s", e)
+            existing = self._patterns_by_server.get(server_id)
+            if existing is not None:
+                return
+            self._patterns_by_server[server_id] = []
+            return
 
         patterns = []
         for row in rows:
@@ -98,6 +107,8 @@ class PhraseMatcher:
                     "UPDATE phrase_reactions SET is_active = false WHERE id = $1", phrase_id
                 )
             logger.error(f"Disabled pattern {phrase_id} (ReDoS)")
+        except TRANSIENT_DB_ERRORS as e:
+            logger.warning("Could not disable pattern %s (DB unavailable): %s", phrase_id, e)
         except Exception as e:
             logger.error(f"Failed to disable {phrase_id}: {e}")
 

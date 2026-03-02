@@ -184,11 +184,12 @@ class TestFFOBotPersistentViews:
         conn.fetch = AsyncMock(return_value=[{"id": gid, "message_id": mid}])
         conn.fetchval = AsyncMock(return_value=0)
         bot.db_pool = make_db_ctx(conn)
-        with patch("bot.client.GiveawayView"):
+        with patch("bot.commands.giveaway.GiveawayView"):
             with patch.object(bot, "add_view") as mock_add:
                 await bot._register_persistent_views()
-                mock_add.assert_called_once()
-                mock_add.assert_called_with(ANY, message_id=mid)
+                assert mock_add.call_count == 2  # CloseGiveawayThreadView + GiveawayView
+                giveaways_calls = [c for c in mock_add.call_args_list if len(c.kwargs) > 0]
+                assert giveaways_calls[0].kwargs["message_id"] == mid
 
     @pytest.mark.asyncio
     async def test_register_persistent_views_disabled(self, bot):
@@ -205,7 +206,7 @@ class TestFFOBotPersistentViews:
         bot.db_pool = make_db_ctx(conn)
         with patch.object(bot, "add_view") as mock_add:
             await bot._register_persistent_views()
-            mock_add.assert_not_called()
+            mock_add.assert_called_once()  # CloseGiveawayThreadView only
 
     @pytest.mark.asyncio
     async def test_register_persistent_views_multiple(self, bot):
@@ -220,11 +221,15 @@ class TestFFOBotPersistentViews:
         conn.fetch = AsyncMock(return_value=rows)
         conn.fetchval = AsyncMock(return_value=0)
         bot.db_pool = make_db_ctx(conn)
-        with patch("bot.client.GiveawayView"):
+        with patch("bot.commands.giveaway.GiveawayView"):
             with patch.object(bot, "add_view") as mock_add:
                 await bot._register_persistent_views()
-                assert mock_add.call_count == 3
-                message_ids = [c.kwargs["message_id"] for c in mock_add.call_args_list]
+                assert mock_add.call_count == 4  # CloseGiveawayThreadView + 3 GiveawayView
+                message_ids = [
+                    c.kwargs["message_id"]
+                    for c in mock_add.call_args_list
+                    if "message_id" in c.kwargs
+                ]
                 assert message_ids == [111, 222, 333]
 
 
@@ -262,7 +267,8 @@ class TestFFOBotOnReady:
         bot._connection.http.bulk_upsert_global_commands = AsyncMock()
 
         with patch.object(FFOBot, "guilds", new_callable=PropertyMock, return_value=[]):
-            await bot.on_ready()
+            with patch.object(bot.tree, "sync", new_callable=AsyncMock):
+                await bot.on_ready()
 
 
 class TestFFOBotDrainQueue:
@@ -418,7 +424,7 @@ class TestFFOBotSetupHook:
 class TestFFOBotHealthServer:
     @pytest.mark.asyncio
     async def test_start_health_server(self, bot, mock_settings):
-        with patch("bot.client.HealthCheckServer") as mock_cls:
+        with patch("bot.utils.health.HealthCheckServer") as mock_cls:
             mock_server = MagicMock(start=AsyncMock(), runner=MagicMock())
             mock_cls.return_value = mock_server
 
@@ -581,7 +587,8 @@ class TestFFOBotAppCommandError:
         bot._connection.user = MagicMock(id=123)
         bot._connection.http.bulk_upsert_global_commands = AsyncMock()
         with patch.object(FFOBot, "guilds", new_callable=PropertyMock, return_value=[]):
-            await bot.on_ready()
+            with patch.object(bot.tree, "sync", new_callable=AsyncMock):
+                await bot.on_ready()
         bot.metrics.set_guild_count.assert_called_with(0)
 
     @pytest.mark.asyncio

@@ -1,19 +1,20 @@
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock
 
+import asyncpg
 import pytest
 
 from bot.auth.permissions import PermissionChecker, PermissionContext
 from config.constants import Role
 
 
-def _make_db_pool(fetchval_result=None, execute_side_effect=None):
+def _make_db_pool(fetchval_result=None, fetchval_side_effect=None, execute_side_effect=None):
     conn = MagicMock()
-    conn.fetchval = AsyncMock(return_value=fetchval_result)
+    conn.fetchval = AsyncMock(return_value=fetchval_result, side_effect=fetchval_side_effect)
     conn.execute = AsyncMock(side_effect=execute_side_effect)
 
     @asynccontextmanager
-    async def acquire():
+    async def acquire(**kwargs):
         yield conn
 
     pool = MagicMock()
@@ -21,8 +22,8 @@ def _make_db_pool(fetchval_result=None, execute_side_effect=None):
     return pool, conn
 
 
-def _checker(fetchval_result=None, cache_return=None, bot=None, execute_side_effect=None):
-    db_pool, conn = _make_db_pool(fetchval_result, execute_side_effect)
+def _checker(fetchval_result=None, cache_return=None, bot=None, execute_side_effect=None, fetchval_side_effect=None):
+    db_pool, conn = _make_db_pool(fetchval_result, fetchval_side_effect, execute_side_effect)
     cache = MagicMock()
     cache.get.return_value = cache_return
     return PermissionChecker(db_pool, cache, bot), conn, cache
@@ -122,6 +123,12 @@ class TestCheckCommandPermission:
         assert await checker.check_command_permission(_ctx(command_name=None)) is False
         cache.set.assert_called_once()
 
+    @pytest.mark.asyncio
+    async def test_db_unavailable_denies(self):
+        checker, _, _ = _checker(fetchval_side_effect=asyncpg.CannotConnectNowError("down"))
+        checker.check_role = AsyncMock(return_value=False)
+        assert await checker.check_command_permission(_ctx(command_name="x")) is False
+
 
 class TestGetUserRole:
     @pytest.mark.asyncio
@@ -141,13 +148,58 @@ class TestGetUserRole:
         checker, _, _ = _checker(fetchval_result=None)
         assert await checker.get_user_role(1, 2) is None
 
+    @pytest.mark.asyncio
+    async def test_db_unavailable_returns_none(self):
+        checker, _, _ = _checker(fetchval_side_effect=asyncpg.CannotConnectNowError("down"))
+        assert await checker.get_user_role(1, 2) is None
+
 
 class TestLogPermissionDenial:
+    @pytest.mark.asyncio
+    async def test_transient_db_error_suppressed(self):
+        checker, conn, _ = _checker(
+            execute_side_effect=asyncpg.CannotConnectNowError("connection lost")
+        )
+        await checker._log_permission_denial(_ctx(command_name="x"), Role.SUPER_ADMIN)
+        conn.execute.assert_awaited()
+
     @pytest.mark.asyncio
     async def test_handles_db_error(self):
         checker, conn, _ = _checker(execute_side_effect=Exception("db error"))
         await checker._log_permission_denial(_ctx(command_name="x"), Role.SUPER_ADMIN)
         conn.execute.assert_awaited()
+
+    @pytest.mark.asyncio
+    async def test_logs_non_transient_exception(self, caplog):
+        import logging
+        caplog.set_level(logging.ERROR)
+        checker, _, _ = _checker(execute_side_effect=RuntimeError("audit table missing"))
+        await checker._log_permission_denial(_ctx(command_name="test_cmd"), Role.ADMIN)
+        assert "Failed to log permission denial" in caplog.text
+        assert "audit table missing" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_log_permission_denial_exception_logged(self):
+        from unittest.mock import patch
+        from bot.auth import permissions as perm_module
+        checker, _, _ = _checker(execute_side_effect=ValueError("constraint violation"))
+        with patch.object(perm_module.logger, "error") as mock_log:
+            await checker._log_permission_denial(_ctx(command_name="x"), Role.SUPER_ADMIN)
+            mock_log.assert_called_once()
+            assert mock_log.call_args[0][0] == "Failed to log permission denial: %s"
+            assert str(mock_log.call_args[0][1]) == "constraint violation"
+
+    @pytest.mark.asyncio
+    async def test_check_role_logs_denial_when_audit_fails(self, caplog):
+        import logging
+        caplog.set_level(logging.ERROR)
+        checker, conn, _ = _checker(
+            fetchval_result="moderator",
+            execute_side_effect=RuntimeError("audit table missing"),
+        )
+        result = await checker.check_role(_ctx(command_name="admin_cmd"), Role.ADMIN)
+        assert result is False
+        assert "Failed to log permission denial" in caplog.text
 
 
 class TestInvalidateUserCache:

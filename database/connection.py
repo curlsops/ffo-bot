@@ -12,12 +12,23 @@ async def _init_connection(conn: asyncpg.Connection) -> None:
 
 
 class DatabasePool:
-    def __init__(self, pool: asyncpg.Pool):
+    def __init__(self, pool: asyncpg.Pool, acquire_timeout: float = 5.0):
         self._pool = pool
+        self._acquire_timeout = acquire_timeout
+
+    def acquire(self, timeout: float | None = None):
+        t = timeout if timeout is not None else self._acquire_timeout
+        return self._pool.acquire(timeout=t)
 
     @classmethod
     async def create(
-        cls, database_url: str, min_size: int = 5, max_size: int = 20, command_timeout: float = 60.0
+        cls,
+        database_url: str,
+        min_size: int = 5,
+        max_size: int = 20,
+        command_timeout: float = 60.0,
+        connection_timeout: float = 10.0,
+        acquire_timeout: float = 5.0,
     ) -> "DatabasePool":
         try:
             pool = await asyncpg.create_pool(
@@ -26,14 +37,12 @@ class DatabasePool:
                 max_size=max_size,
                 command_timeout=command_timeout,
                 init=_init_connection,
+                connect_kwargs={"timeout": connection_timeout},
             )
-            return cls(pool)
+            return cls(pool, acquire_timeout=acquire_timeout)
         except Exception as e:
             logger.error(f"Failed to create pool: {e}", exc_info=True)
             raise
-
-    def acquire(self):
-        return self._pool.acquire()
 
     async def execute(self, query: str, *args, timeout: Optional[float] = None):
         async with self.acquire() as conn:
