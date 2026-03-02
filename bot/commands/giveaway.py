@@ -5,6 +5,7 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+import asyncpg
 import discord
 from discord import app_commands
 from discord.ext import commands
@@ -237,7 +238,10 @@ class GiveawayView(discord.ui.View):
         self.add_item(entries_btn)
 
     async def join_button(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except discord.NotFound:
+            return
         try:
             giveaway = await self._get_giveaway(interaction.message.id)
             if not giveaway:
@@ -259,6 +263,8 @@ class GiveawayView(discord.ui.View):
 
             entries = self._calculate_entries(interaction.user.roles, giveaway)
             if await self._add_entry(giveaway["id"], interaction.user.id, entries):
+                if self.bot.cache:
+                    self.bot.cache.delete(f"giveaway:entries:{giveaway['id']}")
                 await self._update_embed(interaction.message, giveaway["id"])
                 await interaction.followup.send(
                     "You have successfully joined this giveaway.", ephemeral=True
@@ -275,7 +281,10 @@ class GiveawayView(discord.ui.View):
             await interaction.followup.send("Error joining giveaway.", ephemeral=True)
 
     async def entries_button(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
+        try:
+            await interaction.response.defer(ephemeral=True)
+        except discord.NotFound:
+            return
         try:
             giveaway = await self._get_giveaway(interaction.message.id)
             if not giveaway:
@@ -293,15 +302,43 @@ class GiveawayView(discord.ui.View):
             await interaction.followup.send("Error fetching entries.", ephemeral=True)
 
     async def _get_entries(self, giveaway_id: uuid.UUID):
-        async with self.bot.db_pool.acquire() as conn:
-            return await conn.fetch(
-                "SELECT user_id, entries FROM giveaway_entries WHERE giveaway_id = $1 ORDER BY created_at",
-                giveaway_id,
-            )
+        cache = self.bot.cache
+        cache_key = f"giveaway:entries:{giveaway_id}"
+        try:
+            async with self.bot.db_pool.acquire() as conn:
+                rows = await conn.fetch(
+                    "SELECT user_id, entries FROM giveaway_entries WHERE giveaway_id = $1 ORDER BY created_at",
+                    giveaway_id,
+                )
+            if cache:
+                cache.set(cache_key, [dict(r) for r in rows], ttl=60)
+            return rows
+        except (asyncpg.CannotConnectNowError, asyncpg.ConnectionDoesNotExistError):
+            if cache:
+                cached = cache.get(cache_key)
+                if cached is not None:
+                    logger.warning("DB unavailable, using cache")
+                    return cached
+            raise
 
     async def _get_giveaway(self, message_id: int):
-        async with self.bot.db_pool.acquire() as conn:
-            return await conn.fetchrow("SELECT * FROM giveaways WHERE message_id = $1", message_id)
+        cache = self.bot.cache
+        cache_key = f"giveaway:msg:{message_id}"
+        try:
+            async with self.bot.db_pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    "SELECT * FROM giveaways WHERE message_id = $1", message_id
+                )
+            if row and cache:
+                cache.set(cache_key, dict(row), ttl=300)
+            return row
+        except (asyncpg.CannotConnectNowError, asyncpg.ConnectionDoesNotExistError):
+            if cache:
+                cached = cache.get(cache_key)
+                if cached is not None:
+                    logger.warning("DB unavailable, using cache")
+                    return cached
+            raise
 
     async def _check_eligibility(self, interaction: discord.Interaction, giveaway) -> tuple:
         user_roles = {r.id for r in interaction.user.roles}

@@ -33,6 +33,7 @@ class InMemoryCache:
         return entry.value
 
     def set(self, key: str, value: Any, ttl: Optional[int] = None):
+        self._prune_expired()
         if len(self._store) >= self.max_size:
             self._evict_oldest()
         ttl_seconds = ttl if ttl is not None else self.default_ttl
@@ -48,6 +49,12 @@ class InMemoryCache:
 
     def size(self) -> int:
         return len(self._store)
+
+    def _prune_expired(self):
+        now = datetime.now(UTC)
+        to_remove = [k for k, e in self._store.items() if now >= e.expires_at]
+        for k in to_remove:
+            del self._store[k]
 
     def _evict_oldest(self):
         if not self._store:

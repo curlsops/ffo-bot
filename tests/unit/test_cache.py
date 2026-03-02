@@ -60,6 +60,14 @@ class TestCacheExpiration:
         cache.set("key1", "value1", ttl=ttl)
         assert cache.get("key1") is None
 
+    def test_prune_expired_on_set(self):
+        cache = InMemoryCache(max_size=10, default_ttl=60)
+        cache.set("expired", "v1", ttl=0)
+        cache.set("fresh", "v2")
+        assert cache.get("expired") is None
+        assert cache.get("fresh") == "v2"
+        assert cache.size() == 1
+
 
 class TestCacheEviction:
     def test_evicts_when_full(self):
