@@ -330,7 +330,7 @@ class TestCreatePrizeThread:
         await manager._create_prize_thread(channel, giveaway, winners)
 
         channel.create_thread.assert_awaited_once_with(
-            name="Prize: Cool Prize",
+            name="Cool Prize",
             message=None,
             invitable=False,
         )
@@ -353,7 +353,7 @@ class TestCreatePrizeThread:
         giveaway = _giveaway(prize=long_prize)
         await manager._create_prize_thread(channel, giveaway, [1])
         channel.create_thread.assert_awaited_once_with(
-            name=f"Prize: {'A' * 80}",
+            name="A" * 80,
             message=None,
             invitable=False,
         )

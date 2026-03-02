@@ -176,7 +176,7 @@ class GiveawayManager(commands.Cog):
         """Create a private thread for host + winners to handle prizes."""
         try:
             thread = await channel.create_thread(
-                name=f"Prize: {giveaway['prize'][:80]}",
+                name=giveaway["prize"][:80],
                 message=None,
                 invitable=False,
             )
