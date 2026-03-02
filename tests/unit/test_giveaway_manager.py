@@ -332,6 +332,7 @@ class TestCreatePrizeThread:
         channel.create_thread.assert_awaited_once_with(
             name="Prize: Cool Prize",
             message=None,
+            invitable=False,
         )
         assert thread.add_user.await_count == 3  # host + 2 winners
         thread.send.assert_awaited_once()
@@ -354,6 +355,7 @@ class TestCreatePrizeThread:
         channel.create_thread.assert_awaited_once_with(
             name=f"Prize: {'A' * 80}",
             message=None,
+            invitable=False,
         )
 
     @pytest.mark.asyncio
