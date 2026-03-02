@@ -1,32 +1,14 @@
 <p align="center">
   <h1 align="center">FFO Discord Bot</h1>
-  <p align="center">
-    High-availability Discord bot for automated reactions, media archival, and community management.
-  </p>
+  <p align="center">Giveaways, automated reactions, reaction roles, media archival.</p>
 </p>
 
 <p align="center">
   <a href="https://github.com/curlsops/ffo-bot/actions/workflows/ci.yml"><img src="https://github.com/curlsops/ffo-bot/actions/workflows/ci.yml/badge.svg" alt="CI"></a>
   <a href="https://app.codecov.io/github/curlsops/ffo-bot"><img src="https://codecov.io/github/curlsops/ffo-bot/graph/badge.svg" alt="codecov"></a>
-  <a href="https://www.python.org/downloads/"><img src="https://img.shields.io/badge/python-3.12+-blue.svg" alt="Python 3.12+"></a>
   <a href="LICENSE"><img src="https://img.shields.io/badge/license-CC%20BY--NC--SA%204.0-green.svg" alt="License"></a>
   <a href="https://github.com/curlsops/ffo-bot/pkgs/container/ffo-bot"><img src="https://img.shields.io/badge/ghcr.io-ffo--bot-blue?logo=docker" alt="Docker"></a>
 </p>
-
----
-
-## Features
-
-| Feature | Description |
-|---------|-------------|
-| 🎉 **Giveaways** | Create giveaways with role requirements, bonus entries, and automatic winner selection |
-| 🤖 **Automated Reactions** | Configure regex patterns to automatically react to messages |
-| 📁 **Media Archival** | Download and archive media from monitored channels |
-| 👥 **Reaction Roles** | Self-service role assignment via reactions |
-| 🔐 **Granular Permissions** | Role-based access control (super admin, admin, moderator) |
-| 📊 **Prometheus Metrics** | Comprehensive observability and monitoring |
-| 🏥 **Health Checks** | Kubernetes-ready liveness and readiness probes |
-| 🔄 **High Availability** | Active-active deployment with 99% uptime target |
 
 ---
 
@@ -36,275 +18,79 @@
 docker pull ghcr.io/curlsops/ffo-bot:latest
 ```
 
-<details>
-<summary><b>📦 Docker Compose (Recommended)</b></summary>
+**Required env:** `DISCORD_BOT_TOKEN`, `DISCORD_PUBLIC_KEY`, `DATABASE_URL`
 
 ```bash
-# Clone and configure
-git clone https://github.com/curlsops/ffo-bot.git
-cd ffo-bot/examples/docker-compose
-cp .env.example .env
-# Edit .env with your credentials
+# Docker Compose
+cd examples/docker-compose && cp .env.example .env
+docker compose run --rm ffo-bot alembic upgrade head && docker compose up -d
 
-# Run migrations and start
-docker compose run --rm ffo-bot alembic upgrade head
-docker compose up -d
-```
-
-See [examples/docker-compose/](examples/docker-compose/) for full documentation.
-
-</details>
-
-<details>
-<summary><b>☸️ Kubernetes</b></summary>
-
-```bash
+# Kubernetes
 kubectl apply -f examples/kubernetes/
+
+# Local
+pip install -r requirements.txt && alembic upgrade head && python main.py
 ```
-
-See [examples/kubernetes/](examples/kubernetes/) for full documentation including secrets, configmaps, and ServiceMonitor.
-
-</details>
-
-<details>
-<summary><b>🐍 Local Development</b></summary>
-
-### Prerequisites
-
-- Python 3.12+
-- PostgreSQL 16+
-- Discord Bot Token
-
-### Setup
-
-```bash
-# Clone repository
-git clone https://github.com/curlsops/ffo-bot.git
-cd ffo-bot
-
-# Create virtual environment
-python3.12 -m venv venv
-source venv/bin/activate
-
-# Install dependencies
-pip install -r requirements.txt
-pip install -r requirements-dev.txt
-
-# Configure environment
-cp .env.example .env
-# Edit .env with your Discord credentials
-
-# Start PostgreSQL
-docker-compose up -d postgres
-
-# Run migrations
-alembic upgrade head
-
-# Start the bot
-python main.py
-```
-
-</details>
 
 ---
 
-## Bot Setup
+## Bot Permissions
 
-### Required Permissions
+Add the bot with: Send Messages, Embed Links, Add Reactions, Read Message History, Use External Emojis, View Channels, Create Private Threads.
 
-When adding the bot to your Discord server, it needs the following permissions:
-
-| Permission | Reason |
-|------------|--------|
-| Send Messages | Send giveaway announcements and responses |
-| Embed Links | Display rich embeds for giveaways |
-| Add Reactions | React to messages with configured patterns |
-| Read Message History | Process messages for phrase matching |
-| Use External Emojis | Use custom emojis from other servers |
-| View Channels | Access channels for monitoring |
-
-### Invite URL
-
-Generate your invite URL from the [Discord Developer Portal](https://discord.com/developers/applications):
-
-1. Go to **OAuth2 > URL Generator**
-2. Select scopes: `bot`, `applications.commands`
-3. Select the permissions above (or use permission integer: `277025704000`)
-4. Copy the generated URL and open it to add the bot
-
-**Direct URL template:**
+Generate invite: [Discord Developer Portal](https://discord.com/developers/applications) → OAuth2 → URL Generator → `bot` + `applications.commands`
 ```
 https://discord.com/api/oauth2/authorize?client_id=YOUR_CLIENT_ID&permissions=277025704000&scope=bot%20applications.commands
 ```
 
-Replace `YOUR_CLIENT_ID` with your bot's application ID.
+---
+
+## Features
+
+| Feature | Description |
+|---------|-------------|
+| 🎉 Giveaways | Role requirements, bonus entries, private prize threads |
+| 🤖 Reactions | Regex patterns → auto-reactions |
+| 👥 Reaction Roles | Self-service role assignment |
+| 📁 Media | Optional archival (disabled by default) |
+| 🔐 Permissions | Super admin, admin, moderator roles |
+| 📊 Metrics | `/metrics` on port 8080 (Prometheus) |
 
 ---
 
-## Configuration
+## Config
 
-<details>
-<summary><b>Environment Variables</b></summary>
+| Variable | Default |
+|----------|---------|
+| `HEALTH_CHECK_PORT` | 8080 |
+| `FEATURE_MEDIA_DOWNLOAD` | false |
+| `FEATURE_GIVEAWAYS` | true |
+| `FEATURE_REACTION_ROLES` | true |
+| `FEATURE_VOICE_TRANSCRIPTION` | false |
 
-### Required
+Endpoints: `/healthz`, `/readyz`, `/metrics`
 
-| Variable | Description |
-|----------|-------------|
-| `DISCORD_BOT_TOKEN` | Discord bot token |
-| `DISCORD_PUBLIC_KEY` | Discord application public key |
-| `DATABASE_URL` | PostgreSQL connection string |
+---
 
-### Optional
+## Roadmap
 
-| Variable | Default | Description |
-|----------|---------|-------------|
-| `LOG_LEVEL` | `INFO` | Logging level (DEBUG, INFO, WARNING, ERROR) |
-| `LOG_FORMAT` | `json` | Log format (json, text) |
-| `HEALTH_CHECK_PORT` | `8080` | Health/metrics server port |
-| `FEATURE_MEDIA_DOWNLOAD` | `false` | Enable media archival |
-| `RATE_LIMIT_USER_CAPACITY` | `10` | Rate limit tokens per user |
-| `RATE_LIMIT_SERVER_CAPACITY` | `100` | Rate limit tokens per server |
-| `CACHE_MAX_SIZE` | `10000` | Maximum cache entries |
-| `CACHE_DEFAULT_TTL` | `300` | Cache TTL in seconds |
-| `DB_POOL_MIN_SIZE` | `2` | Minimum database connections |
-| `DB_POOL_MAX_SIZE` | `10` | Maximum database connections |
-
-</details>
-
-<details>
-<summary><b>Monitoring Endpoints</b></summary>
-
-The bot exposes endpoints on port 8080:
-
-| Endpoint | Description |
-|----------|-------------|
-| `/healthz` | Liveness probe |
-| `/readyz` | Readiness probe |
-| `/metrics` | Prometheus metrics |
-
-</details>
+| Feature | Issue |
+|---------|-------|
+| Quotebook submissions | [#92](https://github.com/curlsops/ffo-bot/issues/92) |
+| Minecraft FAQ & whitelist management | [#93](https://github.com/curlsops/ffo-bot/issues/93) |
+| Voice transcription (mobile audio) | [#94](https://github.com/curlsops/ffo-bot/issues/94) |
+| Currency & measurement conversion | [#95](https://github.com/curlsops/ffo-bot/issues/95) |
+| Polls with more options | [#96](https://github.com/curlsops/ffo-bot/issues/96) |
+| Reaction roles (Arcane replacement) | [#98](https://github.com/curlsops/ffo-bot/issues/98) |
+| Ticketing system | [#97](https://github.com/curlsops/ffo-bot/issues/97) |
 
 ---
 
 ## Development
 
-<details>
-<summary><b>Testing</b></summary>
-
-Run the test suite (377 tests, 100% coverage):
-
 ```bash
-# All tests with coverage
-pytest tests/ -v --cov=bot --cov=config --cov=database --cov-report=html
-
-# Unit tests only
-pytest tests/unit/ -v
-
-# Integration tests only
-pytest tests/integration/ -v
-
-# Full build (linting + tests + Docker)
+pytest tests/ -v
 ./build.sh
 ```
 
-</details>
-
-<details>
-<summary><b>Project Structure</b></summary>
-
-```
-ffo-bot/
-├── bot/                    # Bot application code
-│   ├── auth/              # Authentication and permissions
-│   ├── cache/             # In-memory caching
-│   ├── commands/          # Slash commands
-│   ├── handlers/          # Event handlers
-│   ├── processors/        # Message processors
-│   ├── tasks/             # Background tasks
-│   └── utils/             # Utilities and helpers
-├── config/                # Configuration management
-├── database/              # Database layer and migrations
-├── examples/              # Deployment examples
-│   ├── docker-compose/   # Docker Compose setup
-│   └── kubernetes/       # Kubernetes manifests
-├── tests/                 # Test suite
-└── .github/workflows/     # CI/CD pipelines
-```
-
-</details>
-
-<details>
-<summary><b>CI/CD Workflows</b></summary>
-
-| Workflow | Trigger | Description |
-|----------|---------|-------------|
-| **CI** | Push/PR | Linting, tests, coverage, Docker build |
-| **Nightly** | Daily 00:00 UTC | Build and push `:nightly` image |
-| **Release Please** | Push to main | Automated semantic versioning |
-| **Auto-merge** | Renovate PRs | Auto-merge dependency updates |
-
-### Commit Convention
-
-Use [Conventional Commits](https://www.conventionalcommits.org/) for automatic versioning:
-
-| Prefix | Version Bump | Example |
-|--------|--------------|---------|
-| `fix:` | Patch (0.0.x) | `fix: resolve database timeout` |
-| `feat:` | Minor (0.x.0) | `feat: add new slash command` |
-| `feat!:` | Major (x.0.0) | `feat!: change API format` |
-
-### Release Flow
-
-```mermaid
-graph LR
-    A[Push to main] --> B[Release Please PR]
-    B --> C[Merge PR]
-    C --> D[Create Tag]
-    D --> E[Build & Push Docker]
-    E --> F[GitHub Release]
-```
-
-</details>
-
----
-
-## Security
-
-| Protection | Implementation |
-|------------|----------------|
-| Input Validation | Comprehensive sanitization on all inputs |
-| SQL Injection | Parameterized queries only |
-| ReDoS | Regex pattern validation and timeout |
-| Rate Limiting | Per-user and per-server token buckets |
-| Audit Logging | All administrative actions logged |
-| Secrets | Encrypted with SOPS |
-
----
-
-## Contributing
-
-1. Fork the repository
-2. Create a feature branch (`git checkout -b feat/amazing-feature`)
-3. Make your changes with tests
-4. Run `./build.sh` to verify
-5. Commit using conventional commits (`git commit -m 'feat: add amazing feature'`)
-6. Push and open a Pull Request
-
----
-
-## License
-
-This project is licensed under [CC BY-NC-SA 4.0](https://creativecommons.org/licenses/by-nc-sa/4.0/).
-
-- ✅ Personal use
-- ✅ Modification
-- ✅ Distribution (with attribution, same license)
-- ❌ Commercial use
-
-See [LICENSE](LICENSE) for details.
-
----
-
-<p align="center">
-  <sub>Built with ❤️ by <a href="https://github.com/curlsops">curlsops</a></sub>
-</p>
+[CC BY-NC-SA 4.0](LICENSE) · [curlsops](https://github.com/curlsops)
