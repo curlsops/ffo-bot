@@ -27,6 +27,7 @@ env/
 .pytest_cache/
 .coverage
 *.cover
+*,cover
 htmlcov/
 .tox/
 *.swp
