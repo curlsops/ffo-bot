@@ -69,7 +69,7 @@ PATTERNS = [
         "m",
     ),
     (
-        re.compile(r"\b(\d+)\s*['′]\s*(\d+)\s*(?:[\"″]|in|inches)?\b", re.I),
+        re.compile(r"\b(\d+)\s*['′]\s*(\d+)\s*[\"″]?", re.I),
         "ft_in",
         None,
         None,
@@ -90,30 +90,48 @@ PATTERNS = [
         "m",
     ),
     (re.compile(r"\b(\d+\.?\d*)\s*[°º]\s*[Ff]\b"), "temp_f", None, _to_si_temp, None),
-    (re.compile(r"\b(\d+\.?\d*)\s*[Ff](?:\s|$|,|\.)"), "temp_f", None, _to_si_temp, None),
+    (re.compile(r"\b(\d+\.?\d*)\s+[Ff](?=\s|$|,|\.)"), "temp_f", None, _to_si_temp, None),
 ]
 
 
 def detect_and_convert(text: str) -> Optional[str]:
-    for pat, kind, units, conv, _ in PATTERNS:
-        m = pat.search(text)
-        if not m:
-            continue
-
-        if kind == "ft_in":
-            ft, inch = float(m.group(1)), float(m.group(2))
-            meters = ft * LENGTH_IMPERIAL["ft"] + inch * LENGTH_IMPERIAL["in"]
-            return _to_si_length(meters)
-        if kind == "temp_f":
-            f = float(m.group(1))
-            return _to_si_temp(f)
-        if kind in ("weight_imperial", "length_imperial") and units:  # pragma: no branch
-            amount = float(m.group(1))
-            u = m.group(2).lower()
-            if u in units:  # pragma: no branch
-                if kind == "weight_imperial":
-                    kg = amount * units[u]
-                    return _to_si_weight(kg)
-                meters = amount * units[u]
-                return _to_si_length(meters)
+    result = convert_in_text(text)
+    if result and result != text:
+        return result
     return None
+
+
+def convert_in_text(text: str) -> Optional[str]:
+    """Convert all imperial units in text, returning the modified string."""
+    result = text
+    converted = False
+
+    for pat, kind, units, conv, _ in PATTERNS:
+        for m in pat.finditer(result):
+            si_val = None
+            if kind == "ft_in":
+                ft, inch = float(m.group(1)), float(m.group(2))
+                meters = ft * LENGTH_IMPERIAL["ft"] + inch * LENGTH_IMPERIAL["in"]
+                si_val = _to_si_length(meters)
+            elif kind == "temp_f":
+                f = float(m.group(1))
+                si_val = _to_si_temp(f)
+            elif kind in ("weight_imperial", "length_imperial") and units:
+                amount = float(m.group(1))
+                u = m.group(2).lower()
+                if u in units:
+                    if kind == "weight_imperial":
+                        kg = amount * units[u]
+                        si_val = _to_si_weight(kg)
+                    else:
+                        meters = amount * units[u]
+                        si_val = _to_si_length(meters)
+
+            if si_val:
+                result = result[: m.start()] + si_val + result[m.end() :]
+                converted = True
+                break
+        if converted:
+            break
+
+    return result if converted else None

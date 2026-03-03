@@ -166,13 +166,9 @@ class MessageHandler(commands.Cog):
         from bot.processors.unit_converter import detect_and_convert
 
         try:
-            si = detect_and_convert(message.content)
-            if si:
-                embed = discord.Embed(
-                    description=f"≈ **{si}**",
-                    color=0x5865F2,
-                )
-                await message.reply(embed=embed, mention_author=False)
+            converted = detect_and_convert(message.content)
+            if converted:
+                await message.reply(converted, mention_author=False)
         except Exception as e:
             logger.warning("Unit conversion error: %s", e)
 
