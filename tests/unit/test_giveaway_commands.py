@@ -1,3 +1,4 @@
+import logging
 import uuid
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
@@ -511,6 +512,7 @@ class TestAlreadyJoinedView:
 
     @pytest.mark.asyncio
     async def test_leave_button_db_error(self, leave_view, mock_bot, caplog):
+        caplog.set_level(logging.WARNING, logger="bot.commands.giveaway")
         ctx = MagicMock()
         ctx.__aenter__ = AsyncMock(side_effect=Exception("DB unavailable"))
         ctx.__aexit__ = AsyncMock(return_value=None)

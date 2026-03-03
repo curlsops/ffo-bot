@@ -1,4 +1,5 @@
 import asyncio
+import logging
 from unittest.mock import ANY, AsyncMock, MagicMock, PropertyMock, patch
 
 import discord
@@ -188,6 +189,7 @@ class TestFFOBotLifecycle:
 
     @pytest.mark.asyncio
     async def test_close_handles_drain_timeout(self, mock_settings, caplog):
+        caplog.set_level(logging.WARNING, logger="bot.client")
         from bot.client import FFOBot
 
         mock_settings.shutdown_timeout_seconds = 0.01
@@ -217,6 +219,7 @@ class TestFFOBotGuildEvents:
 
     @pytest.mark.asyncio
     async def test_register_server_handles_error(self, bot, caplog):
+        caplog.set_level(logging.WARNING, logger="bot.client")
         conn = AsyncMock()
         conn.execute = AsyncMock(side_effect=Exception("Database error"))
         bot.db_pool = make_db_ctx(conn)
@@ -765,6 +768,7 @@ class TestFFOBotAppCommandError:
 
     @pytest.mark.asyncio
     async def test_load_extensions_multiple_failures(self, bot, caplog):
+        caplog.set_level(logging.WARNING, logger="bot.client")
         async def fail_all(*args):
             raise Exception("load failed")
 

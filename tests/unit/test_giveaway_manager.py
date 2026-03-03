@@ -1,3 +1,4 @@
+import logging
 import uuid
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock, patch
@@ -113,6 +114,7 @@ class TestCheckGiveaways:
 
     @pytest.mark.asyncio
     async def test_error(self, manager, caplog):
+        caplog.set_level(logging.WARNING, logger="bot.tasks.giveaway_manager")
         manager.bot.db_pool = _db_ctx(MagicMock(fetch=AsyncMock(side_effect=Exception("DB error"))))
         await manager.check_giveaways()
         assert "Giveaway check error" in caplog.text
@@ -126,6 +128,7 @@ class TestCheckGiveaways:
         ],
     )
     async def test_db_unavailable_logs_warning(self, manager, caplog, exc):
+        caplog.set_level(logging.WARNING, logger="bot.tasks.giveaway_manager")
         ctx = MagicMock()
         ctx.__aenter__ = AsyncMock(side_effect=exc)
         ctx.__aexit__ = AsyncMock(return_value=None)
@@ -243,6 +246,7 @@ class TestEndGiveaway:
 
     @pytest.mark.asyncio
     async def test_notifier_exception_logged(self, manager, caplog):
+        caplog.set_level(logging.WARNING, logger="bot.tasks.giveaway_manager")
         manager.bot.db_pool = _db_ctx(
             MagicMock(
                 execute=AsyncMock(),
@@ -267,6 +271,7 @@ class TestEndGiveaway:
 
     @pytest.mark.asyncio
     async def test_fetch_channel_forbidden(self, manager, caplog):
+        caplog.set_level(logging.WARNING, logger="bot.tasks.giveaway_manager")
         manager.bot.db_pool = _db_ctx(
             MagicMock(execute=AsyncMock(), fetch=AsyncMock(return_value=[]))
         )
@@ -277,6 +282,7 @@ class TestEndGiveaway:
 
     @pytest.mark.asyncio
     async def test_fetch_channel_not_found(self, manager, caplog):
+        caplog.set_level(logging.WARNING, logger="bot.tasks.giveaway_manager")
         manager.bot.db_pool = _db_ctx(
             MagicMock(execute=AsyncMock(), fetch=AsyncMock(return_value=[]))
         )
@@ -298,12 +304,14 @@ class TestEndGiveaway:
 
     @pytest.mark.asyncio
     async def test_error(self, manager, caplog):
+        caplog.set_level(logging.WARNING, logger="bot.tasks.giveaway_manager")
         manager.bot.db_pool = _db_ctx(MagicMock(execute=AsyncMock(side_effect=Exception("Error"))))
         await manager._end_giveaway(_giveaway())
         assert "End giveaway error" in caplog.text
 
     @pytest.mark.asyncio
     async def test_msg_edit_error_logged(self, manager, caplog):
+        caplog.set_level(logging.WARNING, logger="bot.tasks.giveaway_manager")
         manager.bot.db_pool = _db_ctx(
             MagicMock(
                 execute=AsyncMock(),
@@ -404,6 +412,7 @@ class TestCreatePrizeThread:
 
     @pytest.mark.asyncio
     async def test_handles_add_user_failure(self, manager, caplog):
+        caplog.set_level(logging.WARNING, logger="bot.tasks.giveaway_manager")
         channel, _ = _channel_with_msg()
         thread = channel.create_thread.return_value
         thread.add_user = AsyncMock(side_effect=discord.Forbidden(MagicMock(), "nope"))
@@ -413,6 +422,7 @@ class TestCreatePrizeThread:
 
     @pytest.mark.asyncio
     async def test_handles_forbidden_create_thread(self, manager, caplog):
+        caplog.set_level(logging.WARNING, logger="bot.tasks.giveaway_manager")
         channel, _ = _channel_with_msg()
         channel.create_thread = AsyncMock(side_effect=discord.Forbidden(MagicMock(), ""))
         await manager._create_prize_thread(channel, _giveaway(), [100])
@@ -420,6 +430,7 @@ class TestCreatePrizeThread:
 
     @pytest.mark.asyncio
     async def test_handles_generic_exception(self, manager, caplog):
+        caplog.set_level(logging.WARNING, logger="bot.tasks.giveaway_manager")
         channel, _ = _channel_with_msg()
         channel.create_thread = AsyncMock(side_effect=Exception("boom"))
         await manager._create_prize_thread(channel, _giveaway(), [100])
@@ -455,7 +466,6 @@ class TestEndGiveawayPrizeThread:
 
 
 def _mock_thread(edit_side_effect=None):
-    """Create a mock that passes isinstance(x, discord.Thread)."""
     thread = MagicMock(edit=AsyncMock(side_effect=edit_side_effect))
     thread.id = 12345
     # Make isinstance(thread, discord.Thread) True for the callback

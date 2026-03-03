@@ -1,3 +1,4 @@
+import logging
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock
 
@@ -429,6 +430,7 @@ async def test_message_handler_check_user_opt_out_error_continues_processing():
 
 @pytest.mark.asyncio
 async def test_message_handler_phrase_match_log_failure_still_reacts(caplog):
+    caplog.set_level(logging.WARNING, logger="bot.handlers.messages")
     db_pool, conn = make_db_pool()
     conn.execute = AsyncMock(side_effect=Exception("DB down"))
     bot = MagicMock()
@@ -457,6 +459,7 @@ async def test_message_handler_phrase_match_log_failure_still_reacts(caplog):
 
 @pytest.mark.asyncio
 async def test_message_handler_phrase_match_http_exception_logged(caplog):
+    caplog.set_level(logging.WARNING, logger="bot.handlers.messages")
     bot = MagicMock()
     bot.is_shutting_down.return_value = False
     bot.metrics = MagicMock()

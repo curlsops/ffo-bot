@@ -22,13 +22,7 @@ def _make_db_pool(fetchval_result=None, fetchval_side_effect=None, execute_side_
     return pool, conn
 
 
-def _checker(
-    fetchval_result=None,
-    cache_return=None,
-    bot=None,
-    execute_side_effect=None,
-    fetchval_side_effect=None,
-):
+def _checker(fetchval_result=None, cache_return=None, bot=None, execute_side_effect=None, fetchval_side_effect=None):
     db_pool, conn = _make_db_pool(fetchval_result, fetchval_side_effect, execute_side_effect)
     cache = MagicMock()
     cache.get.return_value = cache_return
@@ -49,20 +43,12 @@ def _ctx(server_id=1, user_id=2, command_name=None):
 
 
 class TestIsDiscordAdmin:
-    @pytest.mark.parametrize(
-        "guild,member,is_admin,expected",
-        [
-            (None, None, False, False),
-            (MagicMock(), None, False, False),
-            (
-                MagicMock(),
-                MagicMock(guild_permissions=MagicMock(administrator=False)),
-                False,
-                False,
-            ),
-            (MagicMock(), MagicMock(guild_permissions=MagicMock(administrator=True)), True, True),
-        ],
-    )
+    @pytest.mark.parametrize("guild,member,is_admin,expected", [
+        (None, None, False, False),
+        (MagicMock(), None, False, False),
+        (MagicMock(), MagicMock(guild_permissions=MagicMock(administrator=False)), False, False),
+        (MagicMock(), MagicMock(guild_permissions=MagicMock(administrator=True)), True, True),
+    ])
     def test_cases(self, guild, member, is_admin, expected):
         checker = _checker_with_bot(guild, member)
         assert checker._is_discord_admin(1, 2) is expected
@@ -91,17 +77,14 @@ class TestCheckRole:
         assert await checker.check_role(_ctx(), Role.ADMIN) is False
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize(
-        "user_role,required_role,expected,should_log",
-        [
-            ("super_admin", Role.ADMIN, True, False),
-            ("admin", Role.ADMIN, True, False),
-            ("admin", Role.MODERATOR, True, False),
-            ("moderator", Role.MODERATOR, True, False),
-            ("moderator", Role.ADMIN, False, True),
-            ("moderator", Role.SUPER_ADMIN, False, True),
-        ],
-    )
+    @pytest.mark.parametrize("user_role,required_role,expected,should_log", [
+        ("super_admin", Role.ADMIN, True, False),
+        ("admin", Role.ADMIN, True, False),
+        ("admin", Role.MODERATOR, True, False),
+        ("moderator", Role.MODERATOR, True, False),
+        ("moderator", Role.ADMIN, False, True),
+        ("moderator", Role.SUPER_ADMIN, False, True),
+    ])
     async def test_hierarchy(self, user_role, required_role, expected, should_log):
         checker, conn, _ = _checker(fetchval_result=user_role)
         result = await checker.check_role(_ctx(command_name="cmd"), required_role)
@@ -189,8 +172,7 @@ class TestLogPermissionDenial:
     @pytest.mark.asyncio
     async def test_logs_non_transient_exception(self, caplog):
         import logging
-
-        caplog.set_level(logging.ERROR)
+        caplog.set_level(logging.ERROR, logger="bot.auth.permissions")
         checker, _, _ = _checker(execute_side_effect=RuntimeError("audit table missing"))
         await checker._log_permission_denial(_ctx(command_name="test_cmd"), Role.ADMIN)
         assert "Failed to log permission denial" in caplog.text
@@ -200,7 +182,6 @@ class TestLogPermissionDenial:
     async def test_log_permission_denial_exception_logged(self):
         from unittest.mock import patch
         from bot.auth import permissions as perm_module
-
         checker, _, _ = _checker(execute_side_effect=ValueError("constraint violation"))
         with patch.object(perm_module.logger, "error") as mock_log:
             await checker._log_permission_denial(_ctx(command_name="x"), Role.SUPER_ADMIN)
@@ -211,8 +192,7 @@ class TestLogPermissionDenial:
     @pytest.mark.asyncio
     async def test_check_role_logs_denial_when_audit_fails(self, caplog):
         import logging
-
-        caplog.set_level(logging.ERROR)
+        caplog.set_level(logging.ERROR, logger="bot.auth.permissions")
         checker, conn, _ = _checker(
             fetchval_result="moderator",
             execute_side_effect=RuntimeError("audit table missing"),
@@ -232,11 +212,7 @@ class TestInvalidateUserCache:
 class TestRoleHierarchy:
     def test_order(self):
         assert Role.SUPER_ADMIN.hierarchy > Role.ADMIN.hierarchy > Role.MODERATOR.hierarchy
-        assert (Role.SUPER_ADMIN.hierarchy, Role.ADMIN.hierarchy, Role.MODERATOR.hierarchy) == (
-            3,
-            2,
-            1,
-        )
+        assert (Role.SUPER_ADMIN.hierarchy, Role.ADMIN.hierarchy, Role.MODERATOR.hierarchy) == (3, 2, 1)
 
 
 class TestEdgeCases:

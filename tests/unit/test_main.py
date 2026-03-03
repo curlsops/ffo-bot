@@ -17,7 +17,7 @@ class TestGracefulShutdown:
 
     @pytest.mark.asyncio
     async def test_shutdown_handles_close_error(self, caplog):
-        caplog.set_level(logging.ERROR)
+        caplog.set_level(logging.ERROR, logger="main")
         bot = MagicMock(close=AsyncMock(side_effect=Exception("close failed")))
         gs = GracefulShutdown(bot)
         await gs._shutdown(MagicMock(name="SIGTERM"))
