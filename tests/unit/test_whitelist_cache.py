@@ -1,5 +1,6 @@
 """Tests for whitelist cache utilities."""
 
+import logging
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -44,6 +45,7 @@ async def test_get_cached_usernames_empty():
 
 @pytest.mark.asyncio
 async def test_get_cached_usernames_exception_returns_empty(caplog):
+    caplog.set_level(logging.WARNING, logger="bot.utils.whitelist_cache")
     conn = AsyncMock()
     conn.fetch.side_effect = Exception("DB error")
     pool = make_pool(conn)
@@ -51,6 +53,29 @@ async def test_get_cached_usernames_exception_returns_empty(caplog):
     result = await get_cached_usernames(pool, 123)
     assert result == []
     assert "Failed to get whitelist cache" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_get_cached_usernames_cache_hit():
+    pool = make_pool(AsyncMock())
+    cache = MagicMock()
+    cache.get.return_value = ["Cached", "Names"]
+    result = await get_cached_usernames(pool, 123, cache=cache)
+    assert result == ["Cached", "Names"]
+    cache.get.assert_called_once_with("whitelist_usernames:123")
+    pool.acquire.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_get_cached_usernames_cache_miss_sets_cache():
+    conn = AsyncMock()
+    conn.fetch.return_value = [{"username": "Alice"}]
+    pool = make_pool(conn)
+    cache = MagicMock()
+    cache.get.return_value = None
+    result = await get_cached_usernames(pool, 123, cache=cache)
+    assert result == ["Alice"]
+    cache.set.assert_called_once_with("whitelist_usernames:123", ["Alice"], ttl=300)
 
 
 @pytest.mark.asyncio
@@ -64,6 +89,15 @@ async def test_add_to_cache_success():
     assert 123 in call_args
     assert "Steve" in call_args
     assert 456 in call_args
+
+
+@pytest.mark.asyncio
+async def test_add_to_cache_invalidates_cache():
+    conn = AsyncMock()
+    pool = make_pool(conn)
+    cache = MagicMock()
+    await add_to_cache(pool, 123, "Steve", cache=cache)
+    cache.delete.assert_called_once_with("whitelist_usernames:123")
 
 
 @pytest.mark.asyncio
@@ -81,6 +115,7 @@ async def test_add_to_cache_with_minecraft_uuid():
 
 @pytest.mark.asyncio
 async def test_add_to_cache_exception_logs(caplog):
+    caplog.set_level(logging.WARNING, logger="bot.utils.whitelist_cache")
     conn = AsyncMock()
     conn.execute.side_effect = Exception("DB error")
     pool = make_pool(conn)
@@ -102,7 +137,17 @@ async def test_remove_from_cache_success():
 
 
 @pytest.mark.asyncio
+async def test_remove_from_cache_invalidates_cache():
+    conn = AsyncMock()
+    pool = make_pool(conn)
+    cache = MagicMock()
+    await remove_from_cache(pool, 123, "Steve", cache=cache)
+    cache.delete.assert_called_once_with("whitelist_usernames:123")
+
+
+@pytest.mark.asyncio
 async def test_remove_from_cache_exception_logs(caplog):
+    caplog.set_level(logging.WARNING, logger="bot.utils.whitelist_cache")
     conn = AsyncMock()
     conn.execute.side_effect = Exception("DB error")
     pool = make_pool(conn)
@@ -124,6 +169,18 @@ async def test_sync_from_rcon_success():
 
 
 @pytest.mark.asyncio
+async def test_sync_from_rcon_invalidates_cache():
+    conn = AsyncMock()
+    pool = make_pool(conn)
+    rcon = AsyncMock()
+    rcon.whitelist_list.return_value = "There are 1 whitelisted player: Alice"
+    cache = MagicMock()
+    result = await sync_from_rcon(pool, 123, rcon, cache=cache)
+    assert result is True
+    cache.delete.assert_called_once_with("whitelist_usernames:123")
+
+
+@pytest.mark.asyncio
 async def test_sync_from_rcon_empty_list():
     conn = AsyncMock()
     pool = make_pool(conn)
@@ -137,6 +194,7 @@ async def test_sync_from_rcon_empty_list():
 
 @pytest.mark.asyncio
 async def test_sync_from_rcon_exception_returns_false(caplog):
+    caplog.set_level(logging.WARNING, logger="bot.utils.whitelist_cache")
     conn = AsyncMock()
     conn.execute.side_effect = Exception("DB error")
     pool = make_pool(conn)
@@ -180,8 +238,6 @@ async def test_sync_from_rcon_with_fetch_uuid():
 
 @pytest.mark.asyncio
 async def test_sync_from_rcon_fetch_uuid_returns_none_and_raises(caplog):
-    import logging
-
     caplog.set_level(logging.DEBUG, logger="bot.utils.whitelist_cache")
     conn = AsyncMock()
     pool = make_pool(conn)
@@ -223,8 +279,6 @@ async def test_sync_from_rcon_with_batch_fetch():
 
 @pytest.mark.asyncio
 async def test_sync_from_rcon_batch_fetch_exception(caplog):
-    import logging
-
     caplog.set_level(logging.WARNING, logger="bot.utils.whitelist_cache")
     conn = AsyncMock()
     pool = make_pool(conn)

@@ -1,21 +1,40 @@
 """Whitelist cache - sync from RCON, store in DB for autocomplete."""
 
 import logging
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 from bot.services.minecraft_rcon import parse_whitelist_list_response
 
+if TYPE_CHECKING:
+    from bot.cache.memory import InMemoryCache
+
 logger = logging.getLogger(__name__)
 
+CACHE_KEY_WHITELIST = "whitelist_usernames:{server_id}"
 
-async def get_cached_usernames(db_pool, server_id: int) -> list[str]:
+
+def _invalidate_whitelist_cache(cache: Optional["InMemoryCache"], server_id: int) -> None:
+    if cache:
+        cache.delete(CACHE_KEY_WHITELIST.format(server_id=server_id))
+
+
+async def get_cached_usernames(
+    db_pool, server_id: int, cache: Optional["InMemoryCache"] = None
+) -> list[str]:
+    if cache:
+        cached = cache.get(CACHE_KEY_WHITELIST.format(server_id=server_id))
+        if cached is not None:
+            return cached
     try:
         async with db_pool.acquire() as conn:
             rows = await conn.fetch(
                 "SELECT username FROM whitelist_cache WHERE server_id = $1 ORDER BY username",
                 server_id,
             )
-        return [r["username"] for r in rows]
+        result = [r["username"] for r in rows]
+        if cache:
+            cache.set(CACHE_KEY_WHITELIST.format(server_id=server_id), result, ttl=300)
+        return result
     except Exception as e:
         logger.warning("Failed to get whitelist cache: %s", e)
         return []
@@ -27,6 +46,7 @@ async def add_to_cache(
     username: str,
     added_by: Optional[int] = None,
     minecraft_uuid: Optional[str] = None,
+    cache: Optional["InMemoryCache"] = None,
 ) -> None:
     try:
         async with db_pool.acquire() as conn:
@@ -43,11 +63,14 @@ async def add_to_cache(
                 added_by,
                 minecraft_uuid,
             )
+        _invalidate_whitelist_cache(cache, server_id)
     except Exception as e:
         logger.warning("Failed to add to whitelist cache: %s", e)
 
 
-async def remove_from_cache(db_pool, server_id: int, username: str) -> None:
+async def remove_from_cache(
+    db_pool, server_id: int, username: str, cache: Optional["InMemoryCache"] = None
+) -> None:
     try:
         async with db_pool.acquire() as conn:
             await conn.execute(
@@ -55,12 +78,18 @@ async def remove_from_cache(db_pool, server_id: int, username: str) -> None:
                 server_id,
                 username,
             )
+        _invalidate_whitelist_cache(cache, server_id)
     except Exception as e:
         logger.warning("Failed to remove from whitelist cache: %s", e)
 
 
 async def sync_from_rcon(
-    db_pool, server_id: int, rcon_client, fetch_uuid=None, batch_fetch=None
+    db_pool,
+    server_id: int,
+    rcon_client,
+    fetch_uuid=None,
+    batch_fetch=None,
+    cache: Optional["InMemoryCache"] = None,
 ) -> bool:
     """Sync whitelist from RCON to database.
 
@@ -105,6 +134,7 @@ async def sync_from_rcon(
                     username,
                     uuid_val,
                 )
+        _invalidate_whitelist_cache(cache, server_id)
         return True
     except Exception as e:
         logger.warning("Failed to sync whitelist from RCON: %s", e)

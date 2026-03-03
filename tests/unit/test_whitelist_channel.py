@@ -78,6 +78,51 @@ async def test_get_whitelist_channel_id_exception_returns_none(caplog):
 
 
 @pytest.mark.asyncio
+async def test_get_whitelist_channel_id_cache_hit_returns_value():
+    pool = make_pool(AsyncMock())
+    cache = MagicMock()
+    cache.get.return_value = 777
+    result = await get_whitelist_channel_id(pool, 123, cache=cache)
+    assert result == 777
+    cache.get.assert_called_once_with("whitelist_channel:123")
+    pool.acquire.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_get_whitelist_channel_id_cache_hit_sentinel_returns_none():
+    pool = make_pool(AsyncMock())
+    cache = MagicMock()
+    cache.get.return_value = -1
+    result = await get_whitelist_channel_id(pool, 123, cache=cache)
+    assert result is None
+    pool.acquire.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_get_whitelist_channel_id_cache_miss_sets_cache():
+    conn = AsyncMock()
+    conn.fetchrow.return_value = {"config": {"whitelist_channel_id": 888}}
+    pool = make_pool(conn)
+    cache = MagicMock()
+    cache.get.return_value = None
+    result = await get_whitelist_channel_id(pool, 123, cache=cache)
+    assert result == 888
+    cache.set.assert_called_once_with("whitelist_channel:123", 888, ttl=300)
+
+
+@pytest.mark.asyncio
+async def test_get_whitelist_channel_id_cache_miss_none_sets_sentinel():
+    conn = AsyncMock()
+    conn.fetchrow.return_value = None
+    pool = make_pool(conn)
+    cache = MagicMock()
+    cache.get.return_value = None
+    result = await get_whitelist_channel_id(pool, 123, cache=cache)
+    assert result is None
+    cache.set.assert_called_once_with("whitelist_channel:123", -1, ttl=300)
+
+
+@pytest.mark.asyncio
 async def test_set_whitelist_channel_with_id():
     conn = AsyncMock()
     pool = make_pool(conn)
@@ -109,3 +154,13 @@ async def test_set_whitelist_channel_exception_returns_false(caplog):
     result = await set_whitelist_channel(pool, 123, 999)
     assert result is False
     assert "Failed to set whitelist channel" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_set_whitelist_channel_invalidates_cache():
+    conn = AsyncMock()
+    pool = make_pool(conn)
+    cache = MagicMock()
+    result = await set_whitelist_channel(pool, 123, 999, cache=cache)
+    assert result is True
+    cache.delete.assert_called_once_with("whitelist_channel:123")

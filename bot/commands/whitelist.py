@@ -8,7 +8,7 @@ from discord.ext import commands
 
 from bot.auth.permissions import PermissionContext
 from bot.services.minecraft_rcon import MinecraftRCONError
-from bot.services.mojang import get_profile
+from bot.services.mojang import get_profile, get_profiles_batch
 from bot.utils.whitelist_cache import (
     add_to_cache,
     get_cached_usernames,
@@ -32,14 +32,16 @@ async def _whitelist_username_autocomplete(
     bot = interaction.client
     if not bot.minecraft_rcon:
         return []
-    usernames = await get_cached_usernames(bot.db_pool, interaction.guild_id)
+    usernames = await get_cached_usernames(bot.db_pool, interaction.guild_id, cache=bot.cache)
     if not usernames and bot.minecraft_rcon._is_configured():
-        from bot.services.mojang import get_profiles_batch
-
         await sync_from_rcon(
-            bot.db_pool, interaction.guild_id, bot.minecraft_rcon, batch_fetch=get_profiles_batch
+            bot.db_pool,
+            interaction.guild_id,
+            bot.minecraft_rcon,
+            batch_fetch=get_profiles_batch,
+            cache=bot.cache,
         )
-        usernames = await get_cached_usernames(bot.db_pool, interaction.guild_id)
+        usernames = await get_cached_usernames(bot.db_pool, interaction.guild_id, cache=bot.cache)
     cur = current.lower()
     choices = [
         app_commands.Choice(name=u, value=u) for u in usernames if not cur or cur in u.lower()
@@ -98,7 +100,9 @@ class WhitelistCommands(commands.Cog):
 
         await self.bot._register_server(interaction.guild)
         new_channel_id = channel.id if channel else None
-        current_id = await get_whitelist_channel_id(self.bot.db_pool, interaction.guild_id)
+        current_id = await get_whitelist_channel_id(
+            self.bot.db_pool, interaction.guild_id, cache=self.bot.cache
+        )
 
         if current_id == new_channel_id:
             if channel:
@@ -110,7 +114,7 @@ class WhitelistCommands(commands.Cog):
             return
 
         success = await set_whitelist_channel(
-            self.bot.db_pool, interaction.guild_id, new_channel_id
+            self.bot.db_pool, interaction.guild_id, new_channel_id, cache=self.bot.cache
         )
         if not success:
             await interaction.followup.send("Failed to update whitelist channel.")
@@ -160,6 +164,7 @@ class WhitelistCommands(commands.Cog):
                 valid,
                 added_by=interaction.user.id,
                 minecraft_uuid=minecraft_uuid,
+                cache=self.bot.cache,
             )
             await interaction.followup.send(f"Whitelist: {resp}", ephemeral=True)
         except MinecraftRCONError as e:
@@ -197,7 +202,9 @@ class WhitelistCommands(commands.Cog):
 
         try:
             resp = await self.bot.minecraft_rcon.whitelist_remove(valid)
-            await remove_from_cache(self.bot.db_pool, interaction.guild_id, valid)
+            await remove_from_cache(
+                self.bot.db_pool, interaction.guild_id, valid, cache=self.bot.cache
+            )
             await interaction.followup.send(f"Whitelist: {resp}", ephemeral=True)
         except MinecraftRCONError as e:
             logger.warning("RCON whitelist remove failed: %s", e)
@@ -221,16 +228,19 @@ class WhitelistCommands(commands.Cog):
                 ephemeral=True,
             )
             return
-        from bot.services.mojang import get_profiles_batch
-
         success = await sync_from_rcon(
             self.bot.db_pool,
             interaction.guild_id,
             self.bot.minecraft_rcon,
             batch_fetch=get_profiles_batch,
+            cache=self.bot.cache,
         )
         if success:
-            count = len(await get_cached_usernames(self.bot.db_pool, interaction.guild_id))
+            count = len(
+                await get_cached_usernames(
+                    self.bot.db_pool, interaction.guild_id, cache=self.bot.cache
+                )
+            )
             await interaction.followup.send(
                 f"Synced {count} players from Minecraft server.",
                 ephemeral=True,
