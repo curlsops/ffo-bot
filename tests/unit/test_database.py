@@ -76,3 +76,21 @@ class TestDatabasePoolMethods:
         db = DatabasePool(mock_pool)
         result = await db.fetchval("SELECT 1")
         assert result == 42
+
+    @pytest.mark.asyncio
+    async def test_fetchval_none(self):
+        conn = AsyncMock(fetchval=AsyncMock(return_value=None))
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=conn)
+        ctx.__aexit__ = AsyncMock(return_value=None)
+        mock_pool = MagicMock(acquire=MagicMock(return_value=ctx))
+        db = DatabasePool(mock_pool)
+        result = await db.fetchval("SELECT x FROM t WHERE 1=0")
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_acquire_returns_context(self):
+        mock_pool = MagicMock()
+        db = DatabasePool(mock_pool)
+        ctx = db.acquire()
+        assert ctx is not None

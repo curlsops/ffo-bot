@@ -105,3 +105,32 @@ class TestDatabasePoolJsonbCodec:
 
             await DatabasePool.create("postgresql://localhost/test", min_size=1, max_size=2)
             assert mock.call_args[1].get("init").__name__ == "_init_connection"
+
+
+class TestNotifierJsonbParamsExtended:
+    @pytest.mark.asyncio
+    async def test_set_notify_channel_json_structure(self, bot_with_conn):
+        bot, conn = bot_with_conn
+        await AdminNotifier(bot).set_notify_channel(1, 999)
+        param = conn.execute.call_args[0][1]
+        parsed = json.loads(param)
+        assert "notify_channel_id" in parsed
+        assert parsed["notify_channel_id"] == 999
+
+
+class TestAuditLogJsonbParamsExtended:
+    @pytest.mark.asyncio
+    async def test_log_permission_denial_json_structure(self):
+        conn = MagicMock(execute=AsyncMock())
+
+        @asynccontextmanager
+        async def acquire():
+            yield conn
+
+        db_pool = MagicMock(acquire=MagicMock(return_value=acquire()))
+        ctx = PermissionContext(server_id=1, user_id=2, command_name="whitelist_add")
+        await PermissionChecker(db_pool, MagicMock())._log_permission_denial(ctx, Role.ADMIN)
+        param = conn.execute.call_args[0][3]
+        parsed = json.loads(param)
+        assert parsed["command"] == "whitelist_add"
+        assert parsed["required_role"] == "admin"
