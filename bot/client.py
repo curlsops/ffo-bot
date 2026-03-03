@@ -1,25 +1,30 @@
+from __future__ import annotations
+
 import asyncio
 import logging
 import sys
 import time
-from typing import Optional
+from typing import TYPE_CHECKING, Optional
 
 import discord
-from discord import app_commands
 from aiohttp import web
+from discord import app_commands
 from discord.ext import commands
 
 from bot.auth.permissions import PermissionChecker
 from bot.cache.memory import InMemoryCache
-from bot.processors.media_downloader import MediaDownloader
-from bot.services.minecraft_rcon import MinecraftRCONClient
 from bot.processors.phrase_matcher import PhraseMatcher
-from bot.processors.voice_transcriber import VoiceTranscriber
+from bot.utils.health import HealthCheckServer
 from bot.utils.metrics import BotMetrics
 from bot.utils.notifier import AdminNotifier
 from bot.utils.rate_limiter import RateLimiter
 from config.settings import Settings
 from database.connection import DatabasePool
+
+if TYPE_CHECKING:
+    from bot.processors.media_downloader import MediaDownloader
+    from bot.processors.voice_transcriber import VoiceTranscriber
+    from bot.services.minecraft_rcon import MinecraftRCONClient
 
 logger = logging.getLogger(__name__)
 
@@ -82,27 +87,32 @@ class FFOBot(commands.Bot):
 
     async def setup_hook(self):
         logger.info("Initializing...")
+        self.metrics = BotMetrics()
         self.db_pool = await DatabasePool.create(
             self.settings.database_url,
             min_size=self.settings.db_pool_min_size,
             max_size=self.settings.db_pool_max_size,
             connection_timeout=self.settings.db_connection_timeout,
             acquire_timeout=self.settings.db_acquire_timeout,
+            metrics=self.metrics,
         )
         self.cache = InMemoryCache(
             max_size=self.settings.cache_max_size, default_ttl=self.settings.cache_default_ttl
         )
 
-        self.metrics = BotMetrics()
         self.phrase_matcher = PhraseMatcher(self.db_pool, self.cache)
 
         if self.settings.feature_media_download:
+            from bot.processors.media_downloader import MediaDownloader
+
             self.media_downloader = MediaDownloader(
                 self.db_pool, self.settings.media_storage_path, self.metrics
             )
             await self.media_downloader.initialize()
 
         if self.settings.feature_voice_transcription and self.settings.openai_api_key:
+            from bot.processors.voice_transcriber import VoiceTranscriber
+
             self.voice_transcriber = VoiceTranscriber(api_key=self.settings.openai_api_key)
 
         self.permission_checker = PermissionChecker(self.db_pool, self.cache, self)
@@ -112,6 +122,8 @@ class FFOBot(commands.Bot):
         )
         self.notifier = AdminNotifier(self)
         if self.settings.feature_minecraft_whitelist:
+            from bot.services.minecraft_rcon import MinecraftRCONClient
+
             self.minecraft_rcon = MinecraftRCONClient(self.settings)
         self.tree.on_error = self._on_app_command_error
 
@@ -150,8 +162,6 @@ class FFOBot(commands.Bot):
                 logger.error("Failed to load extension %s: %s", extension, e, exc_info=True)
 
     async def _start_health_server(self):
-        from bot.utils.health import HealthCheckServer
-
         health_server = HealthCheckServer(self, port=self.settings.health_check_port)
         await health_server.start()
         self._health_server = health_server.runner
@@ -177,7 +187,9 @@ class FFOBot(commands.Bot):
                     )
 
     async def on_ready(self):
-        logger.info("Connected as %s (ID: %s) to %d servers", self.user, self.user.id, len(self.guilds))
+        logger.info(
+            "Connected as %s (ID: %s) to %d servers", self.user, self.user.id, len(self.guilds)
+        )
 
         for guild in self.guilds:
             await self._register_server(guild)

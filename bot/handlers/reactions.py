@@ -5,8 +5,6 @@ import discord
 from discord.ext import commands
 
 from bot.auth.permissions import PermissionContext
-from bot.commands.whitelist import WHITELIST_APPROVE_EMOJI, WHITELIST_REJECT_EMOJI
-from bot.services.mojang import get_profile
 from bot.utils.whitelist_cache import add_to_cache
 from config.constants import Role
 
@@ -50,6 +48,10 @@ class ReactionHandler(commands.Cog):
             self.bot.settings, "feature_minecraft_whitelist", False
         ):
             return False
+
+        from bot.commands.whitelist import WHITELIST_APPROVE_EMOJI, WHITELIST_REJECT_EMOJI
+        from bot.services.mojang import get_profile
+
         emoji_str = str(payload.emoji)
         if emoji_str not in (WHITELIST_APPROVE_EMOJI, WHITELIST_REJECT_EMOJI):
             return False
@@ -91,6 +93,7 @@ class ReactionHandler(commands.Cog):
                     username,
                     added_by=payload.user_id,
                     minecraft_uuid=str(minecraft_uuid) if minecraft_uuid else None,
+                    cache=self.bot.cache,
                 )
                 channel = self.bot.get_channel(channel_id) or await self.bot.fetch_channel(
                     channel_id
@@ -143,14 +146,21 @@ class ReactionHandler(commands.Cog):
     async def _get_reaction_role(
         self, server_id: int, message_id: int, emoji: str
     ) -> Optional[int]:
+        cache_key = f"reaction_role:{server_id}:{message_id}:{emoji}"
+        cached = self.bot.cache.get(cache_key) if self.bot.cache else None
+        if cached is not None:
+            return None if cached == -1 else cached
         try:
             async with self.bot.db_pool.acquire() as conn:
-                return await conn.fetchval(
+                role_id = await conn.fetchval(
                     "SELECT role_id FROM reaction_roles WHERE server_id = $1 AND message_id = $2 AND emoji = $3 AND is_active = true",
                     server_id,
                     message_id,
                     emoji,
                 )
+            if self.bot.cache:
+                self.bot.cache.set(cache_key, role_id if role_id is not None else -1, ttl=300)
+            return role_id
         except Exception as e:
             logger.error("Error fetching reaction role: %s", e)
             return None

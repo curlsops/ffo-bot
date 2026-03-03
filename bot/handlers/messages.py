@@ -3,11 +3,6 @@ import logging
 import discord
 from discord.ext import commands
 
-from bot.commands.whitelist import WHITELIST_APPROVE_EMOJI, WHITELIST_REJECT_EMOJI
-from bot.processors.media_downloader import MediaAttachment
-from bot.services.mojang import get_profile
-from bot.utils.whitelist_channel import get_whitelist_channel_id
-
 logger = logging.getLogger(__name__)
 
 
@@ -44,9 +39,15 @@ class MessageHandler(commands.Cog):
             await self._process_whitelist_channel(message)
 
     async def _process_whitelist_channel(self, message: discord.Message):
+        from bot.commands.whitelist import WHITELIST_APPROVE_EMOJI, WHITELIST_REJECT_EMOJI
+        from bot.services.mojang import get_profile
+        from bot.utils.whitelist_channel import get_whitelist_channel_id
+
         if not message.guild or not message.content:
             return
-        channel_id = await get_whitelist_channel_id(self.bot.db_pool, message.guild.id)
+        channel_id = await get_whitelist_channel_id(
+            self.bot.db_pool, message.guild.id, cache=self.bot.cache
+        )
         if channel_id != message.channel.id:
             return
 
@@ -113,6 +114,8 @@ class MessageHandler(commands.Cog):
                 self.bot.metrics.errors_total.labels(error_type="phrase_matching").inc()
 
     async def _download_media(self, message: discord.Message):
+        from bot.processors.media_downloader import MediaAttachment
+
         try:
             attachments = [
                 MediaAttachment(

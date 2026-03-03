@@ -42,6 +42,98 @@ def make_db_ctx(conn):
     return pool
 
 
+class TestMetricsCommandTree:
+    @pytest.mark.asyncio
+    async def test_call_records_metrics_on_success(self, bot):
+        bot.metrics = MagicMock()
+        tree = bot.tree
+        mock_cmd = MagicMock(qualified_name="test")
+
+        interaction = MagicMock()
+        interaction.data = {"type": 1, "name": "test", "options": []}
+        interaction.guild_id = 12345
+        interaction.command_failed = False
+
+        with patch.object(tree, "_get_app_command_options", return_value=(mock_cmd, [])):
+            with patch("bot.client.app_commands.CommandTree._call", new_callable=AsyncMock):
+                await tree._call(interaction)
+
+        bot.metrics.commands_executed.labels.assert_called_once_with(
+            command_name="test", server_id="12345", status="success"
+        )
+        bot.metrics.command_duration.labels.assert_called_once_with(command_name="test")
+        bot.metrics.commands_executed.labels.return_value.inc.assert_called_once()
+        bot.metrics.command_duration.labels.return_value.observe.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_call_records_error_status_when_failed(self, bot):
+        bot.metrics = MagicMock()
+        tree = bot.tree
+        mock_cmd = MagicMock(qualified_name="failing_cmd")
+
+        interaction = MagicMock()
+        interaction.data = {"type": 1, "name": "failing_cmd", "options": []}
+        interaction.guild_id = 999
+        interaction.command_failed = True
+
+        with patch.object(tree, "_get_app_command_options", return_value=(mock_cmd, [])):
+            with patch("bot.client.app_commands.CommandTree._call", new_callable=AsyncMock):
+                await tree._call(interaction)
+
+        bot.metrics.commands_executed.labels.assert_called_once_with(
+            command_name="failing_cmd", server_id="999", status="error"
+        )
+
+    @pytest.mark.asyncio
+    async def test_call_extracts_command_name_from_data(self, bot):
+        bot.metrics = MagicMock()
+        tree = bot.tree
+
+        mock_cmd = MagicMock(qualified_name="faq_list")
+        interaction = MagicMock()
+        interaction.data = {"type": 1, "options": []}
+        interaction.guild_id = 1
+        interaction.command_failed = False
+
+        with patch.object(tree, "_get_app_command_options", return_value=(mock_cmd, [])):
+            with patch("bot.client.app_commands.CommandTree._call", new_callable=AsyncMock):
+                await tree._call(interaction)
+
+        bot.metrics.commands_executed.labels.assert_called_once_with(
+            command_name="faq_list", server_id="1", status="success"
+        )
+        bot.metrics.command_duration.labels.assert_called_once_with(command_name="faq_list")
+
+    @pytest.mark.asyncio
+    async def test_call_context_menu_uses_name(self, bot):
+        bot.metrics = MagicMock()
+        tree = bot.tree
+
+        interaction = MagicMock()
+        interaction.data = {"type": 2, "name": "Copy ID"}
+        interaction.guild_id = 1
+        interaction.command_failed = False
+
+        with patch("bot.client.app_commands.CommandTree._call", new_callable=AsyncMock):
+            await tree._call(interaction)
+
+        bot.metrics.commands_executed.labels.assert_called_once_with(
+            command_name="Copy ID", server_id="1", status="success"
+        )
+
+    @pytest.mark.asyncio
+    async def test_call_skips_metrics_when_none(self, bot):
+        bot.metrics = None
+        tree = bot.tree
+
+        interaction = MagicMock()
+        interaction.data = {"type": 2, "name": "Copy ID"}
+        interaction.guild_id = None
+
+        with patch("bot.client.app_commands.CommandTree._call", new_callable=AsyncMock):
+            await tree._call(interaction)
+
+
 class TestFFOBotInit:
     def test_initialization(self, bot, mock_settings):
         assert bot.settings == mock_settings
@@ -378,7 +470,7 @@ class TestFFOBotSetupHook:
             patch("bot.client.InMemoryCache"),
             patch("bot.client.BotMetrics"),
             patch("bot.client.PhraseMatcher"),
-            patch("bot.client.MediaDownloader", return_value=mock_downloader),
+            patch("bot.processors.media_downloader.MediaDownloader", return_value=mock_downloader),
             patch("bot.client.PermissionChecker"),
             patch("bot.client.RateLimiter"),
             patch.object(bot, "_start_health_server", new_callable=AsyncMock),
@@ -416,7 +508,7 @@ class TestFFOBotSetupHook:
             patch("bot.client.PhraseMatcher"),
             patch("bot.client.PermissionChecker"),
             patch("bot.client.RateLimiter"),
-            patch("bot.client.VoiceTranscriber", mock_vt),
+            patch("bot.processors.voice_transcriber.VoiceTranscriber", mock_vt),
             patch.object(bot, "_start_health_server", new_callable=AsyncMock),
             patch.object(bot, "_load_extensions", new_callable=AsyncMock),
         ]
@@ -450,7 +542,7 @@ class TestFFOBotSetupHook:
             patch("bot.client.PhraseMatcher"),
             patch("bot.client.PermissionChecker"),
             patch("bot.client.RateLimiter"),
-            patch("bot.client.MinecraftRCONClient"),
+            patch("bot.services.minecraft_rcon.MinecraftRCONClient"),
             patch.object(bot, "_start_health_server", new_callable=AsyncMock),
             patch.object(bot, "_load_extensions", new_callable=AsyncMock),
         ]
@@ -504,7 +596,7 @@ class TestFFOBotSetupHook:
 class TestFFOBotHealthServer:
     @pytest.mark.asyncio
     async def test_start_health_server(self, bot, mock_settings):
-        with patch("bot.utils.health.HealthCheckServer") as mock_cls:
+        with patch("bot.client.HealthCheckServer") as mock_cls:
             mock_server = MagicMock(start=AsyncMock(), runner=MagicMock())
             mock_cls.return_value = mock_server
 
