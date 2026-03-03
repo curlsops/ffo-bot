@@ -19,13 +19,18 @@ def database_url(postgres_container):
     url = postgres_container.get_connection_url()
     env = os.environ.copy()
     env["DATABASE_URL"] = url
-    subprocess.run(
+    result = subprocess.run(
         ["alembic", "upgrade", "head"],
         env=env,
         cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        check=True,
         capture_output=True,
+        text=True,
     )
+    if result.returncode != 0:
+        raise RuntimeError(
+            f"alembic upgrade head failed (exit {result.returncode}):\n"
+            f"stdout: {result.stdout}\nstderr: {result.stderr}"
+        )
     return url
 
 

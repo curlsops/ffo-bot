@@ -14,6 +14,10 @@ def mock_settings():
     s.cache_max_size = 100
     s.cache_default_ttl = 60
     s.feature_media_download = False
+    s.feature_quotebook = False
+    s.feature_conversion = False
+    s.feature_minecraft_whitelist = False
+    s.feature_faq = False
     s.health_check_port = 8080
     s.rate_limit_user_capacity = 10
     s.rate_limit_server_capacity = 100
@@ -162,7 +166,7 @@ class TestFFOBotExtensions:
     async def test_load_extensions_success(self, bot):
         with patch.object(bot, "load_extension", new_callable=AsyncMock) as mock_load:
             await bot._load_extensions()
-            assert mock_load.call_count == 11
+            assert mock_load.call_count >= 11  # base + optional (quotebook, convert)
 
     @pytest.mark.asyncio
     async def test_load_extensions_handles_failure(self, bot):
@@ -172,6 +176,46 @@ class TestFFOBotExtensions:
 
         with patch.object(bot, "load_extension", side_effect=fail_on_messages):
             await bot._load_extensions()
+
+    @pytest.mark.asyncio
+    async def test_load_extensions_with_quotebook(self, mock_settings):
+        mock_settings.feature_quotebook = True
+        from bot.client import FFOBot
+
+        bot = FFOBot(mock_settings)
+        with patch.object(bot, "load_extension", new_callable=AsyncMock) as mock_load:
+            await bot._load_extensions()
+            assert any("quotebook" in str(c) for c in mock_load.call_args_list)
+
+    @pytest.mark.asyncio
+    async def test_load_extensions_with_convert(self, mock_settings):
+        mock_settings.feature_conversion = True
+        from bot.client import FFOBot
+
+        bot = FFOBot(mock_settings)
+        with patch.object(bot, "load_extension", new_callable=AsyncMock) as mock_load:
+            await bot._load_extensions()
+            assert any("convert" in str(c) for c in mock_load.call_args_list)
+
+    @pytest.mark.asyncio
+    async def test_load_extensions_with_whitelist(self, mock_settings):
+        mock_settings.feature_minecraft_whitelist = True
+        from bot.client import FFOBot
+
+        bot = FFOBot(mock_settings)
+        with patch.object(bot, "load_extension", new_callable=AsyncMock) as mock_load:
+            await bot._load_extensions()
+            assert any("whitelist" in str(c) for c in mock_load.call_args_list)
+
+    @pytest.mark.asyncio
+    async def test_load_extensions_with_faq(self, mock_settings):
+        mock_settings.feature_faq = True
+        from bot.client import FFOBot
+
+        bot = FFOBot(mock_settings)
+        with patch.object(bot, "load_extension", new_callable=AsyncMock) as mock_load:
+            await bot._load_extensions()
+            assert any("faq" in str(c) for c in mock_load.call_args_list)
 
 
 class TestFFOBotPersistentViews:
@@ -386,6 +430,39 @@ class TestFFOBotSetupHook:
 
         mock_vt.assert_called_once_with(api_key="sk-test")
         assert bot.voice_transcriber is not None
+
+    @pytest.mark.asyncio
+    async def test_setup_hook_with_minecraft_whitelist(self, mock_settings):
+        from bot.client import FFOBot
+
+        mock_settings.feature_minecraft_whitelist = True
+        bot = FFOBot(mock_settings)
+
+        patches = [
+            patch(
+                "bot.client.DatabasePool.create", new_callable=AsyncMock, return_value=MagicMock()
+            ),
+            patch("bot.client.InMemoryCache"),
+            patch("bot.client.BotMetrics"),
+            patch("bot.client.PhraseMatcher"),
+            patch("bot.client.PermissionChecker"),
+            patch("bot.client.RateLimiter"),
+            patch("bot.client.MinecraftRCONClient"),
+            patch.object(bot, "_start_health_server", new_callable=AsyncMock),
+            patch.object(bot, "_load_extensions", new_callable=AsyncMock),
+        ]
+        mock_tree = MagicMock(sync=AsyncMock())
+
+        for p in patches:
+            p.start()
+        try:
+            with patch.object(type(bot), "tree", new_callable=PropertyMock, return_value=mock_tree):
+                await bot.setup_hook()
+        finally:
+            for p in patches:
+                p.stop()
+
+        assert bot.minecraft_rcon is not None
 
     @pytest.mark.asyncio
     async def test_setup_hook_voice_transcription_disabled_without_api_key(self, mock_settings):

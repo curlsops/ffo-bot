@@ -144,6 +144,40 @@ class TestPollCommands:
         assert "Error creating poll" in str(i.followup.send.call_args)
 
 
+class TestPollLong:
+    @pytest.mark.asyncio
+    async def test_poll_long_success(self, cog):
+        i = _interaction()
+        i.channel.send = AsyncMock(return_value=MagicMock(add_reaction=AsyncMock()))
+        await cog.poll_long.callback(cog, i, "Pick one?", "A,B,C,D,E")
+        i.channel.send.assert_awaited_once()
+        call = i.channel.send.call_args
+        assert call[1]["embed"].title == "📊 Pick one?"
+        assert "A" in call[1]["embed"].description
+        assert "E" in call[1]["embed"].description
+        msg = i.channel.send.return_value
+        assert msg.add_reaction.await_count == 5
+
+    @pytest.mark.asyncio
+    async def test_poll_long_too_few_options(self, cog):
+        i = _interaction()
+        await cog.poll_long.callback(cog, i, "Q?", "OnlyOne")
+        assert "at least 2 options" in str(i.followup.send.call_args)
+
+    @pytest.mark.asyncio
+    async def test_poll_long_question_too_long(self, cog):
+        i = _interaction()
+        await cog.poll_long.callback(cog, i, "X" * 301, "A,B")
+        assert "Question too long" in str(i.followup.send.call_args)
+
+    @pytest.mark.asyncio
+    async def test_poll_long_not_admin(self, cog):
+        cog.bot.permission_checker.check_role = AsyncMock(return_value=False)
+        i = _interaction()
+        await cog.poll_long.callback(cog, i, "Q?", "A,B")
+        i.followup.send.assert_called_with("Admin required.", ephemeral=True)
+
+
 class TestSetup:
     @pytest.mark.asyncio
     async def test_setup(self, mock_bot):

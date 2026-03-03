@@ -140,12 +140,14 @@ async def test_validate_emoji_accessible_unicode_returns_true():
 
 @pytest.mark.asyncio
 async def test_phrase_autocomplete_empty():
+    from bot.commands.reactbot import _reactbot_phrase_autocomplete
+
     bot = make_bot()
     db_pool, conn = make_db_pool(fetch_result=[])
     bot.db_pool = db_pool
-    commands = ReactBotCommands(bot)
     interaction = make_interaction()
-    choices = await commands.phrase_autocomplete(interaction, "")
+    interaction.client = bot
+    choices = await _reactbot_phrase_autocomplete(interaction, "")
     assert choices == []
 
 
