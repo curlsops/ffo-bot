@@ -103,7 +103,7 @@ class GiveawayManager(commands.Cog):
         except TRANSIENT_DB_ERRORS as e:
             logger.warning("Giveaway check skipped (DB unavailable): %s", e)
         except Exception as e:
-            logger.error(f"Giveaway check error: {e}", exc_info=True)
+            logger.error("Giveaway check error: %s", e, exc_info=True)
 
     @check_giveaways.before_loop
     async def before_check(self):
@@ -168,7 +168,7 @@ class GiveawayManager(commands.Cog):
                 except Exception as e:
                     logger.warning("Notify giveaway ended failed: %s", e)
         except Exception as e:
-            logger.error(f"End giveaway error {giveaway['id']}: {e}", exc_info=True)
+            logger.error("End giveaway error %s: %s", giveaway["id"], e, exc_info=True)
 
     async def _create_prize_thread(
         self, channel: discord.TextChannel, giveaway: dict, winners: list

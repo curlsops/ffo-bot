@@ -60,7 +60,7 @@ class PhraseMatcher:
                     )
                 )
             except re.error as e:
-                logger.error(f"Invalid regex {row['phrase']}: {e}")
+                logger.error("Invalid regex %s: %s", row["phrase"], e)
 
         self._patterns_by_server[server_id] = patterns
         self.cache.set(cache_key, patterns, ttl=300)
@@ -83,7 +83,7 @@ class PhraseMatcher:
                 ):
                     matches.append((p.phrase_id, p.emoji))
             except asyncio.TimeoutError:
-                logger.warning(f"Regex timeout for {p.phrase_id}")
+                logger.warning("Regex timeout for %s", p.phrase_id)
                 await self._disable_pattern(p.phrase_id)
         return matches
 
@@ -106,11 +106,11 @@ class PhraseMatcher:
                 await conn.execute(
                     "UPDATE phrase_reactions SET is_active = false WHERE id = $1", phrase_id
                 )
-            logger.error(f"Disabled pattern {phrase_id} (ReDoS)")
+            logger.error("Disabled pattern %s (ReDoS)", phrase_id)
         except TRANSIENT_DB_ERRORS as e:
             logger.warning("Could not disable pattern %s (DB unavailable): %s", phrase_id, e)
         except Exception as e:
-            logger.error(f"Failed to disable {phrase_id}: {e}")
+            logger.error("Failed to disable %s: %s", phrase_id, e)
 
     def invalidate_cache(self, server_id: int):
         self.cache.delete(f"phrase_patterns:{server_id}")

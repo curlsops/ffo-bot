@@ -59,7 +59,9 @@ class TestConvertTemp:
 class TestConvertCommand:
     @pytest.mark.asyncio
     async def test_convert_currency(self, cog):
-        with patch("bot.commands.convert._convert_currency", new_callable=AsyncMock, return_value=0.92):
+        with patch(
+            "bot.commands.convert._convert_currency", new_callable=AsyncMock, return_value=0.92
+        ):
             i = _interaction()
             await cog.convert.callback(cog, i, 100, "USD", "EUR")
             call = i.followup.send.call_args

@@ -41,7 +41,7 @@ class ReactionHandler(commands.Cog):
         try:
             await member.add_roles(role, reason="Reaction role")
         except discord.HTTPException as e:
-            logger.error(f"Failed to assign role: {e}")
+            logger.error("Failed to assign role: %s", e)
             if self.bot.metrics:
                 self.bot.metrics.errors_total.labels(error_type="role_assignment").inc()
 
@@ -136,7 +136,7 @@ class ReactionHandler(commands.Cog):
         try:
             await member.remove_roles(role, reason="Reaction role")
         except discord.HTTPException as e:
-            logger.error(f"Failed to remove role: {e}")
+            logger.error("Failed to remove role: %s", e)
             if self.bot.metrics:
                 self.bot.metrics.errors_total.labels(error_type="role_removal").inc()
 
@@ -152,7 +152,7 @@ class ReactionHandler(commands.Cog):
                     emoji,
                 )
         except Exception as e:
-            logger.error(f"Error fetching reaction role: {e}")
+            logger.error("Error fetching reaction role: %s", e)
             return None
 
 

@@ -158,7 +158,10 @@ async def test_reactbot_add_validation_error():
     bot = make_bot()
     db_pool, conn = make_db_pool()
     bot.db_pool = db_pool
-    with patch("bot.commands.reactbot.InputValidator.validate_phrase_pattern", side_effect=ValidationError("Invalid")):
+    with patch(
+        "bot.commands.reactbot.InputValidator.validate_phrase_pattern",
+        side_effect=ValidationError("Invalid"),
+    ):
         commands = ReactBotCommands(bot)
         interaction = make_interaction()
         await commands.reactbot_add.callback(commands, interaction, phrase="[invalid", emoji="👍")

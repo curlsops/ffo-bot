@@ -111,7 +111,7 @@ class ReactionRoleCommands(commands.Cog):
         except discord.NotFound:
             await interaction.followup.send("Message not found.", ephemeral=True)
         except Exception as e:
-            logger.error(f"reactionrole_add error: {e}", exc_info=True)
+            logger.error("reactionrole_add error: %s", e, exc_info=True)
             await interaction.followup.send("Error adding reaction role.", ephemeral=True)
 
     @app_commands.command(
@@ -176,7 +176,7 @@ class ReactionRoleCommands(commands.Cog):
                 ephemeral=True,
             )
         except Exception as e:
-            logger.error(f"reactionrole_remove error: {e}", exc_info=True)
+            logger.error("reactionrole_remove error: %s", e, exc_info=True)
             await interaction.followup.send(
                 "Error removing reaction role.",
                 ephemeral=True,
@@ -223,7 +223,7 @@ class ReactionRoleCommands(commands.Cog):
                 text += f"\n*... and {len(rows) - 25} more*"
             await interaction.followup.send(text, ephemeral=True)
         except Exception as e:
-            logger.error(f"reactionrole_list error: {e}", exc_info=True)
+            logger.error("reactionrole_list error: %s", e, exc_info=True)
             await interaction.followup.send(
                 "Error listing reaction roles.",
                 ephemeral=True,

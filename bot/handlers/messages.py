@@ -106,9 +106,9 @@ class MessageHandler(commands.Cog):
                         emoji,
                     )
                 except discord.HTTPException as e:
-                    logger.warning(f"Failed to add reaction {emoji}: {e}")
+                    logger.warning("Failed to add reaction %s: %s", emoji, e)
         except Exception as e:
-            logger.error(f"Phrase matching error: {e}", exc_info=True)
+            logger.error("Phrase matching error: %s", e, exc_info=True)
             if self.bot.metrics:
                 self.bot.metrics.errors_total.labels(error_type="phrase_matching").inc()
 
@@ -131,7 +131,7 @@ class MessageHandler(commands.Cog):
                 attachments=attachments,
             )
         except Exception as e:
-            logger.error(f"Media download error: {e}", exc_info=True)
+            logger.error("Media download error: %s", e, exc_info=True)
             if self.bot.metrics:
                 self.bot.metrics.errors_total.labels(error_type="media_download").inc()
 
@@ -160,7 +160,7 @@ class MessageHandler(commands.Cog):
                     phrase_id,
                 )
         except Exception as e:
-            logger.error(f"Failed to log phrase match: {e}")
+            logger.error("Failed to log phrase match: %s", e)
 
     async def _convert_units(self, message: discord.Message):
         from bot.processors.unit_converter import detect_and_convert
@@ -196,7 +196,7 @@ class MessageHandler(commands.Cog):
                     embed.set_footer(text="Transcribed automatically")
                     await message.reply(embed=embed)
             except Exception as e:
-                logger.error(f"Voice transcription error: {e}", exc_info=True)
+                logger.error("Voice transcription error: %s", e, exc_info=True)
 
     async def _is_monitored_channel(self, server_id: int, channel_id: int) -> bool:
         try:

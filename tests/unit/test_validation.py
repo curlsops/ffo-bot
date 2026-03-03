@@ -4,11 +4,14 @@ from bot.utils.validation import InputValidator, ValidationError
 
 
 class TestValidateDiscordId:
-    @pytest.mark.parametrize("inp,expected", [
-        ("123456789012345678", 123456789012345678),
-        (0, 0),
-        (str(2**63 - 1), 2**63 - 1),
-    ])
+    @pytest.mark.parametrize(
+        "inp,expected",
+        [
+            ("123456789012345678", 123456789012345678),
+            (0, 0),
+            (str(2**63 - 1), 2**63 - 1),
+        ],
+    )
     def test_valid(self, inp, expected):
         assert InputValidator.validate_discord_id(inp, "user_id") == expected
 
@@ -38,7 +41,9 @@ class TestValidateString:
             InputValidator.validate_string("   ", "field", max_length=100, allow_empty=False)
 
     def test_empty_allowed(self):
-        assert InputValidator.validate_string("   ", "field", max_length=100, allow_empty=True) == ""
+        assert (
+            InputValidator.validate_string("   ", "field", max_length=100, allow_empty=True) == ""
+        )
 
 
 class TestValidateCommandName:
@@ -53,14 +58,20 @@ class TestValidateCommandName:
 
 
 class TestValidatePhrasePattern:
-    @pytest.mark.parametrize("inp", [r"hello\s+world", r"\d{3}-\d{4}", r"[a-zA-Z]+@[a-zA-Z]+\.[a-zA-Z]+"])
+    @pytest.mark.parametrize(
+        "inp", [r"hello\s+world", r"\d{3}-\d{4}", r"[a-zA-Z]+@[a-zA-Z]+\.[a-zA-Z]+"]
+    )
     def test_valid(self, inp):
         assert InputValidator.validate_phrase_pattern(inp) == inp
 
-    @pytest.mark.parametrize("inp,desc", [
-        (r"[invalid", "bad_syntax"),
-        ("", "empty"),
-    ], ids=["bad_syntax", "empty"])
+    @pytest.mark.parametrize(
+        "inp,desc",
+        [
+            (r"[invalid", "bad_syntax"),
+            ("", "empty"),
+        ],
+        ids=["bad_syntax", "empty"],
+    )
     def test_invalid(self, inp, desc):
         with pytest.raises(ValidationError):
             InputValidator.validate_phrase_pattern(inp)
@@ -82,10 +93,13 @@ class TestValidateEmoji:
 
 
 class TestSanitizeSqlParameter:
-    @pytest.mark.parametrize("inp,expected", [
-        ("hello\x00world", "helloworld"),
-        ("test\x00value\x00", "testvalue"),
-        ("no_null", "no_null"),
-    ])
+    @pytest.mark.parametrize(
+        "inp,expected",
+        [
+            ("hello\x00world", "helloworld"),
+            ("test\x00value\x00", "testvalue"),
+            ("no_null", "no_null"),
+        ],
+    )
     def test_removes_null_bytes(self, inp, expected):
         assert InputValidator.sanitize_sql_parameter(inp) == expected

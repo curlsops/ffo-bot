@@ -9,9 +9,16 @@ import pytest
 
 def _giveaway(**overrides):
     return {
-        "id": uuid.uuid4(), "server_id": 999, "channel_id": 123, "message_id": 456,
-        "host_id": 789, "donor_id": None, "prize": "Prize", "winners_count": 1,
-        "ended_at": datetime.now(timezone.utc), **overrides,
+        "id": uuid.uuid4(),
+        "server_id": 999,
+        "channel_id": 123,
+        "message_id": 456,
+        "host_id": 789,
+        "donor_id": None,
+        "prize": "Prize",
+        "winners_count": 1,
+        "ended_at": datetime.now(timezone.utc),
+        **overrides,
     }
 
 
@@ -65,6 +72,7 @@ def mock_bot():
 @pytest.fixture
 def manager(mock_bot):
     from bot.tasks.giveaway_manager import GiveawayManager
+
     return GiveawayManager(mock_bot)
 
 
@@ -110,10 +118,13 @@ class TestCheckGiveaways:
         assert "Giveaway check error" in caplog.text
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("exc", [
-        asyncpg.CannotConnectNowError("pool closed"),
-        asyncpg.ConnectionDoesNotExistError("connection lost"),
-    ])
+    @pytest.mark.parametrize(
+        "exc",
+        [
+            asyncpg.CannotConnectNowError("pool closed"),
+            asyncpg.ConnectionDoesNotExistError("connection lost"),
+        ],
+    )
     async def test_db_unavailable_logs_warning(self, manager, caplog, exc):
         ctx = MagicMock()
         ctx.__aenter__ = AsyncMock(side_effect=exc)
@@ -125,12 +136,15 @@ class TestCheckGiveaways:
 
 
 class TestSelectWinners:
-    @pytest.mark.parametrize("entries,winners_count,expected_len,expected_set", [
-        ([], 1, 0, set()),
-        ([{"user_id": 1, "entries": 1}], 1, 1, {1}),
-        ([{"user_id": 1, "entries": 1}], 5, 1, {1}),
-        ([{"user_id": 1, "entries": 100}], 1, 1, {1}),
-    ])
+    @pytest.mark.parametrize(
+        "entries,winners_count,expected_len,expected_set",
+        [
+            ([], 1, 0, set()),
+            ([{"user_id": 1, "entries": 1}], 1, 1, {1}),
+            ([{"user_id": 1, "entries": 1}], 5, 1, {1}),
+            ([{"user_id": 1, "entries": 100}], 1, 1, {1}),
+        ],
+    )
     def test_cases(self, manager, entries, winners_count, expected_len, expected_set):
         winners = manager._select_winners(entries, winners_count)
         assert len(winners) == expected_len
@@ -164,10 +178,13 @@ class TestSelectWinners:
 
 
 class TestBuildEndedEmbed:
-    @pytest.mark.parametrize("winners,entries,expected_text", [
-        ([100, 200], 10, None),
-        ([], 0, "No valid entries"),
-    ])
+    @pytest.mark.parametrize(
+        "winners,entries,expected_text",
+        [
+            ([100, 200], 10, None),
+            ([], 0, "No valid entries"),
+        ],
+    )
     def test_cases(self, manager, winners, entries, expected_text):
         embed = manager._build_ended_embed(_giveaway(prize="Test", donor_id=2), winners, entries)
         assert embed.title == "🎉 GIVEAWAY ENDED 🎉"
@@ -187,7 +204,9 @@ class TestBuildEndedEmbed:
 class TestEndGiveaway:
     @pytest.mark.asyncio
     async def test_no_entries(self, manager):
-        manager.bot.db_pool = _db_ctx(MagicMock(execute=AsyncMock(), fetch=AsyncMock(return_value=[])))
+        manager.bot.db_pool = _db_ctx(
+            MagicMock(execute=AsyncMock(), fetch=AsyncMock(return_value=[]))
+        )
         channel, _ = _channel_with_msg()
         manager.bot.get_channel.return_value = channel
         await manager._end_giveaway(_giveaway())
@@ -195,10 +214,13 @@ class TestEndGiveaway:
 
     @pytest.mark.asyncio
     async def test_with_winners(self, manager):
-        manager.bot.db_pool = _db_ctx(MagicMock(
-            execute=AsyncMock(), executemany=AsyncMock(),
-            fetch=AsyncMock(return_value=[{"user_id": 100, "entries": 1}])
-        ))
+        manager.bot.db_pool = _db_ctx(
+            MagicMock(
+                execute=AsyncMock(),
+                executemany=AsyncMock(),
+                fetch=AsyncMock(return_value=[{"user_id": 100, "entries": 1}]),
+            )
+        )
         channel, _ = _channel_with_msg()
         manager.bot.get_channel.return_value = channel
         await manager._end_giveaway(_giveaway())
@@ -206,10 +228,13 @@ class TestEndGiveaway:
 
     @pytest.mark.asyncio
     async def test_notifies_admin(self, manager):
-        manager.bot.db_pool = _db_ctx(MagicMock(
-            execute=AsyncMock(), executemany=AsyncMock(),
-            fetch=AsyncMock(return_value=[{"user_id": 100, "entries": 1}])
-        ))
+        manager.bot.db_pool = _db_ctx(
+            MagicMock(
+                execute=AsyncMock(),
+                executemany=AsyncMock(),
+                fetch=AsyncMock(return_value=[{"user_id": 100, "entries": 1}]),
+            )
+        )
         channel, _ = _channel_with_msg()
         manager.bot.get_channel.return_value = channel
         manager.bot.notifier = MagicMock(notify_giveaway_ended=AsyncMock())
@@ -218,24 +243,33 @@ class TestEndGiveaway:
 
     @pytest.mark.asyncio
     async def test_notifier_exception_logged(self, manager, caplog):
-        manager.bot.db_pool = _db_ctx(MagicMock(
-            execute=AsyncMock(), executemany=AsyncMock(),
-            fetch=AsyncMock(return_value=[{"user_id": 100, "entries": 1}])
-        ))
+        manager.bot.db_pool = _db_ctx(
+            MagicMock(
+                execute=AsyncMock(),
+                executemany=AsyncMock(),
+                fetch=AsyncMock(return_value=[{"user_id": 100, "entries": 1}]),
+            )
+        )
         channel, _ = _channel_with_msg()
         manager.bot.get_channel.return_value = channel
-        manager.bot.notifier = MagicMock(notify_giveaway_ended=AsyncMock(side_effect=Exception("notify")))
+        manager.bot.notifier = MagicMock(
+            notify_giveaway_ended=AsyncMock(side_effect=Exception("notify"))
+        )
         await manager._end_giveaway(_giveaway())
         assert "Notify giveaway ended failed" in caplog.text
 
     @pytest.mark.asyncio
     async def test_no_channel(self, manager):
-        manager.bot.db_pool = _db_ctx(MagicMock(execute=AsyncMock(), fetch=AsyncMock(return_value=[])))
+        manager.bot.db_pool = _db_ctx(
+            MagicMock(execute=AsyncMock(), fetch=AsyncMock(return_value=[]))
+        )
         await manager._end_giveaway(_giveaway())
 
     @pytest.mark.asyncio
     async def test_fetch_channel_forbidden(self, manager, caplog):
-        manager.bot.db_pool = _db_ctx(MagicMock(execute=AsyncMock(), fetch=AsyncMock(return_value=[])))
+        manager.bot.db_pool = _db_ctx(
+            MagicMock(execute=AsyncMock(), fetch=AsyncMock(return_value=[]))
+        )
         manager.bot.get_channel.return_value = None
         manager.bot.fetch_channel = AsyncMock(side_effect=discord.Forbidden(MagicMock(), ""))
         await manager._end_giveaway(_giveaway())
@@ -243,7 +277,9 @@ class TestEndGiveaway:
 
     @pytest.mark.asyncio
     async def test_fetch_channel_not_found(self, manager, caplog):
-        manager.bot.db_pool = _db_ctx(MagicMock(execute=AsyncMock(), fetch=AsyncMock(return_value=[])))
+        manager.bot.db_pool = _db_ctx(
+            MagicMock(execute=AsyncMock(), fetch=AsyncMock(return_value=[]))
+        )
         manager.bot.get_channel.return_value = None
         manager.bot.fetch_channel = AsyncMock(side_effect=discord.NotFound(MagicMock(), ""))
         await manager._end_giveaway(_giveaway())
@@ -251,7 +287,9 @@ class TestEndGiveaway:
 
     @pytest.mark.asyncio
     async def test_message_not_found(self, manager):
-        manager.bot.db_pool = _db_ctx(MagicMock(execute=AsyncMock(), fetch=AsyncMock(return_value=[])))
+        manager.bot.db_pool = _db_ctx(
+            MagicMock(execute=AsyncMock(), fetch=AsyncMock(return_value=[]))
+        )
         channel, _ = _channel_with_msg()
         channel.fetch_message = AsyncMock(side_effect=discord.NotFound(MagicMock(), ""))
         manager.bot.get_channel.return_value = channel
@@ -266,10 +304,13 @@ class TestEndGiveaway:
 
     @pytest.mark.asyncio
     async def test_msg_edit_error_logged(self, manager, caplog):
-        manager.bot.db_pool = _db_ctx(MagicMock(
-            execute=AsyncMock(), executemany=AsyncMock(),
-            fetch=AsyncMock(return_value=[{"user_id": 100, "entries": 1}])
-        ))
+        manager.bot.db_pool = _db_ctx(
+            MagicMock(
+                execute=AsyncMock(),
+                executemany=AsyncMock(),
+                fetch=AsyncMock(return_value=[{"user_id": 100, "entries": 1}]),
+            )
+        )
         channel, msg = _channel_with_msg()
         msg.edit = AsyncMock(side_effect=discord.HTTPException(MagicMock(), ""))
         manager.bot.get_channel.return_value = channel
@@ -279,10 +320,13 @@ class TestEndGiveaway:
     @pytest.mark.asyncio
     async def test_handles_asyncpg_record_immutability(self, manager):
         giveaway = ImmutableRecord(_giveaway())
-        manager.bot.db_pool = _db_ctx(MagicMock(
-            execute=AsyncMock(), executemany=AsyncMock(),
-            fetch=AsyncMock(return_value=[{"user_id": 100, "entries": 1}])
-        ))
+        manager.bot.db_pool = _db_ctx(
+            MagicMock(
+                execute=AsyncMock(),
+                executemany=AsyncMock(),
+                fetch=AsyncMock(return_value=[{"user_id": 100, "entries": 1}]),
+            )
+        )
         channel, msg = _channel_with_msg()
         manager.bot.get_channel.return_value = channel
         manager.bot.notifier = MagicMock(notify_giveaway_ended=AsyncMock())
@@ -385,10 +429,13 @@ class TestCreatePrizeThread:
 class TestEndGiveawayPrizeThread:
     @pytest.mark.asyncio
     async def test_creates_prize_thread_when_winners(self, manager):
-        manager.bot.db_pool = _db_ctx(MagicMock(
-            execute=AsyncMock(), executemany=AsyncMock(),
-            fetch=AsyncMock(return_value=[{"user_id": 100, "entries": 1}])
-        ))
+        manager.bot.db_pool = _db_ctx(
+            MagicMock(
+                execute=AsyncMock(),
+                executemany=AsyncMock(),
+                fetch=AsyncMock(return_value=[{"user_id": 100, "entries": 1}]),
+            )
+        )
         channel, _ = _channel_with_msg()
         manager.bot.get_channel.return_value = channel
         await manager._end_giveaway(_giveaway())
@@ -398,7 +445,9 @@ class TestEndGiveawayPrizeThread:
 
     @pytest.mark.asyncio
     async def test_no_prize_thread_when_no_winners(self, manager):
-        manager.bot.db_pool = _db_ctx(MagicMock(execute=AsyncMock(), fetch=AsyncMock(return_value=[])))
+        manager.bot.db_pool = _db_ctx(
+            MagicMock(execute=AsyncMock(), fetch=AsyncMock(return_value=[]))
+        )
         channel, _ = _channel_with_msg()
         manager.bot.get_channel.return_value = channel
         await manager._end_giveaway(_giveaway())
@@ -415,7 +464,9 @@ def _mock_thread(edit_side_effect=None):
 
 
 class TestCloseGiveawayThreadView:
-    def _interaction(self, *, is_admin=False, is_moderator=False, is_host=False, user_id=999, in_thread=True):
+    def _interaction(
+        self, *, is_admin=False, is_moderator=False, is_host=False, user_id=999, in_thread=True
+    ):
         interaction = MagicMock()
         interaction.guild_id = 1
         interaction.response.send_message = AsyncMock()
@@ -431,6 +482,7 @@ class TestCloseGiveawayThreadView:
     @pytest.fixture
     def view(self):
         from bot.tasks.giveaway_manager import CloseGiveawayThreadView
+
         return CloseGiveawayThreadView(host_id=789)
 
     @pytest.mark.asyncio
@@ -505,6 +557,7 @@ class TestSetup:
     @pytest.mark.asyncio
     async def test_setup(self, mock_bot):
         from bot.tasks.giveaway_manager import setup
+
         mock_bot.add_cog = AsyncMock()
         await setup(mock_bot)
         mock_bot.add_cog.assert_called_once()

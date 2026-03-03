@@ -161,6 +161,7 @@ class TestFFOBotGuildEvents:
                     await bot.on_guild_join(MagicMock(id=123, name="New"))
         await bot.on_guild_remove(MagicMock(id=123, name="Removed"))
 
+
 class TestFFOBotExtensions:
     @pytest.mark.asyncio
     async def test_load_extensions_success(self, bot):
@@ -222,6 +223,7 @@ class TestFFOBotPersistentViews:
     @pytest.mark.asyncio
     async def test_register_persistent_views_enabled(self, bot):
         import uuid
+
         bot.settings.feature_giveaways = True
         gid, mid = uuid.uuid4(), 12345
         conn = MagicMock()
@@ -255,6 +257,7 @@ class TestFFOBotPersistentViews:
     @pytest.mark.asyncio
     async def test_register_persistent_views_multiple(self, bot):
         import uuid
+
         bot.settings.feature_giveaways = True
         rows = [
             {"id": uuid.uuid4(), "message_id": 111},

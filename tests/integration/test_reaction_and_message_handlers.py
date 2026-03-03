@@ -31,11 +31,14 @@ def _bot_with_metrics(shutting_down=False):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("bot_msg,guild,shutdown", [
-    (True, MagicMock(id=1), False),
-    (False, None, False),
-    (False, MagicMock(id=1), True),
-])
+@pytest.mark.parametrize(
+    "bot_msg,guild,shutdown",
+    [
+        (True, MagicMock(id=1), False),
+        (False, None, False),
+        (False, MagicMock(id=1), True),
+    ],
+)
 async def test_message_handler_early_returns(bot_msg, guild, shutdown):
     bot = _bot_with_metrics(shutting_down=shutdown)
     handler = MessageHandler(bot)
@@ -68,10 +71,13 @@ async def test_message_handler_user_opted_out_skips_processing():
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("transcribe_result,should_reply", [
-    (None, False),
-    ("Hello, this is a test", True),
-])
+@pytest.mark.parametrize(
+    "transcribe_result,should_reply",
+    [
+        (None, False),
+        ("Hello, this is a test", True),
+    ],
+)
 async def test_message_handler_voice_transcription(transcribe_result, should_reply):
     db_pool, _ = make_db_pool(fetchval_result=None)
     bot = _bot_with_metrics()
@@ -93,7 +99,11 @@ async def test_message_handler_voice_transcription(transcribe_result, should_rep
     msg.content = ""
     msg.guild.id = 1
     msg.channel.id = 2
-    msg.attachments = [MagicMock(filename="voice.ogg", url="https://cdn.example.com/voice.ogg", content_type="audio/ogg")]
+    msg.attachments = [
+        MagicMock(
+            filename="voice.ogg", url="https://cdn.example.com/voice.ogg", content_type="audio/ogg"
+        )
+    ]
     msg.reply = AsyncMock()
     await handler.on_message(msg)
     vt.transcribe.assert_awaited_once_with("https://cdn.example.com/voice.ogg", "voice.ogg")
@@ -105,12 +115,15 @@ async def test_message_handler_voice_transcription(transcribe_result, should_rep
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("monitored_config,should_download", [
-    ({"monitored_channels": {"2": True}}, True),
-    ({"monitored_channels": {"999": True}}, False),
-    (None, False),
-    ({}, False),
-])
+@pytest.mark.parametrize(
+    "monitored_config,should_download",
+    [
+        ({"monitored_channels": {"2": True}}, True),
+        ({"monitored_channels": {"999": True}}, False),
+        (None, False),
+        ({}, False),
+    ],
+)
 async def test_message_handler_monitored_channel_media_download(monitored_config, should_download):
     conn = MagicMock()
     conn.fetchval = AsyncMock(side_effect=[None, monitored_config])
@@ -163,7 +176,11 @@ async def test_message_handler_non_voice_attachment_no_transcription():
     msg.author.id = 42
     msg.guild.id = 1
     msg.channel.id = 2
-    msg.attachments = [MagicMock(filename="image.png", url="https://cdn.example.com/img.png", content_type="image/png")]
+    msg.attachments = [
+        MagicMock(
+            filename="image.png", url="https://cdn.example.com/img.png", content_type="image/png"
+        )
+    ]
     msg.reply = AsyncMock()
     await handler.on_message(msg)
     vt.transcribe.assert_not_awaited()
@@ -429,6 +446,7 @@ async def test_message_handler_phrase_match_log_failure_still_reacts(caplog):
     await handler.on_message(message)
     message.add_reaction.assert_awaited_once()
     assert "Failed to log phrase match" in caplog.text
+
 
 @pytest.mark.asyncio
 async def test_message_handler_phrase_match_http_exception_logged(caplog):

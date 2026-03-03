@@ -52,7 +52,7 @@ class PermissionCommands(commands.Cog):
             self.bot.permission_checker.invalidate_user_cache(interaction.guild_id, user.id)
             await interaction.followup.send(f"✅ Granted {role} to {user.mention}", ephemeral=True)
         except Exception as e:
-            logger.error(f"grant_role error: {e}", exc_info=True)
+            logger.error("grant_role error: %s", e, exc_info=True)
             await interaction.followup.send("❌ Error granting role.", ephemeral=True)
 
     @app_commands.command(
@@ -90,7 +90,7 @@ class PermissionCommands(commands.Cog):
                 f"✅ Revoked {role} from {user.mention}", ephemeral=True
             )
         except Exception as e:
-            logger.error(f"revoke_role error: {e}", exc_info=True)
+            logger.error("revoke_role error: %s", e, exc_info=True)
             await interaction.followup.send("❌ Error revoking role.", ephemeral=True)
 
     @app_commands.command(
@@ -120,7 +120,7 @@ class PermissionCommands(commands.Cog):
                 response += f"\n*... and {len(rows) - 25} more*"
             await interaction.followup.send(response, ephemeral=True)
         except Exception as e:
-            logger.error(f"list_permissions error: {e}", exc_info=True)
+            logger.error("list_permissions error: %s", e, exc_info=True)
             await interaction.followup.send("❌ Error fetching permissions.", ephemeral=True)
 
 

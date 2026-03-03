@@ -41,13 +41,16 @@ def _setup_channel(bot, config=None):
 
 class TestGetNotifyChannelId:
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("config,expected", [
-        ({"notify_channel_id": 123}, 123),
-        ({"notify_channel_id": "456"}, 456),
-        (None, None),
-        ({}, None),
-        ({"other": "val"}, None),
-    ])
+    @pytest.mark.parametrize(
+        "config,expected",
+        [
+            ({"notify_channel_id": 123}, 123),
+            ({"notify_channel_id": "456"}, 456),
+            (None, None),
+            ({}, None),
+            ({"other": "val"}, None),
+        ],
+    )
     async def test_cases(self, notifier, bot, config, expected):
         conn = _conn_with_config(config)
         bot.db_pool.acquire.return_value = _db_ctx(conn)
@@ -57,16 +60,21 @@ class TestGetNotifyChannelId:
 
 class TestGetNotifyChannel:
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("config,channel_exists,expected", [
-        ({"notify_channel_id": 123}, True, True),
-        (None, True, None),
-        ({}, True, None),
-        ({"other": "val"}, True, None),
-        ({"notify_channel_id": 123}, False, None),
-    ])
+    @pytest.mark.parametrize(
+        "config,channel_exists,expected",
+        [
+            ({"notify_channel_id": 123}, True, True),
+            (None, True, None),
+            ({}, True, None),
+            ({"other": "val"}, True, None),
+            ({"notify_channel_id": 123}, False, None),
+        ],
+    )
     async def test_cases(self, notifier, bot, config, channel_exists, expected):
         bot.db_pool.acquire.return_value = _db_ctx(_conn_with_config(config))
-        bot.get_channel.return_value = MagicMock(spec=discord.TextChannel) if channel_exists and config else None
+        bot.get_channel.return_value = (
+            MagicMock(spec=discord.TextChannel) if channel_exists and config else None
+        )
         if config and not channel_exists and config.get("notify_channel_id"):
             bot.fetch_channel = AsyncMock(side_effect=Exception())
         result = await notifier.get_notify_channel(999)
@@ -92,9 +100,14 @@ class TestGetNotifyChannel:
 
 class TestSetNotifyChannel:
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("channel_id,error,expected", [
-        (123, False, True), (None, False, True), (123, True, False),
-    ])
+    @pytest.mark.parametrize(
+        "channel_id,error,expected",
+        [
+            (123, False, True),
+            (None, False, True),
+            (123, True, False),
+        ],
+    )
     async def test_cases(self, notifier, bot, channel_id, error, expected):
         conn = AsyncMock()
         if error:
@@ -130,9 +143,13 @@ class TestGiveawayNotifications:
         assert channel.send.call_args[1]["embed"].title == "Giveaway Created"
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("winners,expected_text", [
-        ([111], "<@111>"), ([], "No valid"),
-    ])
+    @pytest.mark.parametrize(
+        "winners,expected_text",
+        [
+            ([111], "<@111>"),
+            ([], "No valid"),
+        ],
+    )
     async def test_ended(self, notifier, bot, winners, expected_text):
         channel = _setup_channel(bot)
         await notifier.notify_giveaway_ended(999, "Prize", winners, 10)

@@ -246,7 +246,7 @@ class AlreadyJoinedView(discord.ui.View):
             else:
                 await interaction.followup.send("You are not in this giveaway.", ephemeral=True)
         except Exception as e:
-            logger.error(f"Leave giveaway error: {e}", exc_info=True)
+            logger.error("Leave giveaway error: %s", e, exc_info=True)
             await interaction.followup.send("Error leaving giveaway.", ephemeral=True)
 
     async def _remove_entry(self, interaction: discord.Interaction) -> bool:
@@ -275,7 +275,7 @@ class AlreadyJoinedView(discord.ui.View):
                 view = GiveawayView(self.giveaway_id, self.bot, entry_count=count or 0)
                 await msg.edit(embed=build_embed(giveaway, count or 0), view=view)
         except Exception as e:
-            logger.warning(f"Could not update giveaway embed: {e}")
+            logger.warning("Could not update giveaway embed: %s", e)
 
 
 class GiveawayView(discord.ui.View):
@@ -339,7 +339,7 @@ class GiveawayView(discord.ui.View):
                     view=view,
                 )
         except Exception as e:
-            logger.error(f"Join error: {e}", exc_info=True)
+            logger.error("Join error: %s", e, exc_info=True)
             await interaction.followup.send("Error joining giveaway.", ephemeral=True)
 
     async def entries_button(self, interaction: discord.Interaction):
@@ -360,7 +360,7 @@ class GiveawayView(discord.ui.View):
             view._update_buttons()
             await interaction.followup.send(view._format_page(), ephemeral=True, view=view)
         except Exception as e:
-            logger.error(f"Entries error: {e}", exc_info=True)
+            logger.error("Entries error: %s", e, exc_info=True)
             await interaction.followup.send("Error fetching entries.", ephemeral=True)
 
     async def _get_entries(self, giveaway_id: uuid.UUID):
@@ -585,7 +585,7 @@ class GiveawayCommands(commands.Cog):
                     ends_at,
                 )
         except Exception as e:
-            logger.error(f"gstart error: {e}", exc_info=True)
+            logger.error("gstart error: %s", e, exc_info=True)
             await interaction.followup.send("Error starting giveaway.", ephemeral=True)
 
     @app_commands.command(name="greroll", description="Reroll winners for an ended giveaway")
@@ -707,7 +707,7 @@ class GiveawayCommands(commands.Cog):
                 ephemeral=True,
             )
         except Exception as e:
-            logger.error(f"greroll error: {e}", exc_info=True)
+            logger.error("greroll error: %s", e, exc_info=True)
             await interaction.followup.send("Error rerolling giveaway.", ephemeral=True)
 
     def _parse_message_id(self, s: str) -> Optional[int]:

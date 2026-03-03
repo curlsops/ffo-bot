@@ -48,13 +48,27 @@ class TestGiveawayJsonbParams:
         i.followup.send = AsyncMock(return_value=MagicMock(id=999))
 
         await cog.gstart.callback(
-            cog, i, "1h", 1, "Prize",
-            donor=None, required_roles=None, blacklist_roles=None, bypass_roles=None,
-            bonus_roles=None, messages=None, nodonorwin=False, nodefaults=False,
-            ping=False, extra_text=None, image=None,
+            cog,
+            i,
+            "1h",
+            1,
+            "Prize",
+            donor=None,
+            required_roles=None,
+            blacklist_roles=None,
+            bypass_roles=None,
+            bonus_roles=None,
+            messages=None,
+            nodonorwin=False,
+            nodefaults=False,
+            ping=False,
+            extra_text=None,
+            image=None,
         )
 
-        insert = next(c for c in conn.execute.call_args_list if "INSERT INTO giveaways" in str(c[0]))
+        insert = next(
+            c for c in conn.execute.call_args_list if "INSERT INTO giveaways" in str(c[0])
+        )
         args = insert[0][1:]
         assert isinstance(args[8], list) and isinstance(args[9], list)
         assert isinstance(args[10], list) and isinstance(args[11], dict)
@@ -76,7 +90,10 @@ class TestAuditLogJsonbParams:
 
         conn.execute.assert_awaited_once()
         param = conn.execute.call_args[0][3]
-        assert isinstance(param, str) and json.loads(param) == {"command": "test_cmd", "required_role": "super_admin"}
+        assert isinstance(param, str) and json.loads(param) == {
+            "command": "test_cmd",
+            "required_role": "super_admin",
+        }
 
 
 class TestDatabasePoolJsonbCodec:
@@ -85,5 +102,6 @@ class TestDatabasePoolJsonbCodec:
         with patch("database.connection.asyncpg.create_pool", new_callable=AsyncMock) as mock:
             mock.return_value = MagicMock()
             from database.connection import DatabasePool
+
             await DatabasePool.create("postgresql://localhost/test", min_size=1, max_size=2)
             assert mock.call_args[1].get("init").__name__ == "_init_connection"

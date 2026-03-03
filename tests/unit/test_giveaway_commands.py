@@ -53,18 +53,33 @@ def _interaction(guild_id=1, channel_id=2, user_id=3, msg_id=123):
 
 def _giveaway(prize="Prize", host_id=123, donor_id=None, winners_count=1, hours=1, **kw):
     return {
-        "prize": prize, "host_id": host_id, "donor_id": donor_id, "winners_count": winners_count,
+        "prize": prize,
+        "host_id": host_id,
+        "donor_id": donor_id,
+        "winners_count": winners_count,
         "ends_at": datetime.now(timezone.utc) + timedelta(hours=hours),
-        "extra_text": kw.get("extra_text"), "image_url": kw.get("image_url"), **kw,
+        "extra_text": kw.get("extra_text"),
+        "image_url": kw.get("image_url"),
+        **kw,
     }
 
 
 def _active_giveaway(view, **overrides):
     return {
-        "id": view.giveaway_id, "is_active": True, "bypass_roles": [], "required_roles": [],
-        "blacklist_roles": [], "bonus_roles": {}, "prize": "Test", "host_id": 1, "donor_id": None,
-        "winners_count": 1, "ends_at": datetime.now(timezone.utc) + timedelta(hours=1),
-        "extra_text": None, "image_url": None, **overrides,
+        "id": view.giveaway_id,
+        "is_active": True,
+        "bypass_roles": [],
+        "required_roles": [],
+        "blacklist_roles": [],
+        "bonus_roles": {},
+        "prize": "Test",
+        "host_id": 1,
+        "donor_id": None,
+        "winners_count": 1,
+        "ends_at": datetime.now(timezone.utc) + timedelta(hours=1),
+        "extra_text": None,
+        "image_url": None,
+        **overrides,
     }
 
 
@@ -85,10 +100,20 @@ class TestDiscordTimestamp:
 
 
 class TestParseDuration:
-    @pytest.mark.parametrize("inp,expected", [
-        ("30s", 30), ("5m", 300), ("2h", 7200), ("1d", 86400), ("1w", 604800),
-        ("1H", 3600), ("  1h  ", 3600), ("0m", 0), ("999d", 999 * 86400),
-    ])
+    @pytest.mark.parametrize(
+        "inp,expected",
+        [
+            ("30s", 30),
+            ("5m", 300),
+            ("2h", 7200),
+            ("1d", 86400),
+            ("1w", 604800),
+            ("1H", 3600),
+            ("  1h  ", 3600),
+            ("0m", 0),
+            ("999d", 999 * 86400),
+        ],
+    )
     def test_valid(self, inp, expected):
         assert parse_duration(inp) == expected
 
@@ -104,24 +129,44 @@ class TestParseDuration:
 
 
 class TestParseHelpers:
-    @pytest.mark.parametrize("inp,expected", [
-        (None, []), ("", []), ("not a role", []), ("<@&123> <@&456>", [123, 456]),
-    ])
+    @pytest.mark.parametrize(
+        "inp,expected",
+        [
+            (None, []),
+            ("", []),
+            ("not a role", []),
+            ("<@&123> <@&456>", [123, 456]),
+        ],
+    )
     def test_parse_roles(self, cog, inp, expected):
         assert cog._parse_roles(inp) == expected
 
-    @pytest.mark.parametrize("inp,expected", [
-        (None, {}), ("", {}), ("<@&123>:5,<@&456>:10", {"123": 5, "456": 10}),
-        ("<@&123>:abc,<@&456>:10", {"456": 10}), ("<@&123>:-5", {}),
-    ])
+    @pytest.mark.parametrize(
+        "inp,expected",
+        [
+            (None, {}),
+            ("", {}),
+            ("<@&123>:5,<@&456>:10", {"123": 5, "456": 10}),
+            ("<@&123>:abc,<@&456>:10", {"456": 10}),
+            ("<@&123>:-5", {}),
+        ],
+    )
     def test_parse_bonus_roles(self, cog, inp, expected):
         assert cog._parse_bonus_roles(inp) == expected
 
-    @pytest.mark.parametrize("inp,expected", [
-        (None, None), ("", None), ("invalid", None), ("100", None),
-        ("10,<#123>,extra", None), ("abc,<#123>", None), ("10,notachannel", None),
-        ("100,<#789>", {"count": 100, "channel_id": 789}),
-    ])
+    @pytest.mark.parametrize(
+        "inp,expected",
+        [
+            (None, None),
+            ("", None),
+            ("invalid", None),
+            ("100", None),
+            ("10,<#123>,extra", None),
+            ("abc,<#123>", None),
+            ("10,notachannel", None),
+            ("100,<#789>", {"count": 100, "channel_id": 789}),
+        ],
+    )
     def test_parse_messages(self, cog, inp, expected):
         assert cog._parse_messages(inp) == expected
 
@@ -132,11 +177,18 @@ class TestBuildEmbed:
         assert embed.title == "🎉 GIVEAWAY 🎉" and "Test Prize" in embed.description
 
     def test_with_extras(self):
-        embed = build_embed(_giveaway(donor_id=456, extra_text="Extra info", image_url="https://x.com/a.png"), 10)
+        embed = build_embed(
+            _giveaway(donor_id=456, extra_text="Extra info", image_url="https://x.com/a.png"), 10
+        )
         assert "<@456>" in embed.description and "Extra info" in embed.description
 
     def test_ended(self):
-        assert "ENDED" in build_embed(_giveaway(hours=-1, ended_at=datetime.now(timezone.utc)), 5, ended=True).title
+        assert (
+            "ENDED"
+            in build_embed(
+                _giveaway(hours=-1, ended_at=datetime.now(timezone.utc)), 5, ended=True
+            ).title
+        )
 
     def test_ended_uses_ended_at(self):
         ended_at = datetime.now(timezone.utc)
@@ -163,10 +215,15 @@ class TestGiveawayCommands:
         i.followup.send.assert_called()
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("duration,winners,prize,expected", [
-        ("invalid", 1, "Prize", "Invalid duration"), ("30s", 1, "Prize", "Invalid duration"),
-        ("1h", 0, "Prize", "Winners"), ("1h", 1, "X" * 600, "Prize max"),
-    ])
+    @pytest.mark.parametrize(
+        "duration,winners,prize,expected",
+        [
+            ("invalid", 1, "Prize", "Invalid duration"),
+            ("30s", 1, "Prize", "Invalid duration"),
+            ("1h", 0, "Prize", "Winners"),
+            ("1h", 1, "X" * 600, "Prize max"),
+        ],
+    )
     async def test_gstart_validation(self, cog, duration, winners, prize, expected):
         i = _interaction()
         await cog.gstart.callback(cog, i, duration, winners, prize)
@@ -206,31 +263,57 @@ class TestGiveawayCommands:
 class TestGiveawayView:
     @pytest.mark.asyncio
     async def test_get_giveaway(self, view, mock_bot):
-        mock_bot.db_pool = _db_ctx(AsyncMock(fetchrow=AsyncMock(return_value={"id": view.giveaway_id})))
+        mock_bot.db_pool = _db_ctx(
+            AsyncMock(fetchrow=AsyncMock(return_value={"id": view.giveaway_id}))
+        )
         assert await view._get_giveaway(123) is not None
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("bypass,blacklist,required,user_roles,donor_block,expected_ok,expected_reason", [
-        ([999], [], [], [999], False, True, ""),
-        ([], [888], [], [888], False, False, "blacklisted"),
-        ([], [], [777], [], False, False, "required"),
-        ([], [], [], [], False, True, ""),
-        ([], [], [], [], True, False, "Donors"),
-        (None, None, None, [], False, True, ""),
-    ])
-    async def test_check_eligibility(self, view, bypass, blacklist, required, user_roles, donor_block, expected_ok, expected_reason):
+    @pytest.mark.parametrize(
+        "bypass,blacklist,required,user_roles,donor_block,expected_ok,expected_reason",
+        [
+            ([999], [], [], [999], False, True, ""),
+            ([], [888], [], [888], False, False, "blacklisted"),
+            ([], [], [777], [], False, False, "required"),
+            ([], [], [], [], False, True, ""),
+            ([], [], [], [], True, False, "Donors"),
+            (None, None, None, [], False, True, ""),
+        ],
+    )
+    async def test_check_eligibility(
+        self,
+        view,
+        bypass,
+        blacklist,
+        required,
+        user_roles,
+        donor_block,
+        expected_ok,
+        expected_reason,
+    ):
         i = MagicMock()
         i.user = MagicMock(id=123, roles=[MagicMock(id=r) for r in user_roles])
-        g = {"bypass_roles": bypass, "required_roles": required, "blacklist_roles": blacklist,
-             "no_donor_win": donor_block, "donor_id": 123 if donor_block else None}
+        g = {
+            "bypass_roles": bypass,
+            "required_roles": required,
+            "blacklist_roles": blacklist,
+            "no_donor_win": donor_block,
+            "donor_id": 123 if donor_block else None,
+        }
         ok, reason = await view._check_eligibility(i, g)
         assert ok == expected_ok
         if expected_reason:
             assert expected_reason in reason
 
-    @pytest.mark.parametrize("roles,bonus_roles,expected", [
-        ([], {}, 1), ([], None, 1), ([100], {"100": 5}, 6), ([100, 200], {"100": 5, "200": 3}, 9),
-    ])
+    @pytest.mark.parametrize(
+        "roles,bonus_roles,expected",
+        [
+            ([], {}, 1),
+            ([], None, 1),
+            ([100], {"100": 5}, 6),
+            ([100, 200], {"100": 5, "200": 3}, 9),
+        ],
+    )
     def test_calculate_entries(self, view, roles, bonus_roles, expected):
         mock_roles = [MagicMock(id=r) for r in roles]
         assert view._calculate_entries(mock_roles, {"bonus_roles": bonus_roles}) == expected
@@ -247,22 +330,32 @@ class TestGiveawayView:
 
     @pytest.mark.asyncio
     async def test_update_embed(self, view, mock_bot):
-        mock_bot.db_pool = _db_ctx(AsyncMock(fetchval=AsyncMock(return_value=10), fetchrow=AsyncMock(return_value=_giveaway())))
+        mock_bot.db_pool = _db_ctx(
+            AsyncMock(
+                fetchval=AsyncMock(return_value=10), fetchrow=AsyncMock(return_value=_giveaway())
+            )
+        )
         msg = MagicMock(edit=AsyncMock())
         await view._update_embed(msg, view.giveaway_id)
         msg.edit.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_update_embed_no_giveaway(self, view, mock_bot):
-        mock_bot.db_pool = _db_ctx(AsyncMock(fetchval=AsyncMock(return_value=0), fetchrow=AsyncMock(return_value=None)))
+        mock_bot.db_pool = _db_ctx(
+            AsyncMock(fetchval=AsyncMock(return_value=0), fetchrow=AsyncMock(return_value=None))
+        )
         msg = MagicMock(edit=AsyncMock())
         await view._update_embed(msg, view.giveaway_id)
         msg.edit.assert_not_called()
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("giveaway,expected", [
-        (None, "not found"), ({"is_active": False}, "ended"),
-    ])
+    @pytest.mark.parametrize(
+        "giveaway,expected",
+        [
+            (None, "not found"),
+            ({"is_active": False}, "ended"),
+        ],
+    )
     async def test_join_button_early_exit(self, view, mock_bot, giveaway, expected):
         mock_bot.db_pool = _db_ctx(AsyncMock(fetchrow=AsyncMock(return_value=giveaway)))
         i = _interaction()
@@ -271,7 +364,11 @@ class TestGiveawayView:
 
     @pytest.mark.asyncio
     async def test_join_button_not_eligible(self, view, mock_bot):
-        mock_bot.db_pool = _db_ctx(AsyncMock(fetchrow=AsyncMock(return_value=_active_giveaway(view, blacklist_roles=[111]))))
+        mock_bot.db_pool = _db_ctx(
+            AsyncMock(
+                fetchrow=AsyncMock(return_value=_active_giveaway(view, blacklist_roles=[111]))
+            )
+        )
         i = _interaction()
         i.user.roles = [MagicMock(id=111)]
         await view.join_button(i)
@@ -279,7 +376,12 @@ class TestGiveawayView:
 
     @pytest.mark.asyncio
     async def test_join_button_already_joined(self, view, mock_bot):
-        mock_bot.db_pool = _db_ctx(AsyncMock(fetchrow=AsyncMock(return_value=_active_giveaway(view)), execute=AsyncMock(side_effect=Exception("dup"))))
+        mock_bot.db_pool = _db_ctx(
+            AsyncMock(
+                fetchrow=AsyncMock(return_value=_active_giveaway(view)),
+                execute=AsyncMock(side_effect=Exception("dup")),
+            )
+        )
         i = _interaction()
         await view.join_button(i)
         call = i.followup.send.call_args
@@ -289,7 +391,13 @@ class TestGiveawayView:
 
     @pytest.mark.asyncio
     async def test_join_button_success(self, view, mock_bot):
-        mock_bot.db_pool = _db_ctx(AsyncMock(fetchrow=AsyncMock(return_value=_active_giveaway(view)), execute=AsyncMock(), fetchval=AsyncMock(return_value=1)))
+        mock_bot.db_pool = _db_ctx(
+            AsyncMock(
+                fetchrow=AsyncMock(return_value=_active_giveaway(view)),
+                execute=AsyncMock(),
+                fetchval=AsyncMock(return_value=1),
+            )
+        )
         i = _interaction()
         await view.join_button(i)
         assert "joined" in str(i.followup.send.call_args)
@@ -302,22 +410,36 @@ class TestGiveawayView:
         assert "Error" in str(i.followup.send.call_args)
 
     @pytest.mark.asyncio
-    @pytest.mark.parametrize("giveaway,entries_rows,expected", [
-        (None, [], "not found"),
-        ({"id": 1}, [], "No entries"),
-    ])
-    async def test_entries_button_early_exit(self, view, mock_bot, giveaway, entries_rows, expected):
-        mock_bot.db_pool = _db_ctx(AsyncMock(fetchrow=AsyncMock(return_value=giveaway), fetch=AsyncMock(return_value=entries_rows)))
+    @pytest.mark.parametrize(
+        "giveaway,entries_rows,expected",
+        [
+            (None, [], "not found"),
+            ({"id": 1}, [], "No entries"),
+        ],
+    )
+    async def test_entries_button_early_exit(
+        self, view, mock_bot, giveaway, entries_rows, expected
+    ):
+        mock_bot.db_pool = _db_ctx(
+            AsyncMock(
+                fetchrow=AsyncMock(return_value=giveaway),
+                fetch=AsyncMock(return_value=entries_rows),
+            )
+        )
         i = _interaction()
         await view.entries_button(i)
         assert expected in str(i.followup.send.call_args)
 
     @pytest.mark.asyncio
     async def test_entries_button_with_entries(self, view, mock_bot):
-        mock_bot.db_pool = _db_ctx(AsyncMock(
-            fetchrow=AsyncMock(return_value={"id": view.giveaway_id}),
-            fetch=AsyncMock(return_value=[{"user_id": 1, "entries": 1}, {"user_id": 2, "entries": 2}])
-        ))
+        mock_bot.db_pool = _db_ctx(
+            AsyncMock(
+                fetchrow=AsyncMock(return_value={"id": view.giveaway_id}),
+                fetch=AsyncMock(
+                    return_value=[{"user_id": 1, "entries": 1}, {"user_id": 2, "entries": 2}]
+                ),
+            )
+        )
         i = _interaction()
         await view.entries_button(i)
         call = str(i.followup.send.call_args)
@@ -390,11 +512,14 @@ class TestAlreadyJoinedView:
 
 
 class TestEntriesPaginatedView:
-    @pytest.mark.parametrize("n,expected", [
-        (0, "Giveaway Participants"),
-        (2, "Giveaway Participants"),
-        (15, "Giveaway Participants"),
-    ])
+    @pytest.mark.parametrize(
+        "n,expected",
+        [
+            (0, "Giveaway Participants"),
+            (2, "Giveaway Participants"),
+            (15, "Giveaway Participants"),
+        ],
+    )
     def test_format_page(self, n, expected):
         view = EntriesPaginatedView(_entries(n))
         out = view._format_page()
@@ -508,9 +633,10 @@ class TestParseMessageId:
         assert cog._parse_message_id("123456789012345678") == 123456789012345678
 
     def test_message_link(self, cog):
-        assert cog._parse_message_id(
-            "https://discord.com/channels/1/2/123456789012345678"
-        ) == 123456789012345678
+        assert (
+            cog._parse_message_id("https://discord.com/channels/1/2/123456789012345678")
+            == 123456789012345678
+        )
 
     @pytest.mark.parametrize("inp", ["abc", "12.34", "not-a-id", ""])
     def test_invalid(self, cog, inp):
@@ -707,6 +833,7 @@ class TestSetup:
     @pytest.mark.asyncio
     async def test_setup(self, mock_bot):
         from bot.commands.giveaway import setup
+
         mock_bot.add_cog = AsyncMock()
         await setup(mock_bot)
         mock_bot.add_cog.assert_called_once()

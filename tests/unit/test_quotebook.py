@@ -127,9 +127,7 @@ class TestQuoteApprove:
         cog.bot.db_pool.acquire.return_value = _db_ctx(conn)
         i = _interaction()
         await cog.quote_approve.callback(cog, i, "a1b2c3d4-0000-0000-0000-000000000001")
-        i.followup.send.assert_awaited_with(
-            "Quote not found or already approved.", ephemeral=True
-        )
+        i.followup.send.assert_awaited_with("Quote not found or already approved.", ephemeral=True)
 
 
 class TestQuoteDelete:
@@ -155,18 +153,12 @@ class TestQuoteRandom:
         cog.bot.db_pool.acquire.return_value = _db_ctx(conn)
         i = _interaction()
         await cog.quote_random.callback(cog, i)
-        i.followup.send.assert_awaited_with(
-            "No quotes in the book yet.", ephemeral=True
-        )
+        i.followup.send.assert_awaited_with("No quotes in the book yet.", ephemeral=True)
 
     @pytest.mark.asyncio
     async def test_random_returns_quote(self, cog):
         conn = AsyncMock(
-            fetch=AsyncMock(
-                return_value=[
-                    {"quote_text": "Wise words", "attribution": "— Sage"}
-                ]
-            )
+            fetch=AsyncMock(return_value=[{"quote_text": "Wise words", "attribution": "— Sage"}])
         )
         cog.bot.db_pool.acquire.return_value = _db_ctx(conn)
         i = _interaction()

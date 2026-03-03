@@ -35,7 +35,7 @@ class PrivacyCommands(commands.Cog):
                 "✅ Opted out. Your message history has been deleted.", ephemeral=True
             )
         except Exception as e:
-            logger.error(f"privacy_optout error: {e}", exc_info=True)
+            logger.error("privacy_optout error: %s", e, exc_info=True)
             await interaction.followup.send("❌ An error occurred.", ephemeral=True)
 
     @app_commands.command(
@@ -55,7 +55,7 @@ class PrivacyCommands(commands.Cog):
                 )
             await interaction.followup.send("✅ Opted back in to message tracking.", ephemeral=True)
         except Exception as e:
-            logger.error(f"privacy_optin error: {e}", exc_info=True)
+            logger.error("privacy_optin error: %s", e, exc_info=True)
             await interaction.followup.send("❌ An error occurred.", ephemeral=True)
 
 

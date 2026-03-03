@@ -18,14 +18,10 @@ class TestParseWhitelistListResponse:
         ) == ["Alice", "Bob", "Charlie"]
 
     def test_single_player(self):
-        assert parse_whitelist_list_response(
-            "There is 1 whitelisted player: Steve"
-        ) == ["Steve"]
+        assert parse_whitelist_list_response("There is 1 whitelisted player: Steve") == ["Steve"]
 
     def test_zero_players(self):
-        assert parse_whitelist_list_response(
-            "There are 0 whitelisted players: "
-        ) == []
+        assert parse_whitelist_list_response("There are 0 whitelisted players: ") == []
 
     def test_empty_after_colon(self):
         assert parse_whitelist_list_response("Some text: ") == []
@@ -37,19 +33,19 @@ class TestParseWhitelistListResponse:
         assert parse_whitelist_list_response("No colon here") == []
 
     def test_strips_whitespace(self):
-        assert parse_whitelist_list_response(
-            "There are 2 whitelisted players:  a ,  b  "
-        ) == ["a", "b"]
+        assert parse_whitelist_list_response("There are 2 whitelisted players:  a ,  b  ") == [
+            "a",
+            "b",
+        ]
 
     def test_filters_empty_parts(self):
-        assert parse_whitelist_list_response(
-            "There are 3 whitelisted players: a, , b"
-        ) == ["a", "b"]
+        assert parse_whitelist_list_response("There are 3 whitelisted players: a, , b") == [
+            "a",
+            "b",
+        ]
 
     def test_trailing_comma_and_whitespace_only_part(self):
-        assert parse_whitelist_list_response(
-            "There are 2 whitelisted players: x,   "
-        ) == ["x"]
+        assert parse_whitelist_list_response("There are 2 whitelisted players: x,   ") == ["x"]
 
 
 class TestMinecraftRCONClient:
@@ -119,6 +115,4 @@ class TestMinecraftRCONClient:
                 result = await client._run_rcon("whitelist list")
 
             assert result == "ok"
-            mock_mcr.assert_called_once_with(
-                "localhost", "secret", port=25575
-            )
+            mock_mcr.assert_called_once_with("localhost", "secret", port=25575)

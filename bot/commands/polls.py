@@ -102,7 +102,7 @@ class PollCommands(commands.Cog):
             await interaction.channel.send(poll=poll)
             await interaction.followup.send("Poll created!", ephemeral=True)
         except Exception as e:
-            logger.error(f"Poll error: {e}", exc_info=True)
+            logger.error("Poll error: %s", e, exc_info=True)
             await interaction.followup.send("Error creating poll.", ephemeral=True)
 
     @app_commands.command(
@@ -176,7 +176,7 @@ class PollCommands(commands.Cog):
 
             await interaction.followup.send("Long poll created! React to vote.", ephemeral=True)
         except Exception as e:
-            logger.error(f"poll_long error: {e}", exc_info=True)
+            logger.error("poll_long error: %s", e, exc_info=True)
             await interaction.followup.send("Error creating poll.", ephemeral=True)
 
 

@@ -89,7 +89,7 @@ class MediaDownloader:
                     if timer:
                         timer.__exit__(None, None, None)
             except Exception as e:
-                logger.error(f"Download failed {att.filename}: {e}", exc_info=True)
+                logger.error("Download failed %s: %s", att.filename, e, exc_info=True)
                 if self.metrics:
                     self.metrics.media_downloads.labels(
                         server_id=str(server_id),

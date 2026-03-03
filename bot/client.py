@@ -10,9 +10,9 @@ from discord.ext import commands
 from bot.auth.permissions import PermissionChecker
 from bot.cache.memory import InMemoryCache
 from bot.processors.media_downloader import MediaDownloader
+from bot.services.minecraft_rcon import MinecraftRCONClient
 from bot.processors.phrase_matcher import PhraseMatcher
 from bot.processors.voice_transcriber import VoiceTranscriber
-from bot.services.minecraft_rcon import MinecraftRCONClient
 from bot.utils.metrics import BotMetrics
 from bot.utils.notifier import AdminNotifier
 from bot.utils.rate_limiter import RateLimiter
@@ -112,7 +112,7 @@ class FFOBot(commands.Bot):
             try:
                 await self.load_extension(extension)
             except Exception as e:
-                logger.error(f"Failed to load extension {extension}: {e}", exc_info=True)
+                logger.error("Failed to load extension %s: %s", extension, e, exc_info=True)
 
     async def _start_health_server(self):
         from bot.utils.health import HealthCheckServer
@@ -142,7 +142,9 @@ class FFOBot(commands.Bot):
                     )
 
     async def on_ready(self):
-        logger.info(f"Connected as {self.user} (ID: {self.user.id}) to {len(self.guilds)} servers")
+        logger.info(
+            "Connected as %s (ID: %s) to %d servers", self.user, self.user.id, len(self.guilds)
+        )
 
         for guild in self.guilds:
             await self._register_server(guild)
@@ -152,7 +154,7 @@ class FFOBot(commands.Bot):
             self.tree.copy_global_to(guild=guild)
             await self.tree.sync(guild=guild)
         if self.guilds:
-            logger.info(f"Synced slash commands to {len(self.guilds)} guild(s)")
+            logger.info("Synced slash commands to %d guild(s)", len(self.guilds))
         else:
             await self.tree.sync()
 
@@ -175,10 +177,10 @@ class FFOBot(commands.Bot):
                     guild.name,
                 )
         except Exception as e:
-            logger.error(f"Failed to register server {guild.id}: {e}", exc_info=True)
+            logger.error("Failed to register server %s: %s", guild.id, e, exc_info=True)
 
     async def on_guild_join(self, guild: discord.Guild):
-        logger.info(f"Joined server: {guild.name} ({guild.id})")
+        logger.info("Joined server: %s (%s)", guild.name, guild.id)
         await self._register_server(guild)
         self.tree.copy_global_to(guild=guild)
         await self.tree.sync(guild=guild)
@@ -186,7 +188,7 @@ class FFOBot(commands.Bot):
             self.metrics.set_guild_count(len(self.guilds))
 
     async def on_guild_remove(self, guild: discord.Guild):
-        logger.info(f"Left server: {guild.name} ({guild.id})")
+        logger.info("Left server: %s (%s)", guild.name, guild.id)
         if self.metrics:
             self.metrics.set_guild_count(len(self.guilds))
 
@@ -202,7 +204,7 @@ class FFOBot(commands.Bot):
                 self._drain_message_queue(), timeout=self.settings.shutdown_timeout_seconds
             )
         except asyncio.TimeoutError:
-            logger.warning(f"Drain timeout ({self.settings.shutdown_timeout_seconds}s)")
+            logger.warning("Drain timeout (%ds)", self.settings.shutdown_timeout_seconds)
 
         if self._health_server:
             await self._health_server.cleanup()

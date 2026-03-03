@@ -27,7 +27,9 @@ def _db_ctx(conn):
     return pool
 
 
-def _attachment(url="https://example.com/img.png", filename="img.png", content_type="image/png", size=1024):
+def _attachment(
+    url="https://example.com/img.png", filename="img.png", content_type="image/png", size=1024
+):
     return MediaAttachment(url=url, filename=filename, content_type=content_type, size_bytes=size)
 
 
@@ -65,11 +67,18 @@ class TestMediaDownloaderInit:
 
 
 class TestFileType:
-    @pytest.mark.parametrize("content_type,expected", [
-        ("image/png", "image"), ("image/jpeg", "image"), ("image/gif", "gif"),
-        ("video/mp4", "video"), ("application/pdf", None), ("text/plain", None),
-        (None, None),
-    ])
+    @pytest.mark.parametrize(
+        "content_type,expected",
+        [
+            ("image/png", "image"),
+            ("image/jpeg", "image"),
+            ("image/gif", "gif"),
+            ("video/mp4", "video"),
+            ("application/pdf", None),
+            ("text/plain", None),
+            (None, None),
+        ],
+    )
     def test_get_file_type(self, downloader, content_type, expected):
         assert downloader._get_file_type(content_type) == expected
 
@@ -145,7 +154,9 @@ class TestDownloadOperations:
     async def test_store_metadata(self, tmpdir):
         conn = AsyncMock()
         d = MediaDownloader(_db_ctx(conn), tmpdir)
-        await d._store_metadata(123, 456, 789, 111, "t.png", "image", ".png", 1024, "path", "url", "hash")
+        await d._store_metadata(
+            123, 456, 789, 111, "t.png", "image", ".png", 1024, "path", "url", "hash"
+        )
         conn.execute.assert_called_once()
 
     @pytest.mark.asyncio

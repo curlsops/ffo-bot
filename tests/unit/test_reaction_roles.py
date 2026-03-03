@@ -29,9 +29,7 @@ def _interaction(guild_id=1, channel_id=2, user_id=3):
 
 class TestParseMessageRef:
     def test_message_link(self):
-        assert _parse_message_ref(
-            "https://discord.com/channels/111/222/333", 1, 99
-        ) == (222, 333)
+        assert _parse_message_ref("https://discord.com/channels/111/222/333", 1, 99) == (222, 333)
 
     def test_raw_id(self):
         assert _parse_message_ref("123456789", 1, 99) == (99, 123456789)
@@ -79,9 +77,7 @@ class TestReactionRoleCommands:
         conn = AsyncMock(execute=AsyncMock(return_value="UPDATE 0"))
         cog.bot.db_pool = _db_ctx(conn)
         i = _interaction()
-        await cog.reactionrole_remove.callback(
-            cog, i, "https://discord.com/channels/1/2/123", "👍"
-        )
+        await cog.reactionrole_remove.callback(cog, i, "https://discord.com/channels/1/2/123", "👍")
         assert "not found" in str(i.followup.send.call_args).lower()
 
     @pytest.mark.asyncio
@@ -96,9 +92,7 @@ class TestReactionRoleCommands:
     async def test_list_with_rows(self, cog):
         conn = AsyncMock(
             fetch=AsyncMock(
-                return_value=[
-                    {"message_id": 1, "channel_id": 2, "emoji": "👍", "role_id": 99}
-                ]
+                return_value=[{"message_id": 1, "channel_id": 2, "emoji": "👍", "role_id": 99}]
             )
         )
         cog.bot.db_pool = _db_ctx(conn)

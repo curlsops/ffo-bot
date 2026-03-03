@@ -128,7 +128,7 @@ class ReactBotCommands(commands.Cog):
         except (ValidationError, RegexValidationError) as e:
             await interaction.followup.send(f"❌ {e}", ephemeral=True)
         except Exception as e:
-            logger.error(f"reactbot_add error: {e}", exc_info=True)
+            logger.error("reactbot_add error: %s", e, exc_info=True)
             await interaction.followup.send("❌ Error processing command.", ephemeral=True)
 
     @app_commands.command(
@@ -156,7 +156,7 @@ class ReactBotCommands(commands.Cog):
                 response += f"\n*... and {len(rows) - 25} more*"
             await interaction.followup.send(response, ephemeral=True)
         except Exception as e:
-            logger.error(f"reactbot_list error: {e}", exc_info=True)
+            logger.error("reactbot_list error: %s", e, exc_info=True)
             await interaction.followup.send("❌ Error fetching reactions.", ephemeral=True)
 
     @app_commands.command(
@@ -184,7 +184,7 @@ class ReactBotCommands(commands.Cog):
             self.bot.phrase_matcher.invalidate_cache(interaction.guild_id)
             await interaction.followup.send(f"✅ Removed: `{phrase}`", ephemeral=True)
         except Exception as e:
-            logger.error(f"reactbot_remove error: {e}", exc_info=True)
+            logger.error("reactbot_remove error: %s", e, exc_info=True)
             await interaction.followup.send("❌ Error processing command.", ephemeral=True)
 
 
