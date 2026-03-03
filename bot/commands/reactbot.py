@@ -1,5 +1,4 @@
 import logging
-from typing import List
 
 import asyncpg
 import discord
@@ -14,10 +13,37 @@ from config.constants import Role
 logger = logging.getLogger(__name__)
 
 
+async def _reactbot_phrase_autocomplete(
+    interaction: discord.Interaction, current: str
+) -> list[app_commands.Choice[str]]:
+    if not interaction.guild_id:
+        return []
+    try:
+        bot = interaction.client
+        async with bot.db_pool.acquire() as conn:
+            rows = await conn.fetch(
+                """SELECT phrase, emoji FROM phrase_reactions
+                   WHERE server_id = $1 AND is_active = true
+                   ORDER BY match_count DESC LIMIT 25""",
+                interaction.guild_id,
+            )
+        choices = []
+        for row in rows:
+            phrase = row["phrase"]
+            emoji = row["emoji"]
+            if current.lower() in phrase.lower() or not current:
+                display = f"{phrase} → {emoji}"
+                if len(display) > 100:
+                    display = display[:97] + "..."
+                choices.append(app_commands.Choice(name=display, value=phrase))
+        return choices[:25]
+    except Exception:
+        return []
+
+
 class ReactBotCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.reactbot_remove.autocomplete("phrase")(self.phrase_autocomplete)
 
     async def _check_admin(self, interaction: discord.Interaction, cmd: str) -> bool:
         ctx = PermissionContext(
@@ -133,31 +159,6 @@ class ReactBotCommands(commands.Cog):
             logger.error(f"reactbot_list error: {e}", exc_info=True)
             await interaction.followup.send("❌ Error fetching reactions.", ephemeral=True)
 
-    async def phrase_autocomplete(
-        self, interaction: discord.Interaction, current: str
-    ) -> List[app_commands.Choice[str]]:
-        try:
-            async with self.bot.db_pool.acquire() as conn:
-                rows = await conn.fetch(
-                    """SELECT phrase, emoji FROM phrase_reactions
-                       WHERE server_id = $1 AND is_active = true
-                       ORDER BY match_count DESC LIMIT 25""",
-                    interaction.guild_id,
-                )
-            choices = []
-            for row in rows:
-                phrase = row["phrase"]
-                emoji = row["emoji"]
-                if current.lower() in phrase.lower() or not current:
-                    display = f"{phrase} → {emoji}"
-                    if len(display) > 100:
-                        display = display[:97] + "..."
-                    choices.append(app_commands.Choice(name=display, value=phrase))
-            return choices[:25]
-        except Exception as e:
-            logger.error(f"phrase_autocomplete error: {e}", exc_info=True)
-            return []
-
     @app_commands.command(
         name="reactbot_remove",
         description="Remove a phrase reaction (Admin only)",
@@ -165,6 +166,7 @@ class ReactBotCommands(commands.Cog):
     @app_commands.guild_only()
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(phrase="Select phrase pattern to remove")
+    @app_commands.autocomplete(phrase=_reactbot_phrase_autocomplete)
     async def reactbot_remove(self, interaction: discord.Interaction, phrase: str):
         await interaction.response.defer(ephemeral=True)
         try:

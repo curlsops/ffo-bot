@@ -15,6 +15,24 @@ from config.constants import Role
 
 logger = logging.getLogger(__name__)
 
+GIVEAWAY_DURATIONS = [
+    "1m",
+    "5m",
+    "15m",
+    "30m",
+    "1h",
+    "2h",
+    "6h",
+    "12h",
+    "1d",
+    "2d",
+    "3d",
+    "5d",
+    "7d",
+    "1w",
+    "2w",
+]
+
 TIME_REGEX = re.compile(r"^(\d+)([smhdw])$", re.IGNORECASE)
 TIME_UNITS = {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}
 
@@ -24,6 +42,50 @@ def parse_duration(duration: str) -> Optional[int]:
     if not match:
         return None
     return int(match.group(1)) * TIME_UNITS[match.group(2).lower()]
+
+
+async def _giveaway_duration_autocomplete(
+    interaction: discord.Interaction, current: str
+) -> list[app_commands.Choice[str]]:
+    if not current:
+        return [app_commands.Choice(name=d, value=d) for d in GIVEAWAY_DURATIONS[:25]]
+    cur = current.lower()
+    matches = [app_commands.Choice(name=d, value=d) for d in GIVEAWAY_DURATIONS if cur in d]
+    return (
+        matches[:25]
+        if matches
+        else [app_commands.Choice(name=d, value=d) for d in GIVEAWAY_DURATIONS[:25]]
+    )
+
+
+async def _giveaway_message_id_autocomplete(
+    interaction: discord.Interaction, current: str
+) -> list[app_commands.Choice[str]]:
+    if not interaction.guild_id:
+        return []
+    try:
+        bot = interaction.client
+        async with bot.db_pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT message_id, prize, ended_at
+                FROM giveaways
+                WHERE server_id = $1 AND message_id IS NOT NULL
+                ORDER BY ended_at DESC NULLS FIRST
+                LIMIT 25
+                """,
+                interaction.guild_id,
+            )
+        choices = []
+        for r in rows:
+            mid = str(r["message_id"])
+            prize = (r["prize"][:40] + "…") if len(r["prize"]) > 40 else r["prize"]
+            label = f"{mid} — {prize}" + (" (ended)" if r["ended_at"] else "")
+            if not current or current in mid or current.lower() in prize.lower():
+                choices.append(app_commands.Choice(name=label[:100], value=mid))
+        return choices[:25]
+    except Exception:
+        return []
 
 
 def _discord_timestamp(dt: datetime, fmt: str = "R") -> str:
@@ -405,6 +467,7 @@ class GiveawayCommands(commands.Cog):
     @app_commands.command(name="gstart", description="Start a giveaway")
     @app_commands.guild_only()
     @app_commands.default_permissions(administrator=True)
+    @app_commands.autocomplete(duration=_giveaway_duration_autocomplete)
     @app_commands.describe(
         duration="Duration (e.g. 1h, 2d, 1w)",
         winners="Number of winners",
@@ -528,6 +591,7 @@ class GiveawayCommands(commands.Cog):
     @app_commands.command(name="greroll", description="Reroll winners for an ended giveaway")
     @app_commands.guild_only()
     @app_commands.default_permissions(administrator=True)
+    @app_commands.autocomplete(message_id=_giveaway_message_id_autocomplete)
     @app_commands.describe(
         message_id="The giveaway message ID (from the message link, or right-click → Copy ID)",
         count="Number of winners to reroll (default: all). Use when some winners didn't claim.",

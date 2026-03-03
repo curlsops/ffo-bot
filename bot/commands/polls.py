@@ -12,6 +12,18 @@ from config.constants import Role
 
 logger = logging.getLogger(__name__)
 
+POLL_DURATIONS = ["1h", "6h", "1d", "3d", "7d"]
+
+
+async def _poll_duration_autocomplete(
+    interaction: discord.Interaction, current: str
+) -> list[app_commands.Choice[str]]:
+    if not current:
+        return [app_commands.Choice(name=d, value=d) for d in POLL_DURATIONS]
+    cur = current.lower()
+    matches = [app_commands.Choice(name=d, value=d) for d in POLL_DURATIONS if cur in d]
+    return matches if matches else [app_commands.Choice(name=d, value=d) for d in POLL_DURATIONS]
+
 
 def _parse_duration(s: str) -> Optional[timedelta]:
     m = re.match(r"^(\d+)([mhd])$", s.strip().lower())
@@ -49,6 +61,7 @@ class PollCommands(commands.Cog):
         duration="How long the poll runs: 1h, 6h, 1d, 3d, 7d (default: 1d)",
         multi="Allow multiple selections",
     )
+    @app_commands.autocomplete(duration=_poll_duration_autocomplete)
     async def poll(
         self,
         interaction: discord.Interaction,
@@ -90,6 +103,80 @@ class PollCommands(commands.Cog):
             await interaction.followup.send("Poll created!", ephemeral=True)
         except Exception as e:
             logger.error(f"Poll error: {e}", exc_info=True)
+            await interaction.followup.send("Error creating poll.", ephemeral=True)
+
+    @app_commands.command(
+        name="poll_long",
+        description="Create a poll with up to 20 options (reaction-based, Admin only)",
+    )
+    @app_commands.guild_only()
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.describe(
+        question="The poll question (max 300 chars)",
+        options="Comma-separated options (2-20). E.g. A,B,C,D,E,F,G,H,I,J,K",
+    )
+    async def poll_long(
+        self,
+        interaction: discord.Interaction,
+        question: str,
+        options: str,
+    ):
+        await interaction.response.defer(ephemeral=True)
+        try:
+            if not await self._check_admin(interaction, "poll_long"):
+                return
+
+            if len(question) > 300:
+                await interaction.followup.send(
+                    "Question too long (max 300 characters).", ephemeral=True
+                )
+                return
+
+            opts = [o.strip()[:100] for o in options.split(",") if o.strip()][:20]
+            if len(opts) < 2:
+                await interaction.followup.send(
+                    "Need at least 2 options (comma-separated).", ephemeral=True
+                )
+                return
+
+            # 1️⃣-9️⃣, 0️⃣(10), A-J for 11-20
+            num_emoji = [
+                "1️⃣",
+                "2️⃣",
+                "3️⃣",
+                "4️⃣",
+                "5️⃣",
+                "6️⃣",
+                "7️⃣",
+                "8️⃣",
+                "9️⃣",
+                "🔟",
+                "🇦",
+                "🇧",
+                "🇨",
+                "🇩",
+                "🇪",
+                "🇫",
+                "🇬",
+                "🇭",
+                "🇮",
+                "🇯",
+            ]
+            emojis = num_emoji[: len(opts)]
+
+            lines = [f"{emojis[i]} {opts[i]}" for i in range(len(opts))]
+            embed = discord.Embed(
+                title=f"📊 {question}",
+                description="\n".join(lines) + "\n\n*React to vote*",
+                color=discord.Color.blue(),
+            )
+            msg = await interaction.channel.send(embed=embed)
+            for emoji in emojis:
+                await msg.add_reaction(emoji)
+
+            await interaction.followup.send("Long poll created! React to vote.", ephemeral=True)
+        except Exception as e:
+            logger.error(f"poll_long error: {e}", exc_info=True)
             await interaction.followup.send("Error creating poll.", ephemeral=True)
 
 
