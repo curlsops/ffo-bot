@@ -1,5 +1,46 @@
 # Changelog
 
+## [1.6.0](https://github.com/curlsops/ffo-bot/compare/v1.5.5...v1.6.0) (2026-03-03)
+
+
+### Features
+
+* **cache:** add in-memory cache for FAQ, quotebook, reactbot, reaction roles, notifier ([ed53a1d](https://github.com/curlsops/ffo-bot/commit/ed53a1dc40fbc6dfb9789a87301687009864f743))
+* **cache:** add in-memory whitelist cache ([5908e8f](https://github.com/curlsops/ffo-bot/commit/5908e8f4dfb911c1382e4f0a9dd5b43d0fb0b7e5))
+* **config:** add feature flags and RCON settings ([e5895a9](https://github.com/curlsops/ffo-bot/commit/e5895a9ccb43b52b0a5d49f74ab6389816dd8ce8))
+* **database:** add query duration metrics ([f58e794](https://github.com/curlsops/ffo-bot/commit/f58e794442a39d04959d13a57702b3cd32bf961e))
+* **discord:** add FAQ command system ([bfd73b5](https://github.com/curlsops/ffo-bot/commit/bfd73b573ddf7147e73e58ff19001e77ff253fa2))
+* **discord:** add quotebook feature ([b01b147](https://github.com/curlsops/ffo-bot/commit/b01b147632304fdff30592837973a3688cb07042))
+* **discord:** add unit and currency conversion ([efeebd0](https://github.com/curlsops/ffo-bot/commit/efeebd0b131d83315670001b5783ba5622c9bffd))
+* **discord:** integrate whitelist and conversion in message handlers ([9d41991](https://github.com/curlsops/ffo-bot/commit/9d4199128722bc7920cec0d6764c313f3b2e9894))
+* **giveaway,auth,db:** prize thread, DB resilience, 100% coverage ([4a1178b](https://github.com/curlsops/ffo-bot/commit/4a1178b099b627cd3103917d3fafc985d784d051))
+* **giveaway:** cache-aside with DB fallback, NotFound handling, prune expired ([e3db15b](https://github.com/curlsops/ffo-bot/commit/e3db15b4cf61912f2b46cc933fd7d8dc83c71b01))
+* **giveaway:** expand who can close prize threads ([e10adc0](https://github.com/curlsops/ffo-bot/commit/e10adc0a99d072c1e07aa634e673f11b9afad02d))
+* **metrics:** add global command instrumentation ([bf8574b](https://github.com/curlsops/ffo-bot/commit/bf8574b59d47bcdfff0864d815b31195b4315ede))
+* **minecraft:** add whitelist management via RCON ([bd86437](https://github.com/curlsops/ffo-bot/commit/bd8643793f1072e84196b81ce3e2ba800706cc68))
+* **minecraft:** store UUID from Mojang API with NameMC fallback ([2309693](https://github.com/curlsops/ffo-bot/commit/23096936b4c1725712464415b0cf25ec1d740419))
+* **mojang:** add batch UUID lookup for whitelist sync ([a972ae7](https://github.com/curlsops/ffo-bot/commit/a972ae79e27350684817679b1a5c544355c1b42c))
+* tests, refactors refactor refactor refactor ([c58179a](https://github.com/curlsops/ffo-bot/commit/c58179a730d9bc0d647a9efb3821d105d284dd8a))
+
+
+### Bug Fixes
+
+* **ci:** pass FFO_BOT_VERSION to edge Docker build ([cbd4ea6](https://github.com/curlsops/ffo-bot/commit/cbd4ea6d47c8c0acdbb29e42463d9dedf13a25a0))
+* **convert:** show original message with unit replaced ([59679e8](https://github.com/curlsops/ffo-bot/commit/59679e80166cfb65b867e2e16f05f97d79361ed8))
+* **db:** treat ConnectionRefusedError as transient ([1420d63](https://github.com/curlsops/ffo-bot/commit/1420d63242c615bd807e8be511f018a85da84ce5))
+* **giveaway:** use prize name only for thread title, no 'Prize:' prefix ([a582424](https://github.com/curlsops/ffo-bot/commit/a582424b4182ef3938086c111f706db41f111319))
+* **minecraft:** replace mcrcon with socket-based RCON implementation ([8c56bd6](https://github.com/curlsops/ffo-bot/commit/8c56bd607ca7ff3e0b0d14f03eb5b1b6a970c3ec))
+* **test:** capture logs under pytest-xdist ([66ee12f](https://github.com/curlsops/ffo-bot/commit/66ee12f666d84ed11325431562e45aa91b8a615d))
+* **test:** capture whitelist_channel logs under pytest-xdist ([057f088](https://github.com/curlsops/ffo-bot/commit/057f0889bb4ac907d3026dcf67e5a4a9cd00c39a))
+* **tests:** correct MrCurlsTV username in integration tests ([d7aff2f](https://github.com/curlsops/ffo-bot/commit/d7aff2f54499673f31c74acf16c294db068b5a78))
+* **tests:** expect invitable=False in create_thread assertions ([50f53c1](https://github.com/curlsops/ffo-bot/commit/50f53c18b1cbaabb349b5d237e87a96190802734))
+* use timeout param for asyncpg create_pool (connect_kwargs not supported) ([35e04bf](https://github.com/curlsops/ffo-bot/commit/35e04bf5db9e154ad106a629255b2f9f6062ab24))
+
+
+### Performance Improvements
+
+* **bot:** defer imports until features are enabled ([4f61719](https://github.com/curlsops/ffo-bot/commit/4f61719c41433915d47201528f5e66941f6aaca3))
+
 ## [1.5.5](https://github.com/curlsops/ffo-bot/compare/v1.5.4...v1.5.5) (2026-03-01)
 
 
