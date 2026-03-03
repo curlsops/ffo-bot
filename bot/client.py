@@ -10,9 +10,9 @@ from discord.ext import commands
 from bot.auth.permissions import PermissionChecker
 from bot.cache.memory import InMemoryCache
 from bot.processors.media_downloader import MediaDownloader
+from bot.services.minecraft_rcon import MinecraftRCONClient
 from bot.processors.phrase_matcher import PhraseMatcher
 from bot.processors.voice_transcriber import VoiceTranscriber
-from bot.services.minecraft_rcon import MinecraftRCONClient
 from bot.utils.metrics import BotMetrics
 from bot.utils.notifier import AdminNotifier
 from bot.utils.rate_limiter import RateLimiter
@@ -230,7 +230,7 @@ class FFOBot(commands.Bot):
 
     async def on_error(self, event_method: str, *args, **kwargs):
         error = sys.exc_info()[1]
-        logger.exception(f"Error in {event_method}")
+        logger.exception("Error in %s", event_method)
         if self.notifier and (server_id := self._extract_server_id(args)):
             await self.notifier.notify_error(server_id, error, f"Event: {event_method}")
 
@@ -247,7 +247,7 @@ class FFOBot(commands.Bot):
         self, interaction: discord.Interaction, error: discord.app_commands.AppCommandError
     ):
         cmd_name = interaction.command.name if interaction.command else "unknown"
-        logger.exception(f"App command error: {cmd_name}")
+        logger.exception("App command error: %s", cmd_name)
         if self.notifier and interaction.guild_id:
             ctx = f"Command: /{cmd_name}" if interaction.command else "Unknown command"
             await self.notifier.notify_error(
