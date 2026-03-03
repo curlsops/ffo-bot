@@ -3,7 +3,10 @@ import logging
 import discord
 from discord.ext import commands
 
+from bot.commands.whitelist import WHITELIST_APPROVE_EMOJI, WHITELIST_REJECT_EMOJI
 from bot.processors.media_downloader import MediaAttachment
+from bot.services.mojang import get_profile
+from bot.utils.whitelist_channel import get_whitelist_channel_id
 
 logger = logging.getLogger(__name__)
 
@@ -33,6 +36,56 @@ class MessageHandler(commands.Cog):
         vt = getattr(self.bot, "voice_transcriber", None)
         if message.attachments and vt and vt.enabled:
             await self._transcribe_voice_messages(message)
+
+        if message.content and getattr(self.bot.settings, "feature_conversion", False):
+            await self._convert_units(message)
+
+        if getattr(self.bot.settings, "feature_minecraft_whitelist", False):
+            await self._process_whitelist_channel(message)
+
+    async def _process_whitelist_channel(self, message: discord.Message):
+        if not message.guild or not message.content:
+            return
+        channel_id = await get_whitelist_channel_id(self.bot.db_pool, message.guild.id)
+        if channel_id != message.channel.id:
+            return
+
+        content = message.content.strip()
+        if not content or " " in content:
+            return
+
+        if not (3 <= len(content) <= 16) or not content.replace("_", "").isalnum():
+            return
+
+        username = content
+        profile = await get_profile(username)
+        if profile:
+            uuid_val, _ = profile
+            try:
+                await message.add_reaction(WHITELIST_APPROVE_EMOJI)
+                await message.add_reaction(WHITELIST_REJECT_EMOJI)
+                async with self.bot.db_pool.acquire() as conn:
+                    await conn.execute(
+                        """
+                        INSERT INTO whitelist_pending (server_id, message_id, channel_id, username, author_id, minecraft_uuid)
+                        VALUES ($1, $2, $3, $4, $5, $6::uuid)
+                        ON CONFLICT (server_id, message_id) DO NOTHING
+                        """,
+                        message.guild.id,
+                        message.id,
+                        message.channel.id,
+                        username,
+                        message.author.id,
+                        uuid_val,
+                    )
+            except discord.HTTPException as e:
+                logger.warning("Failed to add whitelist reactions: %s", e)
+            except Exception as e:
+                logger.error("Whitelist pending insert error: %s", e, exc_info=True)
+        else:
+            await message.reply(
+                f"{message.author.mention} Your Minecraft username does not exist. Please try again."
+            )
 
     async def _process_phrase_matching(self, message: discord.Message):
         try:
@@ -108,6 +161,19 @@ class MessageHandler(commands.Cog):
                 )
         except Exception as e:
             logger.error(f"Failed to log phrase match: {e}")
+
+    async def _convert_units(self, message: discord.Message):
+        from bot.processors.unit_converter import detect_and_convert
+
+        try:
+            si = detect_and_convert(message.content)
+            if si:
+                await message.reply(
+                    f"I think {message.author.display_name} meant to say: **{si}**\n"
+                    f"*[SI units](https://en.wikipedia.org/wiki/International_System_of_Units)*"
+                )
+        except Exception as e:
+            logger.warning("Unit conversion error: %s", e)
 
     async def _transcribe_voice_messages(self, message: discord.Message):
         vt = getattr(self.bot, "voice_transcriber", None)
