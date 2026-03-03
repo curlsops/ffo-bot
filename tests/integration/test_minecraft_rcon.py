@@ -47,7 +47,7 @@ def minecraft_container():
 
 # Valid Mojang usernames (server validates against Mojang API in online mode)
 # Used consistently across all Minecraft RCON integration tests
-VALID_USERS = ("pn55", "mr_curlstv", "notch")
+VALID_USERS = ("pn55", "MrCurlsTV", "notch")
 
 
 @pytest.mark.integration
