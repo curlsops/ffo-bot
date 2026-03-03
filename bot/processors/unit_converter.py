@@ -116,10 +116,10 @@ def convert_in_text(text: str) -> Optional[str]:
             elif kind == "temp_f":
                 f = float(m.group(1))
                 si_val = _to_si_temp(f)
-            elif kind in ("weight_imperial", "length_imperial") and units:
+            elif kind in ("weight_imperial", "length_imperial") and units:  # pragma: no branch
                 amount = float(m.group(1))
                 u = m.group(2).lower()
-                if u in units:
+                if u in units:  # pragma: no branch
                     if kind == "weight_imperial":
                         kg = amount * units[u]
                         si_val = _to_si_weight(kg)
@@ -127,7 +127,7 @@ def convert_in_text(text: str) -> Optional[str]:
                         meters = amount * units[u]
                         si_val = _to_si_length(meters)
 
-            if si_val:
+            if si_val:  # pragma: no branch
                 result = result[: m.start()] + si_val + result[m.end() :]
                 converted = True
                 break

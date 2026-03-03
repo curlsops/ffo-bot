@@ -10,9 +10,9 @@ from discord.ext import commands
 from bot.auth.permissions import PermissionChecker
 from bot.cache.memory import InMemoryCache
 from bot.processors.media_downloader import MediaDownloader
-from bot.services.minecraft_rcon import MinecraftRCONClient
 from bot.processors.phrase_matcher import PhraseMatcher
 from bot.processors.voice_transcriber import VoiceTranscriber
+from bot.services.minecraft_rcon import MinecraftRCONClient
 from bot.utils.metrics import BotMetrics
 from bot.utils.notifier import AdminNotifier
 from bot.utils.rate_limiter import RateLimiter
