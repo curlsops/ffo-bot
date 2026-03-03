@@ -59,3 +59,20 @@ class TestConstants:
         assert Constants.PHRASE_PATTERN_CACHE_TTL == 300
         assert Constants.USER_ROLE_CACHE_TTL == 300
         assert Constants.COMMAND_PERMISSION_CACHE_TTL == 60
+
+    def test_regex_timeout_positive(self):
+        assert Constants.REGEX_TIMEOUT_SECONDS > 0
+
+    def test_max_pattern_length_positive(self):
+        assert Constants.MAX_PATTERN_LENGTH > 0
+
+    def test_media_chunk_size_positive(self):
+        assert Constants.MEDIA_CHUNK_SIZE > 0
+
+    def test_retention_days_positive(self):
+        assert Constants.MESSAGE_RETENTION_DAYS > 0
+        assert Constants.AUDIT_LOG_RETENTION_DAYS > 0
+
+    def test_cache_ttl_positive(self):
+        assert Constants.PERMISSION_CACHE_TTL > 0
+        assert Constants.COMMAND_PERMISSION_CACHE_TTL > 0

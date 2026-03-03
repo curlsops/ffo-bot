@@ -31,6 +31,7 @@ def make_db_pool(fetch_result=None, execute_result="OK"):
 
 def make_bot():
     bot = MagicMock()
+    bot.cache = None
     bot.rate_limiter.check_rate_limit = AsyncMock(return_value=(True, ""))
     bot.permission_checker.check_role = AsyncMock(return_value=True)
     bot.phrase_matcher.validate_pattern = AsyncMock()
@@ -149,6 +150,19 @@ async def test_phrase_autocomplete_empty():
     interaction.client = bot
     choices = await _reactbot_phrase_autocomplete(interaction, "")
     assert choices == []
+
+
+@pytest.mark.parametrize("phrase,emoji", [("hello", "👋"), ("test", "✅"), ("foo", "👍")])
+@pytest.mark.asyncio
+async def test_reactbot_add_various_phrases(phrase, emoji):
+    bot = make_bot()
+    db_pool, conn = make_db_pool()
+    bot.db_pool = db_pool
+    commands = ReactBotCommands(bot)
+    interaction = make_interaction()
+    await commands.reactbot_add.callback(commands, interaction, phrase=phrase, emoji=emoji)
+    conn.execute.assert_awaited_once()
+    interaction.followup.send.assert_awaited()
 
 
 @pytest.mark.asyncio

@@ -15,7 +15,10 @@ class TestValidateDiscordId:
     def test_valid(self, inp, expected):
         assert InputValidator.validate_discord_id(inp, "user_id") == expected
 
-    @pytest.mark.parametrize("inp", ["not_a_number", -1])
+    @pytest.mark.parametrize(
+        "inp",
+        ["not_a_number", -1, 2**64 + 1, str(2**64 + 1), None, [], {}],
+    )
     def test_invalid(self, inp):
         with pytest.raises(ValidationError):
             InputValidator.validate_discord_id(inp, "user_id")
@@ -44,6 +47,13 @@ class TestValidateString:
         assert (
             InputValidator.validate_string("   ", "field", max_length=100, allow_empty=True) == ""
         )
+
+    @pytest.mark.parametrize("inp", ["a", "x" * 50, "normal text"])
+    def test_valid_various_lengths(self, inp):
+        assert InputValidator.validate_string(inp, "field", max_length=100) == inp
+
+    def test_strips_whitespace(self):
+        assert InputValidator.validate_string("  foo  ", "field", max_length=100) == "foo"
 
 
 class TestValidateCommandName:
@@ -91,6 +101,10 @@ class TestValidateEmoji:
         with pytest.raises(ValidationError):
             InputValidator.validate_emoji(inp)
 
+    @pytest.mark.parametrize("inp", ["😀", "👍", "🔥"])
+    def test_valid_unicode_emoji(self, inp):
+        assert InputValidator.validate_emoji(inp) == inp
+
 
 class TestSanitizeSqlParameter:
     @pytest.mark.parametrize(
@@ -99,6 +113,8 @@ class TestSanitizeSqlParameter:
             ("hello\x00world", "helloworld"),
             ("test\x00value\x00", "testvalue"),
             ("no_null", "no_null"),
+            ("", ""),
+            ("\x00\x00\x00", ""),
         ],
     )
     def test_removes_null_bytes(self, inp, expected):

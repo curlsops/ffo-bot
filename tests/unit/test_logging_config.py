@@ -25,3 +25,11 @@ class TestSetupLogging:
     def test_warning_level(self):
         root = setup_logging(log_level="WARNING", log_format="json")
         assert root.level == logging.WARNING
+
+    def test_error_level(self):
+        root = setup_logging(log_level="ERROR", log_format="text")
+        assert root.level == logging.ERROR
+
+    def test_critical_level(self):
+        root = setup_logging(log_level="CRITICAL", log_format="json")
+        assert root.level == logging.CRITICAL

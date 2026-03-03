@@ -1,5 +1,6 @@
 """Tests for Mojang API client with NameMC fallback."""
 
+import aiohttp
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -40,6 +41,17 @@ class TestFormatUuid:
 
     def test_short_uuid_returned_as_is(self):
         assert _format_uuid("short") == "short"
+
+    @pytest.mark.parametrize(
+        "raw,expected",
+        [
+            ("069a79f444e94726a5befca90e38aaf5", "069a79f4-44e9-4726-a5be-fca90e38aaf5"),
+            ("00000000000000000000000000000000", "00000000-0000-0000-0000-000000000000"),
+            ("ffffffffffffffffffffffffffffffff", "ffffffff-ffff-ffff-ffff-ffffffffffff"),
+        ],
+    )
+    def test_format_uuid_variants(self, raw, expected):
+        assert _format_uuid(raw) == expected
 
 
 class TestGetProfileFromMojang:
@@ -138,8 +150,6 @@ class TestGetProfileFromMojang:
 
     @pytest.mark.asyncio
     async def test_client_error_returns_none(self):
-        import aiohttp
-
         with patch("bot.services.mojang.aiohttp.ClientSession") as mock_cls:
             mock_session = MagicMock()
             mock_session.get.side_effect = aiohttp.ClientError("Connection failed")
@@ -237,8 +247,6 @@ class TestGetProfileFromNameMC:
 
     @pytest.mark.asyncio
     async def test_client_error_returns_none(self):
-        import aiohttp
-
         with patch("bot.services.mojang.aiohttp.ClientSession") as mock_cls:
             mock_session = MagicMock()
             mock_session.get.side_effect = aiohttp.ClientError("Connection failed")
@@ -425,8 +433,6 @@ class TestBatchLookup:
 
     @pytest.mark.asyncio
     async def test_batch_lookup_client_error_returns_empty(self):
-        import aiohttp
-
         with patch("bot.services.mojang.aiohttp.ClientSession") as mock_cls:
             mock_session = MagicMock()
             mock_session.post.side_effect = aiohttp.ClientError("Connection failed")

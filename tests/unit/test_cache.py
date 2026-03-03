@@ -119,3 +119,16 @@ class TestCacheSizeBoundary:
         cache.set("d", 4)
         assert cache.size() <= 3
         assert cache.get("d") == 4
+
+    @pytest.mark.parametrize("n", [1, 2, 5, 10])
+    def test_size_after_n_sets(self, n):
+        cache = InMemoryCache(max_size=100, default_ttl=60)
+        for i in range(n):
+            cache.set(f"k{i}", i)
+        assert cache.size() == n
+
+    @pytest.mark.parametrize("key", ["a", "key_with_underscore", "123", "a" * 50])
+    def test_various_key_types(self, key):
+        cache = InMemoryCache(max_size=10, default_ttl=60)
+        cache.set(key, "val")
+        assert cache.get(key) == "val"

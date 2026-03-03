@@ -100,3 +100,28 @@ class TestGenerateMetricsResponse:
         response = generate_metrics_response()
         assert isinstance(response, bytes)
         assert len(response) > 10
+
+    @pytest.mark.parametrize("guild_count", [0, 1, 100])
+    def test_metrics_with_guild_counts(self, metrics, guild_count):
+        metrics.set_guild_count(guild_count)
+        response = generate_metrics_response()
+        assert isinstance(response, bytes)
+        assert len(response) > 0
+
+
+class TestBotMetricsLabels:
+    def test_commands_executed_labels(self, metrics):
+        metrics.commands_executed.labels(
+            command_name="faq", server_id="1", status="success"
+        ).inc()
+        metrics.commands_executed.labels(
+            command_name="convert", server_id="1", status="error"
+        ).inc()
+
+    def test_media_downloads_labels(self, metrics):
+        metrics.media_downloads.labels(
+            server_id="1", file_type="video", status="success"
+        ).inc()
+        metrics.media_downloads.labels(
+            server_id="1", file_type="gif", status="error"
+        ).inc()

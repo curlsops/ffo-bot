@@ -92,3 +92,18 @@ class TestRateLimiter:
             mock_dt.now.return_value = now + timedelta(seconds=0.01)
             allowed, _ = await limiter.check_rate_limit(user_id=123, server_id=456)
             assert allowed is True
+
+    @pytest.mark.parametrize("user_cap,server_cap", [(1, 10), (5, 50), (100, 1000)])
+    @pytest.mark.asyncio
+    async def test_various_capacities(self, user_cap, server_cap):
+        limiter = RateLimiter(user_capacity=user_cap, server_capacity=server_cap)
+        allowed, _ = await limiter.check_rate_limit(user_id=1, server_id=1)
+        assert allowed is True
+
+    @pytest.mark.asyncio
+    async def test_reason_contains_slow_down(self):
+        limiter = RateLimiter(user_capacity=1, server_capacity=100)
+        await limiter.check_rate_limit(user_id=123, server_id=456)
+        allowed, reason = await limiter.check_rate_limit(user_id=123, server_id=456)
+        assert allowed is False
+        assert reason

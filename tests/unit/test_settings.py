@@ -84,3 +84,15 @@ class TestSettingsDefaults:
             with patch.dict(os.environ, {"MEDIA_STORAGE_PATH": tmpdir}, clear=True):
                 with pytest.raises(ValidationError):
                     Settings()
+
+    @pytest.mark.parametrize("level", ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"])
+    def test_settings_valid_log_levels(self, level):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch.dict(os.environ, make_env(tmpdir, LOG_LEVEL=level), clear=True):
+                assert Settings().log_level == level
+
+    @pytest.mark.parametrize("fmt", ["json", "text"])
+    def test_settings_valid_log_formats(self, fmt):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            with patch.dict(os.environ, make_env(tmpdir, LOG_FORMAT=fmt), clear=True):
+                assert Settings().log_format == fmt

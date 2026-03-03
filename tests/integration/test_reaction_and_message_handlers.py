@@ -258,6 +258,7 @@ async def test_message_handler_processes_phrase_match():
 @pytest.mark.asyncio
 async def test_reaction_handler_add_assigns_role():
     bot = MagicMock()
+    bot.cache = None
     bot.settings = MagicMock(feature_minecraft_whitelist=False)
     bot.permission_checker = MagicMock()
     bot.permission_checker.check_role = AsyncMock(return_value=False)
@@ -295,6 +296,7 @@ async def test_reaction_handler_add_assigns_role():
 async def test_reaction_handler_self_reaction_ignored():
     db_pool, conn = make_db_pool(fetchval_result=1234)
     bot = MagicMock()
+    bot.cache = None
     bot.user.id = 10
     bot.db_pool = db_pool
     handler = ReactionHandler(bot)
@@ -307,6 +309,7 @@ async def test_reaction_handler_self_reaction_ignored():
 async def test_reaction_handler_get_reaction_role_none_returns_early():
     db_pool, conn = make_db_pool(fetchval_result=None)
     bot = MagicMock()
+    bot.cache = None
     bot.settings = MagicMock(feature_minecraft_whitelist=False)
     bot.permission_checker = MagicMock()
     bot.permission_checker.check_role = AsyncMock(return_value=False)
@@ -323,6 +326,7 @@ async def test_reaction_handler_get_reaction_role_none_returns_early():
 async def test_reaction_handler_guild_none_returns_early():
     db_pool, conn = make_db_pool(fetchval_result=1234)
     bot = MagicMock()
+    bot.cache = None
     bot.settings = MagicMock(feature_minecraft_whitelist=False)
     bot.permission_checker = MagicMock()
     bot.permission_checker.check_role = AsyncMock(return_value=False)
@@ -339,6 +343,7 @@ async def test_reaction_handler_guild_none_returns_early():
 async def test_reaction_handler_add_roles_http_exception_logged():
     db_pool, conn = make_db_pool(fetchval_result=1234)
     bot = MagicMock()
+    bot.cache = None
     bot.settings = MagicMock(feature_minecraft_whitelist=False)
     bot.permission_checker = MagicMock()
     bot.permission_checker.check_role = AsyncMock(return_value=False)
@@ -363,6 +368,7 @@ async def test_reaction_handler_add_roles_http_exception_logged():
 async def test_reaction_handler_remove_roles_http_exception_logged():
     db_pool, conn = make_db_pool(fetchval_result=1234)
     bot = MagicMock()
+    bot.cache = None
     bot.user.id = 999
     bot.metrics = MagicMock()
     bot.metrics.errors_total.labels.return_value.inc = MagicMock()
@@ -384,6 +390,7 @@ async def test_reaction_handler_remove_roles_http_exception_logged():
 async def test_reaction_handler_remove_assigns_role():
     db_pool, conn = make_db_pool(fetchval_result=1234)
     bot = MagicMock()
+    bot.cache = None
     bot.user.id = 999
     bot.db_pool = db_pool
     role = MagicMock()

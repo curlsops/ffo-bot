@@ -69,6 +69,17 @@ class TestParseDuration:
     def test_0h_clamped_to_1h(self):
         assert _parse_duration("0h") == timedelta(hours=1)
 
+    @pytest.mark.parametrize("inp", ["2h", "12h", "48h"])
+    def test_more_valid_hours(self, inp):
+        result = _parse_duration(inp)
+        assert result is not None
+        assert result.total_seconds() > 0
+
+    @pytest.mark.parametrize("inp", ["2d", "14d"])
+    def test_valid_days(self, inp):
+        result = _parse_duration(inp)
+        assert result is not None
+
 
 class TestPollCommands:
     @pytest.mark.asyncio

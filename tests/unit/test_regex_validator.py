@@ -11,19 +11,15 @@ async def test_valid_pattern():
     await validator.validate(r"hello")
 
 
+@pytest.mark.parametrize(
+    "pattern",
+    [r"(a+)+", r"(a*)*", r"(a){1,10}", r"(a+)+$", r"^(.+)+$"],
+)
 @pytest.mark.asyncio
-async def test_dangerous_pattern():
+async def test_dangerous_pattern(pattern):
     validator = RegexValidator()
-
-    dangerous_patterns = [
-        r"(a+)+",
-        r"(a*)*",
-        r"(a){1,10}",
-    ]
-
-    for pattern in dangerous_patterns:
-        with pytest.raises(RegexValidationError):
-            await validator.validate(pattern)
+    with pytest.raises(RegexValidationError):
+        await validator.validate(pattern)
 
 
 @pytest.mark.asyncio
@@ -36,14 +32,12 @@ async def test_pattern_too_long():
         await validator.validate(long_pattern)
 
 
+@pytest.mark.parametrize("pattern", [r"[abc", r"(unclosed", r"*invalid"])
 @pytest.mark.asyncio
-async def test_invalid_regex():
+async def test_invalid_regex(pattern):
     validator = RegexValidator()
-
-    invalid_pattern = r"[abc"
-
     with pytest.raises(RegexValidationError):
-        await validator.validate(invalid_pattern)
+        await validator.validate(pattern)
 
 
 @pytest.mark.asyncio
@@ -53,13 +47,14 @@ async def test_pattern_execution_error():
     await validator.validate(r"simple")
 
 
+@pytest.mark.parametrize(
+    "pattern",
+    [r"hello\s+world", r"\d{3}-\d{4}", r"[a-zA-Z]+@[a-zA-Z]+\.[a-zA-Z]+", r"^test$", r"\w+"],
+)
 @pytest.mark.asyncio
-async def test_valid_complex_pattern():
+async def test_valid_complex_pattern(pattern):
     validator = RegexValidator()
-
-    await validator.validate(r"hello\s+world")
-    await validator.validate(r"\d{3}-\d{4}")
-    await validator.validate(r"[a-zA-Z]+@[a-zA-Z]+\.[a-zA-Z]+")
+    await validator.validate(pattern)
 
 
 @pytest.mark.asyncio

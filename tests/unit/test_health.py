@@ -123,3 +123,8 @@ class TestStart:
                 mock_runner.setup.assert_called_once()
                 mock_site_class.assert_called_with(mock_runner, "0.0.0.0", 9999)
                 assert server.runner == mock_runner
+
+    @pytest.mark.parametrize("port", [8080, 3000, 9999])
+    def test_server_port(self, mock_bot, port):
+        server = HealthCheckServer(mock_bot, port=port)
+        assert server.port == port

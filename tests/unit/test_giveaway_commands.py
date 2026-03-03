@@ -98,6 +98,12 @@ class TestDiscordTimestamp:
         out = _discord_timestamp(dt, "F")
         assert ":F>" in out
 
+    @pytest.mark.parametrize("fmt", ["t", "T", "d", "D", "f", "F", "R"])
+    def test_formats(self, fmt):
+        dt = datetime(2025, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
+        out = _discord_timestamp(dt, fmt)
+        assert f":{fmt}>" in out
+
 
 class TestParseDuration:
     @pytest.mark.parametrize(
@@ -117,9 +123,13 @@ class TestParseDuration:
     def test_valid(self, inp, expected):
         assert parse_duration(inp) == expected
 
-    @pytest.mark.parametrize("inp", ["abc", "1x", ""])
+    @pytest.mark.parametrize("inp", ["abc", "1x", "", "1.5h", "x1h"])
     def test_invalid(self, inp):
         assert parse_duration(inp) is None
+
+    @pytest.mark.parametrize("inp,expected_secs", [("1s", 1), ("60s", 60), ("10m", 600)])
+    def test_more_valid(self, inp, expected_secs):
+        assert parse_duration(inp) == expected_secs
 
     def test_1w_uppercase(self):
         assert parse_duration("1W") == 604800
