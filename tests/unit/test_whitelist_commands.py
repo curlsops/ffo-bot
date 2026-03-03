@@ -73,7 +73,7 @@ class TestSetWhitelistChannel:
             i = make_interaction()
             i.guild = MagicMock()
             channel = MagicMock(id=999)
-            await cog.set_whitelist_channel_cmd.callback(cog, i, channel)
+            await cog.whitelist_group.channel_cmd.callback(cog.whitelist_group, i, channel)
             assert "set" in str(i.followup.send.call_args[0][0]).lower()
 
     @pytest.mark.asyncio
@@ -89,7 +89,7 @@ class TestSetWhitelistChannel:
             i = make_interaction()
             i.guild = MagicMock()
             channel = MagicMock(id=999)
-            await cog.set_whitelist_channel_cmd.callback(cog, i, channel)
+            await cog.whitelist_group.channel_cmd.callback(cog.whitelist_group, i, channel)
             assert "already" in str(i.followup.send.call_args[0][0]).lower()
 
 
@@ -100,7 +100,7 @@ class TestWhitelistList:
         bot.db_pool, _ = make_db_pool()
         cog = WhitelistCommands(bot)
         i = make_interaction()
-        await cog.whitelist_list.callback(cog, i)
+        await cog.whitelist_group.list_cmd.callback(cog.whitelist_group, i)
         bot.minecraft_rcon.whitelist_list.assert_awaited_once()
         assert "Whitelist:" in str(i.followup.send.call_args[0][0])
 
@@ -115,7 +115,7 @@ class TestWhitelistAdd:
             bot.db_pool, _ = make_db_pool()
             cog = WhitelistCommands(bot)
             i = make_interaction()
-            await cog.whitelist_add.callback(cog, i, "Steve")
+            await cog.whitelist_group.add_cmd.callback(cog.whitelist_group, i, "Steve")
             bot.minecraft_rcon.whitelist_add.assert_awaited_once_with("Steve")
 
     @pytest.mark.asyncio
@@ -124,7 +124,7 @@ class TestWhitelistAdd:
         bot.db_pool, _ = make_db_pool()
         cog = WhitelistCommands(bot)
         i = make_interaction()
-        await cog.whitelist_add.callback(cog, i, "ab")
+        await cog.whitelist_group.add_cmd.callback(cog.whitelist_group, i, "ab")
         bot.minecraft_rcon.whitelist_add.assert_not_awaited()
         assert "Invalid" in str(i.followup.send.call_args[0][0])
 
@@ -135,7 +135,7 @@ class TestWhitelistAdd:
         bot.db_pool, _ = make_db_pool()
         cog = WhitelistCommands(bot)
         i = make_interaction()
-        await cog.whitelist_add.callback(cog, i, "Steve")
+        await cog.whitelist_group.add_cmd.callback(cog.whitelist_group, i, "Steve")
         assert "not configured" in str(i.followup.send.call_args[0][0]).lower()
 
 
@@ -147,7 +147,7 @@ class TestWhitelistRemove:
             bot.db_pool, _ = make_db_pool()
             cog = WhitelistCommands(bot)
             i = make_interaction()
-            await cog.whitelist_remove.callback(cog, i, "Steve")
+            await cog.whitelist_group.remove_cmd.callback(cog.whitelist_group, i, "Steve")
             bot.minecraft_rcon.whitelist_remove.assert_awaited_once_with("Steve")
 
     @pytest.mark.asyncio
@@ -156,7 +156,7 @@ class TestWhitelistRemove:
         bot.db_pool, _ = make_db_pool()
         cog = WhitelistCommands(bot)
         i = make_interaction()
-        await cog.whitelist_remove.callback(cog, i, "x")
+        await cog.whitelist_group.remove_cmd.callback(cog.whitelist_group, i, "x")
         bot.minecraft_rcon.whitelist_remove.assert_not_awaited()
         assert "Invalid" in str(i.followup.send.call_args[0][0])
 
@@ -167,7 +167,7 @@ class TestWhitelistRemove:
         bot.db_pool, _ = make_db_pool()
         cog = WhitelistCommands(bot)
         i = make_interaction()
-        await cog.whitelist_remove.callback(cog, i, "Steve")
+        await cog.whitelist_group.remove_cmd.callback(cog.whitelist_group, i, "Steve")
         assert "not configured" in str(i.followup.send.call_args[0][0]).lower()
 
 
@@ -187,7 +187,7 @@ class TestWhitelistSync:
             bot.db_pool, _ = make_db_pool()
             cog = WhitelistCommands(bot)
             i = make_interaction()
-            await cog.whitelist_sync.callback(cog, i)
+            await cog.whitelist_group.sync_cmd.callback(cog.whitelist_group, i)
             assert "Synced" in str(i.followup.send.call_args[0][0])
 
     @pytest.mark.asyncio
@@ -201,7 +201,7 @@ class TestWhitelistSync:
             bot.db_pool, _ = make_db_pool()
             cog = WhitelistCommands(bot)
             i = make_interaction()
-            await cog.whitelist_sync.callback(cog, i)
+            await cog.whitelist_group.sync_cmd.callback(cog.whitelist_group, i)
             assert "Failed" in str(i.followup.send.call_args[0][0])
 
     @pytest.mark.asyncio
@@ -211,5 +211,5 @@ class TestWhitelistSync:
         bot.db_pool, _ = make_db_pool()
         cog = WhitelistCommands(bot)
         i = make_interaction()
-        await cog.whitelist_sync.callback(cog, i)
+        await cog.whitelist_group.sync_cmd.callback(cog.whitelist_group, i)
         assert "not configured" in str(i.followup.send.call_args[0][0]).lower()

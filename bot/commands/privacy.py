@@ -7,20 +7,20 @@ from discord.ext import commands
 logger = logging.getLogger(__name__)
 
 
-class PrivacyCommands(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
+@app_commands.guild_only()
+@app_commands.default_permissions(administrator=True)
+class PrivacyGroup(app_commands.Group):
+    """Privacy and message tracking preferences."""
 
-    @app_commands.command(
-        name="privacy_optout",
-        description="Opt out of message tracking",
-    )
-    @app_commands.guild_only()
-    @app_commands.default_permissions(administrator=True)
-    async def privacy_optout(self, interaction: discord.Interaction):
+    def __init__(self, cog: "PrivacyCommands"):
+        super().__init__(name="privacy", description="Privacy and message tracking preferences")
+        self.cog = cog
+
+    @app_commands.command(name="optout", description="Opt out of message tracking")
+    async def optout(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         try:
-            async with self.bot.db_pool.acquire() as conn:
+            async with self.cog.bot.db_pool.acquire() as conn:
                 await conn.execute(
                     "INSERT INTO user_preferences (server_id, user_id, message_tracking_opt_out, opted_out_at) VALUES ($1, $2, true, NOW()) ON CONFLICT (server_id, user_id) DO UPDATE SET message_tracking_opt_out = true, opted_out_at = NOW()",
                     interaction.guild_id,
@@ -35,19 +35,14 @@ class PrivacyCommands(commands.Cog):
                 "✅ Opted out. Your message history has been deleted.", ephemeral=True
             )
         except Exception as e:
-            logger.error("privacy_optout error: %s", e, exc_info=True)
+            logger.error("privacy optout error: %s", e, exc_info=True)
             await interaction.followup.send("❌ An error occurred.", ephemeral=True)
 
-    @app_commands.command(
-        name="privacy_optin",
-        description="Opt back in to message tracking",
-    )
-    @app_commands.guild_only()
-    @app_commands.default_permissions(administrator=True)
-    async def privacy_optin(self, interaction: discord.Interaction):
+    @app_commands.command(name="optin", description="Opt back in to message tracking")
+    async def optin(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         try:
-            async with self.bot.db_pool.acquire() as conn:
+            async with self.cog.bot.db_pool.acquire() as conn:
                 await conn.execute(
                     "INSERT INTO user_preferences (server_id, user_id, message_tracking_opt_out) VALUES ($1, $2, false) ON CONFLICT (server_id, user_id) DO UPDATE SET message_tracking_opt_out = false, opted_out_at = NULL",
                     interaction.guild_id,
@@ -55,8 +50,20 @@ class PrivacyCommands(commands.Cog):
                 )
             await interaction.followup.send("✅ Opted back in to message tracking.", ephemeral=True)
         except Exception as e:
-            logger.error("privacy_optin error: %s", e, exc_info=True)
+            logger.error("privacy optin error: %s", e, exc_info=True)
             await interaction.followup.send("❌ An error occurred.", ephemeral=True)
+
+
+class PrivacyCommands(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+        self.privacy_group = PrivacyGroup(self)
+
+    async def cog_load(self):
+        self.bot.tree.add_command(self.privacy_group)
+
+    async def cog_unload(self):
+        self.bot.tree.remove_command(self.privacy_group.name)
 
 
 async def setup(bot):

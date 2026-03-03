@@ -57,7 +57,7 @@ class TestSetNotifyChannel:
         bot = make_admin_bot()
         i = make_interaction()
         channel = MagicMock(id=123, mention="#c")
-        await AdminCommands(bot).set_notify_channel.callback(AdminCommands(bot), i, channel=channel)
+        await AdminCommands(bot).admin_group.notify_channel.callback(AdminCommands(bot).admin_group, i, channel=channel)
         bot._register_server.assert_awaited_once_with(i.guild)
         bot.notifier.set_notify_channel.assert_awaited_once_with(111, 123)
 
@@ -65,7 +65,7 @@ class TestSetNotifyChannel:
     async def test_disable(self):
         bot = make_admin_bot(current_notify_channel_id=123)
         i = make_interaction()
-        await AdminCommands(bot).set_notify_channel.callback(AdminCommands(bot), i, channel=None)
+        await AdminCommands(bot).admin_group.notify_channel.callback(AdminCommands(bot).admin_group, i, channel=None)
         bot._register_server.assert_awaited_once_with(i.guild)
         bot.notifier.set_notify_channel.assert_awaited_once_with(111, None)
 
@@ -73,14 +73,14 @@ class TestSetNotifyChannel:
     async def test_no_guild(self):
         bot = make_admin_bot()
         i = make_interaction(guild=False)
-        await AdminCommands(bot).set_notify_channel.callback(AdminCommands(bot), i, channel=None)
+        await AdminCommands(bot).admin_group.notify_channel.callback(AdminCommands(bot).admin_group, i, channel=None)
         assert "Server only" in i.followup.send.call_args[0][0]
 
     @pytest.mark.asyncio
     async def test_failure(self):
         bot = make_admin_bot(notifier_success=False, current_notify_channel_id=123)
         i = make_interaction()
-        await AdminCommands(bot).set_notify_channel.callback(AdminCommands(bot), i, channel=None)
+        await AdminCommands(bot).admin_group.notify_channel.callback(AdminCommands(bot).admin_group, i, channel=None)
         assert "Failed" in i.followup.send.call_args[0][0]
 
     @pytest.mark.asyncio
@@ -88,7 +88,7 @@ class TestSetNotifyChannel:
         bot = make_admin_bot(current_notify_channel_id=123)
         i = make_interaction()
         channel = MagicMock(id=123, mention="#c")
-        await AdminCommands(bot).set_notify_channel.callback(AdminCommands(bot), i, channel=channel)
+        await AdminCommands(bot).admin_group.notify_channel.callback(AdminCommands(bot).admin_group, i, channel=channel)
         assert "already set" in i.followup.send.call_args[0][0].lower()
         bot.notifier.set_notify_channel.assert_not_called()
 
@@ -96,7 +96,7 @@ class TestSetNotifyChannel:
     async def test_already_disabled(self):
         bot = make_admin_bot(current_notify_channel_id=None)
         i = make_interaction()
-        await AdminCommands(bot).set_notify_channel.callback(AdminCommands(bot), i, channel=None)
+        await AdminCommands(bot).admin_group.notify_channel.callback(AdminCommands(bot).admin_group, i, channel=None)
         assert "already disabled" in i.followup.send.call_args[0][0].lower()
         bot.notifier.set_notify_channel.assert_not_called()
 
@@ -104,7 +104,7 @@ class TestSetNotifyChannel:
     async def test_not_admin(self):
         bot = make_admin_bot(admin=False)
         i = make_interaction()
-        await AdminCommands(bot).set_notify_channel.callback(AdminCommands(bot), i, channel=None)
+        await AdminCommands(bot).admin_group.notify_channel.callback(AdminCommands(bot).admin_group, i, channel=None)
         assert "Admin required" in i.followup.send.call_args[0][0]
 
 
@@ -114,14 +114,16 @@ class TestVersion:
         bot = make_admin_bot()
         i = make_interaction()
         with patch("bot.commands.admin.importlib.metadata.version", return_value="1.3.7"):
-            await AdminCommands(bot).version.callback(AdminCommands(bot), i)
+            cog = AdminCommands(bot)
+            await cog.admin_group.version.callback(cog.admin_group, i)
         assert "1.3.7" in i.followup.send.call_args[0][0]
 
     @pytest.mark.asyncio
     async def test_not_admin(self):
         bot = make_admin_bot(admin=False)
         i = make_interaction()
-        await AdminCommands(bot).version.callback(AdminCommands(bot), i)
+        cog = AdminCommands(bot)
+        await cog.admin_group.version.callback(cog.admin_group, i)
         assert "Admin required" in i.followup.send.call_args[0][0]
 
 
@@ -145,7 +147,8 @@ class TestPrivacy:
         bot = MagicMock()
         bot.db_pool.acquire = mock_db_pool
         i = make_interaction()
-        await PrivacyCommands(bot).privacy_optout.callback(PrivacyCommands(bot), i)
+        cog = PrivacyCommands(bot)
+        await cog.privacy_group.optout.callback(cog.privacy_group, i)
         i.followup.send.assert_awaited()
 
     @pytest.mark.asyncio
@@ -153,7 +156,8 @@ class TestPrivacy:
         bot = MagicMock()
         bot.db_pool.acquire = mock_db_pool
         i = make_interaction()
-        await PrivacyCommands(bot).privacy_optin.callback(PrivacyCommands(bot), i)
+        cog = PrivacyCommands(bot)
+        await cog.privacy_group.optin.callback(cog.privacy_group, i)
         i.followup.send.assert_awaited()
 
     @pytest.mark.asyncio
@@ -167,7 +171,8 @@ class TestPrivacy:
         bot = MagicMock()
         bot.db_pool.acquire = lambda: bad_pool()
         i = make_interaction()
-        await PrivacyCommands(bot).privacy_optout.callback(PrivacyCommands(bot), i)
+        cog = PrivacyCommands(bot)
+        await cog.privacy_group.optout.callback(cog.privacy_group, i)
         assert "error" in str(i.followup.send.call_args).lower()
 
     @pytest.mark.asyncio
@@ -181,5 +186,6 @@ class TestPrivacy:
         bot = MagicMock()
         bot.db_pool.acquire = lambda: bad_pool()
         i = make_interaction()
-        await PrivacyCommands(bot).privacy_optin.callback(PrivacyCommands(bot), i)
+        cog = PrivacyCommands(bot)
+        await cog.privacy_group.optin.callback(cog.privacy_group, i)
         assert "error" in str(i.followup.send.call_args).lower()

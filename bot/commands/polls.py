@@ -52,14 +52,38 @@ class PollCommands(commands.Cog):
             return False
         return True
 
+    def _create_long_poll_emojis(self) -> list[str]:
+        return [
+            "1️⃣",
+            "2️⃣",
+            "3️⃣",
+            "4️⃣",
+            "5️⃣",
+            "6️⃣",
+            "7️⃣",
+            "8️⃣",
+            "9️⃣",
+            "🔟",
+            "🇦",
+            "🇧",
+            "🇨",
+            "🇩",
+            "🇪",
+            "🇫",
+            "🇬",
+            "🇭",
+            "🇮",
+            "🇯",
+        ]
+
     @app_commands.command(name="poll", description="Create a poll (Admin only)")
     @app_commands.guild_only()
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(
         question="The poll question (max 300 chars)",
-        options="Comma-separated options (2-10, max 55 chars each). E.g. Yes,No,Maybe",
-        duration="How long the poll runs: 1h, 6h, 1d, 3d, 7d (default: 1d)",
-        multi="Allow multiple selections",
+        options="Comma-separated options (2-20). Uses native poll for ≤10, reaction-based for 11+.",
+        duration="How long the poll runs: 1h, 6h, 1d, 3d, 7d (native poll only)",
+        multi="Allow multiple selections (native poll only)",
     )
     @app_commands.autocomplete(duration=_poll_duration_autocomplete)
     async def poll(
@@ -81,102 +105,51 @@ class PollCommands(commands.Cog):
                 )
                 return
 
-            opts = [o.strip()[:55] for o in options.split(",") if o.strip()][:10]
-            if len(opts) < 2:
+            raw_opts = [o.strip() for o in options.split(",") if o.strip()]
+            if len(raw_opts) < 2:
                 await interaction.followup.send(
                     "Need at least 2 options (comma-separated).", ephemeral=True
                 )
                 return
 
-            delta = _parse_duration(duration)
-            if not delta or delta.total_seconds() < 3600:
-                await interaction.followup.send(
-                    "Invalid duration. Use 1h, 6h, 1d, 3d, or 7d.", ephemeral=True
+            # Discord native poll supports max 10 options; use reaction-based for 11+
+            use_long = len(raw_opts) > 10
+            if use_long:
+                opts = [o[:100] for o in raw_opts][:20]
+            else:
+                opts = [o[:55] for o in raw_opts][:10]
+
+            if use_long:
+                emojis = self._create_long_poll_emojis()[: len(opts)]
+                lines = [f"{emojis[i]} {opts[i]}" for i in range(len(opts))]
+                embed = discord.Embed(
+                    title=f"📊 {question}",
+                    description="\n".join(lines) + "\n\n*React to vote*",
+                    color=discord.Color.blue(),
                 )
-                return
+                msg = await interaction.channel.send(embed=embed)
+                for emoji in emojis:
+                    await msg.add_reaction(emoji)
+                await interaction.followup.send(
+                    f"Poll created with {len(opts)} options (reaction-based). React to vote.",
+                    ephemeral=True,
+                )
+            else:
+                delta = _parse_duration(duration)
+                if not delta or delta.total_seconds() < 3600:
+                    await interaction.followup.send(
+                        "Invalid duration. Use 1h, 6h, 1d, 3d, or 7d.", ephemeral=True
+                    )
+                    return
 
-            poll = discord.Poll(question=question, duration=delta, multiple=multi)
-            for opt in opts:
-                poll.add_answer(text=opt)
+                poll = discord.Poll(question=question, duration=delta, multiple=multi)
+                for opt in opts:
+                    poll.add_answer(text=opt)
 
-            await interaction.channel.send(poll=poll)
-            await interaction.followup.send("Poll created!", ephemeral=True)
+                await interaction.channel.send(poll=poll)
+                await interaction.followup.send("Poll created!", ephemeral=True)
         except Exception as e:
             logger.error("Poll error: %s", e, exc_info=True)
-            await interaction.followup.send("Error creating poll.", ephemeral=True)
-
-    @app_commands.command(
-        name="poll_long",
-        description="Create a poll with up to 20 options (reaction-based, Admin only)",
-    )
-    @app_commands.guild_only()
-    @app_commands.default_permissions(administrator=True)
-    @app_commands.describe(
-        question="The poll question (max 300 chars)",
-        options="Comma-separated options (2-20). E.g. A,B,C,D,E,F,G,H,I,J,K",
-    )
-    async def poll_long(
-        self,
-        interaction: discord.Interaction,
-        question: str,
-        options: str,
-    ):
-        await interaction.response.defer(ephemeral=True)
-        try:
-            if not await self._check_admin(interaction, "poll_long"):
-                return
-
-            if len(question) > 300:
-                await interaction.followup.send(
-                    "Question too long (max 300 characters).", ephemeral=True
-                )
-                return
-
-            opts = [o.strip()[:100] for o in options.split(",") if o.strip()][:20]
-            if len(opts) < 2:
-                await interaction.followup.send(
-                    "Need at least 2 options (comma-separated).", ephemeral=True
-                )
-                return
-
-            # 1️⃣-9️⃣, 0️⃣(10), A-J for 11-20
-            num_emoji = [
-                "1️⃣",
-                "2️⃣",
-                "3️⃣",
-                "4️⃣",
-                "5️⃣",
-                "6️⃣",
-                "7️⃣",
-                "8️⃣",
-                "9️⃣",
-                "🔟",
-                "🇦",
-                "🇧",
-                "🇨",
-                "🇩",
-                "🇪",
-                "🇫",
-                "🇬",
-                "🇭",
-                "🇮",
-                "🇯",
-            ]
-            emojis = num_emoji[: len(opts)]
-
-            lines = [f"{emojis[i]} {opts[i]}" for i in range(len(opts))]
-            embed = discord.Embed(
-                title=f"📊 {question}",
-                description="\n".join(lines) + "\n\n*React to vote*",
-                color=discord.Color.blue(),
-            )
-            msg = await interaction.channel.send(embed=embed)
-            for emoji in emojis:
-                await msg.add_reaction(emoji)
-
-            await interaction.followup.send("Long poll created! React to vote.", ephemeral=True)
-        except Exception as e:
-            logger.error("poll_long error: %s", e, exc_info=True)
             await interaction.followup.send("Error creating poll.", ephemeral=True)
 
 

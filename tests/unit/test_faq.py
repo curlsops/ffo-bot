@@ -39,7 +39,7 @@ class TestFaqListEmpty:
     async def test_list_empty_no_guild(self, cog):
         i = _interaction()
         i.guild_id = None
-        await cog.faq.callback(cog, i, None)
+        await cog.faq_group.list_cmd.callback(cog.faq_group, i, None)
         cog.bot.db_pool.acquire.assert_not_called()
 
 
@@ -49,7 +49,7 @@ class TestFaqList:
         conn = AsyncMock(fetch=AsyncMock(return_value=[]))
         cog.bot.db_pool.acquire.return_value = _db_ctx(conn)
         i = _interaction()
-        await cog.faq.callback(cog, i, None)
+        await cog.faq_group.list_cmd.callback(cog.faq_group, i, None)
         assert "No FAQ entries" in str(i.followup.send.call_args[0][0])
 
     @pytest.mark.asyncio
@@ -59,7 +59,7 @@ class TestFaqList:
         )
         cog.bot.db_pool.acquire.return_value = _db_ctx(conn)
         i = _interaction()
-        await cog.faq.callback(cog, i, None)
+        await cog.faq_group.list_cmd.callback(cog.faq_group, i, None)
         call_kw = i.followup.send.call_args[1]
         embed = call_kw.get("embed")
         assert embed is not None
@@ -77,7 +77,7 @@ class TestFaqGet:
         )
         cog.bot.db_pool.acquire.return_value = _db_ctx(conn)
         i = _interaction()
-        await cog.faq.callback(cog, i, "whitelist")
+        await cog.faq_group.list_cmd.callback(cog.faq_group, i, "whitelist")
         embed = i.followup.send.call_args[1].get("embed")
         assert embed is not None
         assert "How do I get whitelisted?" in embed.title
@@ -88,7 +88,7 @@ class TestFaqGet:
         conn = AsyncMock(fetchrow=AsyncMock(return_value=None))
         cog.bot.db_pool.acquire.return_value = _db_ctx(conn)
         i = _interaction()
-        await cog.faq.callback(cog, i, "nonexistent")
+        await cog.faq_group.list_cmd.callback(cog.faq_group, i, "nonexistent")
         assert "No FAQ entry" in str(i.followup.send.call_args[0][0])
 
 
@@ -98,7 +98,7 @@ class TestFaqAdd:
         conn = AsyncMock(fetchval=AsyncMock(return_value=0), execute=AsyncMock())
         cog.bot.db_pool.acquire.return_value = _db_ctx(conn)
         i = _interaction()
-        await cog.faq_add.callback(cog, i, "rules", "What are the rules?", "Be nice.")
+        await cog.faq_group.add_cmd.callback(cog.faq_group, i, "rules", "What are the rules?", "Be nice.")
         conn.execute.assert_awaited_once()
         assert "added/updated" in str(i.followup.send.call_args[0][0])
 
@@ -107,14 +107,14 @@ class TestFaqAdd:
         conn = AsyncMock(fetchval=AsyncMock(return_value=25))
         cog.bot.db_pool.acquire.return_value = _db_ctx(conn)
         i = _interaction()
-        await cog.faq_add.callback(cog, i, "new", "Q?", "A.")
+        await cog.faq_group.add_cmd.callback(cog.faq_group, i, "new", "Q?", "A.")
         assert "Maximum" in str(i.followup.send.call_args[0][0])
         conn.execute.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_add_empty_fields_rejected(self, cog):
         i = _interaction()
-        await cog.faq_add.callback(cog, i, "  ", "Q", "A")
+        await cog.faq_group.add_cmd.callback(cog.faq_group, i, "  ", "Q", "A")
         assert "required" in str(i.followup.send.call_args[0][0]).lower()
         cog.bot.db_pool.acquire.assert_not_called()
 
@@ -130,7 +130,7 @@ class TestFaqEdit:
         )
         cog.bot.db_pool.acquire.return_value = _db_ctx(conn)
         i = _interaction()
-        await cog.faq_edit.callback(cog, i, "rules", "New Q", None)
+        await cog.faq_group.edit_cmd.callback(cog.faq_group, i, "rules", "New Q", None)
         assert "updated" in str(i.followup.send.call_args[0][0])
 
     @pytest.mark.asyncio
@@ -138,13 +138,13 @@ class TestFaqEdit:
         conn = AsyncMock(fetchrow=AsyncMock(return_value=None))
         cog.bot.db_pool.acquire.return_value = _db_ctx(conn)
         i = _interaction()
-        await cog.faq_edit.callback(cog, i, "nonexistent", "Q", None)
+        await cog.faq_group.edit_cmd.callback(cog.faq_group, i, "nonexistent", "Q", None)
         assert "No FAQ entry" in str(i.followup.send.call_args[0][0])
 
     @pytest.mark.asyncio
     async def test_edit_no_changes_rejected(self, cog):
         i = _interaction()
-        await cog.faq_edit.callback(cog, i, "rules", None, None)
+        await cog.faq_group.edit_cmd.callback(cog.faq_group, i, "rules", None, None)
         assert "question or answer" in str(i.followup.send.call_args[0][0]).lower()
 
 
@@ -154,7 +154,7 @@ class TestFaqDelete:
         conn = AsyncMock(execute=AsyncMock(return_value="DELETE 1"))
         cog.bot.db_pool.acquire.return_value = _db_ctx(conn)
         i = _interaction()
-        await cog.faq_delete.callback(cog, i, "rules")
+        await cog.faq_group.delete_cmd.callback(cog.faq_group, i, "rules")
         assert "deleted" in str(i.followup.send.call_args[0][0])
 
     @pytest.mark.asyncio
@@ -162,7 +162,7 @@ class TestFaqDelete:
         conn = AsyncMock(execute=AsyncMock(return_value="DELETE 0"))
         cog.bot.db_pool.acquire.return_value = _db_ctx(conn)
         i = _interaction()
-        await cog.faq_delete.callback(cog, i, "nonexistent")
+        await cog.faq_group.delete_cmd.callback(cog.faq_group, i, "nonexistent")
         assert "No FAQ entry" in str(i.followup.send.call_args[0][0])
 
 

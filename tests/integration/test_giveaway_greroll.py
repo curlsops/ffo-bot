@@ -59,7 +59,8 @@ async def test_greroll_success():
 
     cog = GiveawayCommands(bot)
     i = make_interaction()
-    await cog.greroll.callback(cog, i, "123456789012345678")
+    group = cog.giveaway_group
+    await group.reroll_cmd.callback(group, i, "123456789012345678")
 
     conn.execute.assert_awaited()
     i.followup.send.assert_awaited()
@@ -74,7 +75,8 @@ async def test_greroll_not_found():
 
     cog = GiveawayCommands(bot)
     i = make_interaction()
-    await cog.greroll.callback(cog, i, "123456789012345678")
+    group = cog.giveaway_group
+    await group.reroll_cmd.callback(group, i, "123456789012345678")
 
     assert "not found" in str(i.followup.send.call_args)
 
@@ -92,7 +94,8 @@ async def test_greroll_still_active():
 
     cog = GiveawayCommands(bot)
     i = make_interaction()
-    await cog.greroll.callback(cog, i, "123456789012345678")
+    group = cog.giveaway_group
+    await group.reroll_cmd.callback(group, i, "123456789012345678")
 
     assert "still active" in str(i.followup.send.call_args)
 
@@ -105,7 +108,8 @@ async def test_greroll_invalid_message_id():
 
     cog = GiveawayCommands(bot)
     i = make_interaction()
-    await cog.greroll.callback(cog, i, "not-a-valid-id")
+    group = cog.giveaway_group
+    await group.reroll_cmd.callback(group, i, "not-a-valid-id")
 
     assert "Invalid message ID" in str(i.followup.send.call_args)
     conn.fetchrow.assert_not_awaited()
@@ -127,8 +131,9 @@ async def test_gstart_with_role_constraints():
     i.channel_id = 222
     i.user.id = 333
     i.followup.send = AsyncMock(return_value=MagicMock(id=999))
-    await cog.gstart.callback(
-        cog,
+    group = cog.giveaway_group
+    await group.start_cmd.callback(
+        group,
         i,
         duration="1h",
         winners=1,

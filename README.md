@@ -97,7 +97,8 @@ Endpoints: `/healthz`, `/readyz`, `/metrics`
 | Unit conversion | ✅ Done |
 | Minecraft whitelist (RCON) | ✅ Done |
 | Reaction roles | ✅ Done |
-| Voice transcription | 🚧 In progress |
+| Voice transcription | ✅ Done |
+| Rotating status | ✅ Done |
 | Ticketing system | 📋 Planned |
 
 ---
@@ -108,15 +109,5 @@ Endpoints: `/healthz`, `/readyz`, `/metrics`
 pytest tests/ -v
 ./build.sh
 ```
-
-### Minecraft RCON integration tests
-
-Tests run a real Minecraft server (itzg/minecraft-server) via testcontainers and validate whitelist RCON commands. Excluded from the default build (`-m "not slow"`). Run with:
-
-```bash
-pytest tests/integration/test_minecraft_rcon.py -v -m slow
-```
-
-Requires Docker and network access. First run pulls the image and can take 2–3 minutes for server startup.
 
 [CC BY-NC-SA 4.0](LICENSE) · [curlsops](https://github.com/curlsops)

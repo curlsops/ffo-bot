@@ -30,34 +30,22 @@ def _parse_message_ref(s: str, guild_id: int, channel_id: int) -> Optional[tuple
     return None
 
 
-class ReactionRoleCommands(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
+@app_commands.guild_only()
+@app_commands.default_permissions(administrator=True)
+class ReactionRoleGroup(app_commands.Group):
+    """Reaction role management."""
 
-    async def _check_admin(self, interaction: discord.Interaction, cmd: str) -> bool:
-        if not interaction.guild:
-            await interaction.followup.send("Server only.", ephemeral=True)
-            return False
-        ctx = PermissionContext(
-            server_id=interaction.guild_id, user_id=interaction.user.id, command_name=cmd
-        )
-        if not await self.bot.permission_checker.check_role(ctx, Role.ADMIN):
-            await interaction.followup.send("Admin required.", ephemeral=True)
-            return False
-        return True
+    def __init__(self, cog: "ReactionRoleCommands"):
+        super().__init__(name="reactionrole", description="Reaction role management")
+        self.cog = cog
 
-    @app_commands.command(
-        name="reactionrole_add",
-        description="Add a reaction role (Admin only)",
-    )
-    @app_commands.guild_only()
-    @app_commands.default_permissions(administrator=True)
+    @app_commands.command(name="add", description="Add a reaction role (Admin only)")
     @app_commands.describe(
         message="Message link or ID (use right-click → Copy Message Link)",
         emoji="Emoji to react with",
         role="Role to assign when users react",
     )
-    async def reactionrole_add(
+    async def add_cmd(
         self,
         interaction: discord.Interaction,
         message: str,
@@ -65,7 +53,7 @@ class ReactionRoleCommands(commands.Cog):
         role: discord.Role,
     ):
         await interaction.response.defer(ephemeral=True)
-        if not await self._check_admin(interaction, "reactionrole_add"):
+        if not await self.cog._check_admin(interaction, "reactionrole add"):
             return
 
         try:
@@ -78,7 +66,7 @@ class ReactionRoleCommands(commands.Cog):
                 return
 
             channel_id, message_id = parsed
-            channel = self.bot.get_channel(channel_id)
+            channel = self.cog.bot.get_channel(channel_id)
             if not channel:
                 await interaction.followup.send("Channel not found.", ephemeral=True)
                 return
@@ -94,7 +82,7 @@ class ReactionRoleCommands(commands.Cog):
                 )
                 return
 
-            async with self.bot.db_pool.acquire() as conn:
+            async with self.cog.bot.db_pool.acquire() as conn:
                 await conn.execute(
                     """
                     INSERT INTO reaction_roles (server_id, message_id, channel_id, emoji, role_id, created_by)
@@ -111,7 +99,7 @@ class ReactionRoleCommands(commands.Cog):
                 )
 
             _invalidate_reaction_role_cache(
-                self.bot.cache, interaction.guild_id, message_id, str(emoji)
+                self.cog.bot.cache, interaction.guild_id, message_id, str(emoji)
             )
             await interaction.followup.send(
                 f"Reaction role added: {emoji} → {role.mention}",
@@ -123,24 +111,19 @@ class ReactionRoleCommands(commands.Cog):
             logger.error("reactionrole_add error: %s", e, exc_info=True)
             await interaction.followup.send("Error adding reaction role.", ephemeral=True)
 
-    @app_commands.command(
-        name="reactionrole_remove",
-        description="Remove a reaction role (Admin only)",
-    )
-    @app_commands.guild_only()
-    @app_commands.default_permissions(administrator=True)
+    @app_commands.command(name="remove", description="Remove a reaction role (Admin only)")
     @app_commands.describe(
         message="Message link or ID",
         emoji="Emoji to remove",
     )
-    async def reactionrole_remove(
+    async def remove_cmd(
         self,
         interaction: discord.Interaction,
         message: str,
         emoji: str,
     ):
         await interaction.response.defer(ephemeral=True)
-        if not await self._check_admin(interaction, "reactionrole_remove"):
+        if not await self.cog._check_admin(interaction, "reactionrole remove"):
             return
 
         try:
@@ -154,7 +137,7 @@ class ReactionRoleCommands(commands.Cog):
 
             channel_id, message_id = parsed
 
-            async with self.bot.db_pool.acquire() as conn:
+            async with self.cog.bot.db_pool.acquire() as conn:
                 result = await conn.execute(
                     """
                     UPDATE reaction_roles SET is_active = false, updated_at = NOW()
@@ -173,9 +156,9 @@ class ReactionRoleCommands(commands.Cog):
                 return
 
             _invalidate_reaction_role_cache(
-                self.bot.cache, interaction.guild_id, message_id, str(emoji)
+                self.cog.bot.cache, interaction.guild_id, message_id, str(emoji)
             )
-            channel = self.bot.get_channel(channel_id)
+            channel = self.cog.bot.get_channel(channel_id)
             if channel:
                 try:
                     msg = await channel.fetch_message(message_id)
@@ -194,22 +177,17 @@ class ReactionRoleCommands(commands.Cog):
                 ephemeral=True,
             )
 
-    @app_commands.command(
-        name="reactionrole_list",
-        description="List all reaction roles (Admin only)",
-    )
-    @app_commands.guild_only()
-    @app_commands.default_permissions(administrator=True)
-    async def reactionrole_list(self, interaction: discord.Interaction):
+    @app_commands.command(name="list", description="List all reaction roles (Admin only)")
+    async def list_cmd(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        if not await self._check_admin(interaction, "reactionrole_list"):
+        if not await self.cog._check_admin(interaction, "reactionrole list"):
             return
 
         try:
             cache_key = f"reactionrole_list:{interaction.guild_id}"
-            rows = self.bot.cache.get(cache_key) if self.bot.cache else None
+            rows = self.cog.bot.cache.get(cache_key) if self.cog.bot.cache else None
             if rows is None:
-                async with self.bot.db_pool.acquire() as conn:
+                async with self.cog.bot.db_pool.acquire() as conn:
                     rows = await conn.fetch(
                         """
                         SELECT message_id, channel_id, emoji, role_id
@@ -220,8 +198,8 @@ class ReactionRoleCommands(commands.Cog):
                         interaction.guild_id,
                     )
                 rows = [dict(r) for r in rows]
-                if self.bot.cache:
-                    self.bot.cache.set(cache_key, rows, ttl=300)
+                if self.cog.bot.cache:
+                    self.cog.bot.cache.set(cache_key, rows, ttl=300)
 
             if not rows:
                 await interaction.followup.send(
@@ -246,6 +224,30 @@ class ReactionRoleCommands(commands.Cog):
                 "Error listing reaction roles.",
                 ephemeral=True,
             )
+
+
+class ReactionRoleCommands(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+        self.reactionrole_group = ReactionRoleGroup(self)
+
+    async def _check_admin(self, interaction: discord.Interaction, cmd: str) -> bool:
+        if not interaction.guild:
+            await interaction.followup.send("Server only.", ephemeral=True)
+            return False
+        ctx = PermissionContext(
+            server_id=interaction.guild_id, user_id=interaction.user.id, command_name=cmd
+        )
+        if not await self.bot.permission_checker.check_role(ctx, Role.ADMIN):
+            await interaction.followup.send("Admin required.", ephemeral=True)
+            return False
+        return True
+
+    async def cog_load(self):
+        self.bot.tree.add_command(self.reactionrole_group)
+
+    async def cog_unload(self):
+        self.bot.tree.remove_command(self.reactionrole_group.name)
 
 
 async def setup(bot):

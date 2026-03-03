@@ -47,8 +47,9 @@ class TestGiveawayJsonbParams:
         i.response.defer = AsyncMock()
         i.followup.send = AsyncMock(return_value=MagicMock(id=999))
 
-        await cog.gstart.callback(
-            cog,
+        group = cog.giveaway_group
+        await group.start_cmd.callback(
+            group,
             i,
             "1h",
             1,

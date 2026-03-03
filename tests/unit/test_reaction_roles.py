@@ -57,7 +57,8 @@ class TestReactionRoleCommands:
     @pytest.mark.asyncio
     async def test_add_invalid_message(self, cog):
         i = _interaction()
-        await cog.reactionrole_add.callback(cog, i, "invalid", "👍", MagicMock(id=123))
+        group = cog.reactionrole_group
+        await group.add_cmd.callback(group, i, "invalid", "👍", MagicMock(id=123))
         assert "Invalid message" in str(i.followup.send.call_args)
 
     @pytest.mark.asyncio
@@ -67,8 +68,9 @@ class TestReactionRoleCommands:
         cog.bot.get_channel = MagicMock(return_value=channel)
         role = MagicMock(id=456, mention="<@&456>")
         i = _interaction()
-        await cog.reactionrole_add.callback(
-            cog, i, "https://discord.com/channels/1/2/123", "👍", role
+        group = cog.reactionrole_group
+        await group.add_cmd.callback(
+            group, i, "https://discord.com/channels/1/2/123", "👍", role
         )
         msg.add_reaction.assert_awaited_with("👍")
         i.followup.send.assert_called()
@@ -78,7 +80,8 @@ class TestReactionRoleCommands:
         conn = AsyncMock(execute=AsyncMock(return_value="UPDATE 0"))
         cog.bot.db_pool = _db_ctx(conn)
         i = _interaction()
-        await cog.reactionrole_remove.callback(cog, i, "https://discord.com/channels/1/2/123", "👍")
+        group = cog.reactionrole_group
+        await group.remove_cmd.callback(group, i, "https://discord.com/channels/1/2/123", "👍")
         assert "not found" in str(i.followup.send.call_args).lower()
 
     @pytest.mark.asyncio
@@ -86,7 +89,8 @@ class TestReactionRoleCommands:
         conn = AsyncMock(fetch=AsyncMock(return_value=[]))
         cog.bot.db_pool = _db_ctx(conn)
         i = _interaction()
-        await cog.reactionrole_list.callback(cog, i)
+        group = cog.reactionrole_group
+        await group.list_cmd.callback(group, i)
         assert "No reaction roles" in str(i.followup.send.call_args)
 
     @pytest.mark.asyncio
@@ -98,14 +102,16 @@ class TestReactionRoleCommands:
         )
         cog.bot.db_pool = _db_ctx(conn)
         i = _interaction()
-        await cog.reactionrole_list.callback(cog, i)
+        group = cog.reactionrole_group
+        await group.list_cmd.callback(group, i)
         assert "Reaction Roles" in str(i.followup.send.call_args)
 
     @pytest.mark.asyncio
     async def test_not_admin(self, cog):
         cog.bot.permission_checker.check_role = AsyncMock(return_value=False)
         i = _interaction()
-        await cog.reactionrole_list.callback(cog, i)
+        group = cog.reactionrole_group
+        await group.list_cmd.callback(group, i)
         assert "Admin" in str(i.followup.send.call_args)
 
 

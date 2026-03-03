@@ -55,9 +55,126 @@ async def _reactbot_phrase_autocomplete(
         return []
 
 
+@app_commands.guild_only()
+@app_commands.default_permissions(administrator=True)
+class ReactBotGroup(app_commands.Group):
+    """Phrase reaction management."""
+
+    def __init__(self, cog: "ReactBotCommands"):
+        super().__init__(name="reactbot", description="Phrase reaction management")
+        self.cog = cog
+
+    @app_commands.command(name="add", description="Add a phrase reaction (Admin only)")
+    @app_commands.describe(
+        phrase="Regex pattern to match (case-insensitive)", emoji="Emoji to react with"
+    )
+    async def add_cmd(self, interaction: discord.Interaction, phrase: str, emoji: str):
+        await interaction.response.defer(ephemeral=True)
+        try:
+            allowed, reason = await self.cog.bot.rate_limiter.check_rate_limit(
+                interaction.user.id, interaction.guild_id
+            )
+            if not allowed:
+                await interaction.followup.send(reason, ephemeral=True)
+                return
+            if not await self.cog._check_admin(interaction, "reactbot add"):
+                return
+
+            phrase = InputValidator.validate_phrase_pattern(phrase)
+            emoji = InputValidator.validate_emoji(emoji)
+            await self.cog.bot.phrase_matcher.validate_pattern(phrase)
+
+            emoji_valid, emoji_error = await self.cog._validate_emoji_accessible(interaction, emoji)
+            if not emoji_valid:
+                await interaction.followup.send(emoji_error, ephemeral=True)
+                return
+
+            async with self.cog.bot.db_pool.acquire() as conn:
+                await conn.execute(
+                    "INSERT INTO phrase_reactions (server_id, phrase, emoji, created_by) VALUES ($1, $2, $3, $4)",
+                    interaction.guild_id,
+                    phrase,
+                    emoji,
+                    interaction.user.id,
+                )
+            self.cog.bot.phrase_matcher.invalidate_cache(interaction.guild_id)
+            _invalidate_reactbot_cache(self.cog.bot.cache, interaction.guild_id)
+            await interaction.followup.send(f"✅ Added: `{phrase}` → {emoji}", ephemeral=True)
+            if self.cog.bot.metrics:
+                self.cog.bot.metrics.commands_executed.labels(
+                    command_name="reactbot add",
+                    server_id=str(interaction.guild_id),
+                    status="success",
+                ).inc()
+        except asyncpg.UniqueViolationError:
+            await interaction.followup.send(
+                f"❌ This exact phrase + emoji combination already exists: `{phrase}` → {emoji}",
+                ephemeral=True,
+            )
+        except (ValidationError, RegexValidationError) as e:
+            await interaction.followup.send(f"❌ {e}", ephemeral=True)
+        except Exception as e:
+            logger.error("reactbot add error: %s", e, exc_info=True)
+            await interaction.followup.send("❌ Error processing command.", ephemeral=True)
+
+    @app_commands.command(name="list", description="List all phrase reactions")
+    async def list_cmd(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        try:
+            cache_key = CACHE_REACTBOT_PHRASES.format(server_id=interaction.guild_id)
+            rows = self.cog.bot.cache.get(cache_key) if self.cog.bot.cache else None
+            if rows is None:
+                async with self.cog.bot.db_pool.acquire() as conn:
+                    rows = await conn.fetch(
+                        "SELECT phrase, emoji, match_count FROM phrase_reactions WHERE server_id = $1 AND is_active = true ORDER BY match_count DESC",
+                        interaction.guild_id,
+                    )
+                rows = [dict(r) for r in rows]
+                if self.cog.bot.cache:
+                    self.cog.bot.cache.set(cache_key, rows, ttl=300)
+            if not rows:
+                await interaction.followup.send("No phrase reactions configured.", ephemeral=True)
+                return
+            lines = [
+                f"• `{r['phrase']}` → {r['emoji']} ({r['match_count']} matches)" for r in rows[:25]
+            ]
+            response = "**Phrase Reactions:**\n\n" + "\n".join(lines)
+            if len(rows) > 25:
+                response += f"\n*... and {len(rows) - 25} more*"
+            await interaction.followup.send(response, ephemeral=True)
+        except Exception as e:
+            logger.error("reactbot list error: %s", e, exc_info=True)
+            await interaction.followup.send("❌ Error fetching reactions.", ephemeral=True)
+
+    @app_commands.command(name="remove", description="Remove a phrase reaction (Admin only)")
+    @app_commands.describe(phrase="Select phrase pattern to remove")
+    @app_commands.autocomplete(phrase=_reactbot_phrase_autocomplete)
+    async def remove_cmd(self, interaction: discord.Interaction, phrase: str):
+        await interaction.response.defer(ephemeral=True)
+        try:
+            if not await self.cog._check_admin(interaction, "reactbot remove"):
+                return
+            async with self.cog.bot.db_pool.acquire() as conn:
+                result = await conn.execute(
+                    "UPDATE phrase_reactions SET is_active = false WHERE server_id = $1 AND phrase = $2 AND is_active = true",
+                    interaction.guild_id,
+                    phrase,
+                )
+            if result == "UPDATE 0":
+                await interaction.followup.send(f"❌ Not found: `{phrase}`", ephemeral=True)
+                return
+            self.cog.bot.phrase_matcher.invalidate_cache(interaction.guild_id)
+            _invalidate_reactbot_cache(self.cog.bot.cache, interaction.guild_id)
+            await interaction.followup.send(f"✅ Removed: `{phrase}`", ephemeral=True)
+        except Exception as e:
+            logger.error("reactbot remove error: %s", e, exc_info=True)
+            await interaction.followup.send("❌ Error processing command.", ephemeral=True)
+
+
 class ReactBotCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.reactbot_group = ReactBotGroup(self)
 
     async def _check_admin(self, interaction: discord.Interaction, cmd: str) -> bool:
         ctx = PermissionContext(
@@ -88,126 +205,11 @@ class ReactBotCommands(commands.Cog):
                     pass
         return True, ""
 
-    @app_commands.command(
-        name="reactbot_add",
-        description="Add a phrase reaction (Admin only)",
-    )
-    @app_commands.guild_only()
-    @app_commands.default_permissions(administrator=True)
-    @app_commands.describe(
-        phrase="Regex pattern to match (case-insensitive)", emoji="Emoji to react with"
-    )
-    async def reactbot_add(self, interaction: discord.Interaction, phrase: str, emoji: str):
-        await interaction.response.defer(ephemeral=True)
-        try:
-            allowed, reason = await self.bot.rate_limiter.check_rate_limit(
-                interaction.user.id, interaction.guild_id
-            )
-            if not allowed:
-                await interaction.followup.send(reason, ephemeral=True)
-                return
-            if not await self._check_admin(interaction, "reactbot_add"):
-                return
+    async def cog_load(self):
+        self.bot.tree.add_command(self.reactbot_group)
 
-            phrase = InputValidator.validate_phrase_pattern(phrase)
-            emoji = InputValidator.validate_emoji(emoji)
-            await self.bot.phrase_matcher.validate_pattern(phrase)
-
-            emoji_valid, emoji_error = await self._validate_emoji_accessible(interaction, emoji)
-            if not emoji_valid:
-                await interaction.followup.send(emoji_error, ephemeral=True)
-                return
-
-            async with self.bot.db_pool.acquire() as conn:
-                await conn.execute(
-                    "INSERT INTO phrase_reactions (server_id, phrase, emoji, created_by) VALUES ($1, $2, $3, $4)",
-                    interaction.guild_id,
-                    phrase,
-                    emoji,
-                    interaction.user.id,
-                )
-            self.bot.phrase_matcher.invalidate_cache(interaction.guild_id)
-            _invalidate_reactbot_cache(self.bot.cache, interaction.guild_id)
-            await interaction.followup.send(f"✅ Added: `{phrase}` → {emoji}", ephemeral=True)
-            if self.bot.metrics:
-                self.bot.metrics.commands_executed.labels(
-                    command_name="reactbot_add",
-                    server_id=str(interaction.guild_id),
-                    status="success",
-                ).inc()
-        except asyncpg.UniqueViolationError:
-            await interaction.followup.send(
-                f"❌ This exact phrase + emoji combination already exists: `{phrase}` → {emoji}",
-                ephemeral=True,
-            )
-        except (ValidationError, RegexValidationError) as e:
-            await interaction.followup.send(f"❌ {e}", ephemeral=True)
-        except Exception as e:
-            logger.error("reactbot_add error: %s", e, exc_info=True)
-            await interaction.followup.send("❌ Error processing command.", ephemeral=True)
-
-    @app_commands.command(
-        name="reactbot_list",
-        description="List all phrase reactions",
-    )
-    @app_commands.guild_only()
-    @app_commands.default_permissions(administrator=True)
-    async def reactbot_list(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
-        try:
-            cache_key = CACHE_REACTBOT_PHRASES.format(server_id=interaction.guild_id)
-            rows = self.bot.cache.get(cache_key) if self.bot.cache else None
-            if rows is None:
-                async with self.bot.db_pool.acquire() as conn:
-                    rows = await conn.fetch(
-                        "SELECT phrase, emoji, match_count FROM phrase_reactions WHERE server_id = $1 AND is_active = true ORDER BY match_count DESC",
-                        interaction.guild_id,
-                    )
-                rows = [dict(r) for r in rows]
-                if self.bot.cache:
-                    self.bot.cache.set(cache_key, rows, ttl=300)
-            if not rows:
-                await interaction.followup.send("No phrase reactions configured.", ephemeral=True)
-                return
-            lines = [
-                f"• `{r['phrase']}` → {r['emoji']} ({r['match_count']} matches)" for r in rows[:25]
-            ]
-            response = "**Phrase Reactions:**\n\n" + "\n".join(lines)
-            if len(rows) > 25:
-                response += f"\n*... and {len(rows) - 25} more*"
-            await interaction.followup.send(response, ephemeral=True)
-        except Exception as e:
-            logger.error("reactbot_list error: %s", e, exc_info=True)
-            await interaction.followup.send("❌ Error fetching reactions.", ephemeral=True)
-
-    @app_commands.command(
-        name="reactbot_remove",
-        description="Remove a phrase reaction (Admin only)",
-    )
-    @app_commands.guild_only()
-    @app_commands.default_permissions(administrator=True)
-    @app_commands.describe(phrase="Select phrase pattern to remove")
-    @app_commands.autocomplete(phrase=_reactbot_phrase_autocomplete)
-    async def reactbot_remove(self, interaction: discord.Interaction, phrase: str):
-        await interaction.response.defer(ephemeral=True)
-        try:
-            if not await self._check_admin(interaction, "reactbot_remove"):
-                return
-            async with self.bot.db_pool.acquire() as conn:
-                result = await conn.execute(
-                    "UPDATE phrase_reactions SET is_active = false WHERE server_id = $1 AND phrase = $2 AND is_active = true",
-                    interaction.guild_id,
-                    phrase,
-                )
-            if result == "UPDATE 0":
-                await interaction.followup.send(f"❌ Not found: `{phrase}`", ephemeral=True)
-                return
-            self.bot.phrase_matcher.invalidate_cache(interaction.guild_id)
-            _invalidate_reactbot_cache(self.bot.cache, interaction.guild_id)
-            await interaction.followup.send(f"✅ Removed: `{phrase}`", ephemeral=True)
-        except Exception as e:
-            logger.error("reactbot_remove error: %s", e, exc_info=True)
-            await interaction.followup.send("❌ Error processing command.", ephemeral=True)
+    async def cog_unload(self):
+        self.bot.tree.remove_command(self.reactbot_group.name)
 
 
 async def setup(bot):

@@ -155,37 +155,42 @@ class TestPollCommands:
         assert "Error creating poll" in str(i.followup.send.call_args)
 
 
-class TestPollLong:
-    @pytest.mark.asyncio
-    async def test_poll_long_success(self, cog):
-        i = _interaction()
-        i.channel.send = AsyncMock(return_value=MagicMock(add_reaction=AsyncMock()))
-        await cog.poll_long.callback(cog, i, "Pick one?", "A,B,C,D,E")
-        i.channel.send.assert_awaited_once()
-        call = i.channel.send.call_args
-        assert call[1]["embed"].title == "📊 Pick one?"
-        assert "A" in call[1]["embed"].description
-        assert "E" in call[1]["embed"].description
-        msg = i.channel.send.return_value
-        assert msg.add_reaction.await_count == 5
+class TestPollLongFormat:
+    """Tests for auto long-format when options > 10."""
 
     @pytest.mark.asyncio
-    async def test_poll_long_too_few_options(self, cog):
+    async def test_poll_auto_long_when_11_options(self, cog):
         i = _interaction()
-        await cog.poll_long.callback(cog, i, "Q?", "OnlyOne")
+        i.channel.send = AsyncMock(return_value=MagicMock(add_reaction=AsyncMock()))
+        opts = ",".join(f"Opt{i}" for i in range(11))
+        await cog.poll.callback(cog, i, "Pick one?", opts, "1d")
+        i.channel.send.assert_awaited_once()
+        call = i.channel.send.call_args
+        assert call.kwargs.get("embed") is not None
+        assert call.kwargs["embed"].title == "📊 Pick one?"
+        assert "Opt0" in call.kwargs["embed"].description
+        assert "Opt10" in call.kwargs["embed"].description
+        msg = i.channel.send.return_value
+        assert msg.add_reaction.await_count == 11
+
+    @pytest.mark.asyncio
+    async def test_poll_too_few_options(self, cog):
+        i = _interaction()
+        await cog.poll.callback(cog, i, "Q?", "OnlyOne", "1d")
         assert "at least 2 options" in str(i.followup.send.call_args)
 
     @pytest.mark.asyncio
-    async def test_poll_long_question_too_long(self, cog):
+    async def test_poll_question_too_long(self, cog):
         i = _interaction()
-        await cog.poll_long.callback(cog, i, "X" * 301, "A,B")
+        await cog.poll.callback(cog, i, "X" * 301, "A,B", "1d")
         assert "Question too long" in str(i.followup.send.call_args)
 
     @pytest.mark.asyncio
-    async def test_poll_long_not_admin(self, cog):
+    async def test_poll_not_admin_long_format(self, cog):
         cog.bot.permission_checker.check_role = AsyncMock(return_value=False)
         i = _interaction()
-        await cog.poll_long.callback(cog, i, "Q?", "A,B")
+        opts = ",".join(f"X{i}" for i in range(11))
+        await cog.poll.callback(cog, i, "Q?", opts, "1d")
         i.followup.send.assert_called_with("Admin required.", ephemeral=True)
 
 

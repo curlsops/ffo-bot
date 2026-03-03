@@ -49,7 +49,8 @@ async def test_reactbot_add_success():
     bot.db_pool = db_pool
     commands = ReactBotCommands(bot)
     interaction = make_interaction()
-    await commands.reactbot_add.callback(commands, interaction, phrase=r"hello", emoji="👋")
+    group = commands.reactbot_group
+    await group.add_cmd.callback(group, interaction, phrase=r"hello", emoji="👋")
     assert conn.execute.await_count == 1
     interaction.followup.send.assert_awaited()
 
@@ -62,7 +63,8 @@ async def test_reactbot_add_rate_limited():
     bot.db_pool = db_pool
     commands = ReactBotCommands(bot)
     interaction = make_interaction()
-    await commands.reactbot_add.callback(commands, interaction, phrase=r"hello", emoji="👋")
+    group = commands.reactbot_group
+    await group.add_cmd.callback(group, interaction, phrase=r"hello", emoji="👋")
     conn.execute.assert_not_awaited()
     interaction.followup.send.assert_awaited_with("slow down", ephemeral=True)
 
@@ -74,7 +76,8 @@ async def test_reactbot_list_no_rows():
     bot.db_pool = db_pool
     commands = ReactBotCommands(bot)
     interaction = make_interaction()
-    await commands.reactbot_list.callback(commands, interaction)
+    group = commands.reactbot_group
+    await group.list_cmd.callback(group, interaction)
     conn.fetch.assert_awaited()
     interaction.followup.send.assert_awaited()
 
@@ -90,7 +93,8 @@ async def test_reactbot_list_with_rows():
     bot.db_pool = db_pool
     commands = ReactBotCommands(bot)
     interaction = make_interaction()
-    await commands.reactbot_list.callback(commands, interaction)
+    group = commands.reactbot_group
+    await group.list_cmd.callback(group, interaction)
     interaction.followup.send.assert_awaited()
 
 
@@ -101,7 +105,8 @@ async def test_reactbot_remove_success():
     bot.db_pool = db_pool
     commands = ReactBotCommands(bot)
     interaction = make_interaction()
-    await commands.reactbot_remove.callback(commands, interaction, phrase="hello")
+    group = commands.reactbot_group
+    await group.remove_cmd.callback(group, interaction, phrase="hello")
     conn.execute.assert_awaited()
     bot.phrase_matcher.invalidate_cache.assert_called_once_with(interaction.guild_id)
     interaction.followup.send.assert_awaited()
@@ -114,7 +119,8 @@ async def test_reactbot_remove_not_found():
     bot.db_pool = db_pool
     commands = ReactBotCommands(bot)
     interaction = make_interaction()
-    await commands.reactbot_remove.callback(commands, interaction, phrase="missing")
+    group = commands.reactbot_group
+    await group.remove_cmd.callback(group, interaction, phrase="missing")
     conn.execute.assert_awaited()
     interaction.followup.send.assert_awaited()
 
@@ -160,7 +166,8 @@ async def test_reactbot_add_various_phrases(phrase, emoji):
     bot.db_pool = db_pool
     commands = ReactBotCommands(bot)
     interaction = make_interaction()
-    await commands.reactbot_add.callback(commands, interaction, phrase=phrase, emoji=emoji)
+    group = commands.reactbot_group
+    await group.add_cmd.callback(group, interaction, phrase=phrase, emoji=emoji)
     conn.execute.assert_awaited_once()
     interaction.followup.send.assert_awaited()
 
@@ -178,5 +185,6 @@ async def test_reactbot_add_validation_error():
     ):
         commands = ReactBotCommands(bot)
         interaction = make_interaction()
-        await commands.reactbot_add.callback(commands, interaction, phrase="[invalid", emoji="👍")
+        group = commands.reactbot_group
+        await group.add_cmd.callback(group, interaction, phrase="[invalid", emoji="👍")
     assert "❌" in str(interaction.followup.send.call_args)

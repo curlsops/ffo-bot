@@ -57,26 +57,18 @@ async def _faq_topic_autocomplete(
         return []
 
 
-class FAQCommands(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
+@app_commands.guild_only()
+class FAQGroup(app_commands.Group):
+    """FAQ topics and entries."""
 
-    async def _check_admin(self, interaction: discord.Interaction, cmd: str) -> bool:
-        ctx = PermissionContext(
-            server_id=interaction.guild_id or 0,
-            user_id=interaction.user.id,
-            command_name=cmd,
-        )
-        if not await self.bot.permission_checker.check_role(ctx, Role.ADMIN):
-            await interaction.followup.send("Admin required.", ephemeral=True)
-            return False
-        return True
+    def __init__(self, cog: "FAQCommands"):
+        super().__init__(name="faq", description="FAQ topics and entries")
+        self.cog = cog
 
-    @app_commands.command(name="faq", description="List FAQ topics or show a specific topic")
-    @app_commands.guild_only()
+    @app_commands.command(name="list", description="List FAQ topics or show a specific topic")
     @app_commands.describe(topic="Topic to look up (leave empty to list all)")
     @app_commands.autocomplete(topic=_faq_topic_autocomplete)
-    async def faq(
+    async def list_cmd(
         self,
         interaction: discord.Interaction,
         topic: str | None = None,
@@ -89,9 +81,9 @@ class FAQCommands(commands.Cog):
             topic_key = topic.strip().lower() if topic else None
             if topic_key:
                 cache_key = CACHE_FAQ_ENTRY.format(server_id=interaction.guild_id, topic=topic_key)
-                row = self.bot.cache.get(cache_key) if self.bot.cache else None
+                row = self.cog.bot.cache.get(cache_key) if self.cog.bot.cache else None
                 if row is None:
-                    async with self.bot.db_pool.acquire() as conn:
+                    async with self.cog.bot.db_pool.acquire() as conn:
                         row = await conn.fetchrow(
                             """
                             SELECT question, answer FROM faq_entries
@@ -100,11 +92,11 @@ class FAQCommands(commands.Cog):
                             interaction.guild_id,
                             topic_key,
                         )
-                    if row and self.bot.cache:
-                        self.bot.cache.set(cache_key, dict(row), ttl=300)
+                    if row and self.cog.bot.cache:
+                        self.cog.bot.cache.set(cache_key, dict(row), ttl=300)
                 if not row:
                     await interaction.followup.send(
-                        f"No FAQ entry for **{topic}**. Use `/faq` with no topic to list.",
+                        f"No FAQ entry for **{topic}**. Use `/faq list` with no topic to list.",
                         ephemeral=True,
                     )
                     return
@@ -117,9 +109,9 @@ class FAQCommands(commands.Cog):
                 await interaction.followup.send(embed=embed, ephemeral=True)
             else:
                 cache_key = CACHE_FAQ_TOPICS.format(server_id=interaction.guild_id)
-                rows = self.bot.cache.get(cache_key) if self.bot.cache else None
+                rows = self.cog.bot.cache.get(cache_key) if self.cog.bot.cache else None
                 if rows is None:
-                    async with self.bot.db_pool.acquire() as conn:
+                    async with self.cog.bot.db_pool.acquire() as conn:
                         rows = await conn.fetch(
                             """
                             SELECT topic FROM faq_entries
@@ -128,11 +120,11 @@ class FAQCommands(commands.Cog):
                             """,
                             interaction.guild_id,
                         )
-                    if self.bot.cache:
-                        self.bot.cache.set(cache_key, [dict(r) for r in rows], ttl=300)
+                    if self.cog.bot.cache:
+                        self.cog.bot.cache.set(cache_key, [dict(r) for r in rows], ttl=300)
                 if not rows:
                     await interaction.followup.send(
-                        "No FAQ entries yet. Admins can add them with `/faq_add`.",
+                        "No FAQ entries yet. Admins can add them with `/faq add`.",
                         ephemeral=True,
                     )
                     return
@@ -142,14 +134,13 @@ class FAQCommands(commands.Cog):
                     description="\n".join(lines)[:4096],
                     color=discord.Color.blue(),
                 )
-                embed.set_footer(text="Use /faq topic:<name> to view")
+                embed.set_footer(text="Use /faq list topic:<name> to view")
                 await interaction.followup.send(embed=embed, ephemeral=True)
         except Exception as e:
-            logger.error("faq error: %s", e, exc_info=True)
+            logger.error("faq list error: %s", e, exc_info=True)
             await interaction.followup.send("Error fetching FAQ.", ephemeral=True)
 
-    @app_commands.command(name="faq_add", description="Add a FAQ entry (Admin)")
-    @app_commands.guild_only()
+    @app_commands.command(name="add", description="Add a FAQ entry (Admin)")
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(
         topic="Topic/slug (e.g. whitelist, rules)",
@@ -157,7 +148,7 @@ class FAQCommands(commands.Cog):
         answer="The answer (max 1024 chars)",
     )
     @app_commands.autocomplete(topic=_faq_topic_autocomplete)
-    async def faq_add(
+    async def add_cmd(
         self,
         interaction: discord.Interaction,
         topic: str,
@@ -165,7 +156,7 @@ class FAQCommands(commands.Cog):
         answer: str,
     ):
         await interaction.response.defer(ephemeral=True)
-        if not interaction.guild_id or not await self._check_admin(interaction, "faq_add"):
+        if not interaction.guild_id or not await self.cog._check_admin(interaction, "faq add"):
             return
 
         topic = topic.strip().lower()[:MAX_TOPIC_LEN]
@@ -180,7 +171,7 @@ class FAQCommands(commands.Cog):
             return
 
         try:
-            async with self.bot.db_pool.acquire() as conn:
+            async with self.cog.bot.db_pool.acquire() as conn:
                 count = await conn.fetchval(
                     "SELECT COUNT(*) FROM faq_entries WHERE server_id = $1",
                     interaction.guild_id,
@@ -206,14 +197,13 @@ class FAQCommands(commands.Cog):
                     question,
                     answer,
                 )
-            _invalidate_faq_cache(self.bot.cache, interaction.guild_id, topic)
+            _invalidate_faq_cache(self.cog.bot.cache, interaction.guild_id, topic)
             await interaction.followup.send(f"FAQ **{topic}** added/updated.", ephemeral=True)
         except Exception as e:
-            logger.error("faq_add error: %s", e, exc_info=True)
+            logger.error("faq add error: %s", e, exc_info=True)
             await interaction.followup.send("Error adding FAQ.", ephemeral=True)
 
-    @app_commands.command(name="faq_edit", description="Edit a FAQ entry (Admin)")
-    @app_commands.guild_only()
+    @app_commands.command(name="edit", description="Edit a FAQ entry (Admin)")
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(
         topic="Topic to edit",
@@ -221,7 +211,7 @@ class FAQCommands(commands.Cog):
         answer="New answer (leave empty to keep)",
     )
     @app_commands.autocomplete(topic=_faq_topic_autocomplete)
-    async def faq_edit(
+    async def edit_cmd(
         self,
         interaction: discord.Interaction,
         topic: str,
@@ -229,7 +219,7 @@ class FAQCommands(commands.Cog):
         answer: str | None = None,
     ):
         await interaction.response.defer(ephemeral=True)
-        if not interaction.guild_id or not await self._check_admin(interaction, "faq_edit"):
+        if not interaction.guild_id or not await self.cog._check_admin(interaction, "faq edit"):
             return
 
         topic = topic.strip().lower()[:MAX_TOPIC_LEN]
@@ -245,7 +235,7 @@ class FAQCommands(commands.Cog):
             return
 
         try:
-            async with self.bot.db_pool.acquire() as conn:
+            async with self.cog.bot.db_pool.acquire() as conn:
                 row = await conn.fetchrow(
                     "SELECT question, answer FROM faq_entries WHERE server_id = $1 AND topic = $2",
                     interaction.guild_id,
@@ -271,24 +261,23 @@ class FAQCommands(commands.Cog):
                     interaction.guild_id,
                     topic,
                 )
-            _invalidate_faq_cache(self.bot.cache, interaction.guild_id, topic)
+            _invalidate_faq_cache(self.cog.bot.cache, interaction.guild_id, topic)
             await interaction.followup.send(f"FAQ **{topic}** updated.", ephemeral=True)
         except Exception as e:
-            logger.error("faq_edit error: %s", e, exc_info=True)
+            logger.error("faq edit error: %s", e, exc_info=True)
             await interaction.followup.send("Error editing FAQ.", ephemeral=True)
 
-    @app_commands.command(name="faq_delete", description="Delete a FAQ entry (Admin)")
-    @app_commands.guild_only()
+    @app_commands.command(name="delete", description="Delete a FAQ entry (Admin)")
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(topic="Topic to delete")
     @app_commands.autocomplete(topic=_faq_topic_autocomplete)
-    async def faq_delete(
+    async def delete_cmd(
         self,
         interaction: discord.Interaction,
         topic: str,
     ):
         await interaction.response.defer(ephemeral=True)
-        if not interaction.guild_id or not await self._check_admin(interaction, "faq_delete"):
+        if not interaction.guild_id or not await self.cog._check_admin(interaction, "faq delete"):
             return
 
         topic = topic.strip().lower()[:MAX_TOPIC_LEN]
@@ -297,7 +286,7 @@ class FAQCommands(commands.Cog):
             return
 
         try:
-            async with self.bot.db_pool.acquire() as conn:
+            async with self.cog.bot.db_pool.acquire() as conn:
                 result = await conn.execute(
                     "DELETE FROM faq_entries WHERE server_id = $1 AND topic = $2",
                     interaction.guild_id,
@@ -306,11 +295,34 @@ class FAQCommands(commands.Cog):
             if "DELETE 0" in result:
                 await interaction.followup.send(f"No FAQ entry for **{topic}**.", ephemeral=True)
                 return
-            _invalidate_faq_cache(self.bot.cache, interaction.guild_id, topic)
+            _invalidate_faq_cache(self.cog.bot.cache, interaction.guild_id, topic)
             await interaction.followup.send(f"FAQ **{topic}** deleted.", ephemeral=True)
         except Exception as e:
-            logger.error("faq_delete error: %s", e, exc_info=True)
+            logger.error("faq delete error: %s", e, exc_info=True)
             await interaction.followup.send("Error deleting FAQ.", ephemeral=True)
+
+
+class FAQCommands(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+        self.faq_group = FAQGroup(self)
+
+    async def _check_admin(self, interaction: discord.Interaction, cmd: str) -> bool:
+        ctx = PermissionContext(
+            server_id=interaction.guild_id or 0,
+            user_id=interaction.user.id,
+            command_name=cmd,
+        )
+        if not await self.bot.permission_checker.check_role(ctx, Role.ADMIN):
+            await interaction.followup.send("Admin required.", ephemeral=True)
+            return False
+        return True
+
+    async def cog_load(self):
+        self.bot.tree.add_command(self.faq_group)
+
+    async def cog_unload(self):
+        self.bot.tree.remove_command(self.faq_group.name)
 
 
 async def setup(bot):

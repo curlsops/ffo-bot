@@ -2,7 +2,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from bot.commands.quotebook import QuotebookCommands
+from bot.commands.quotebook import QuotebookCommands, _parse_quotes_from_message
 
 
 @pytest.fixture
@@ -34,13 +34,56 @@ def _db_ctx(conn):
     return ctx
 
 
+class TestParseQuotes:
+    """Test quote extraction from message content."""
+
+    def _msg(self, content: str, author_name: str = "TestUser", mentions=None):
+        msg = MagicMock()
+        msg.content = content
+        msg.author = MagicMock(display_name=author_name)
+        msg.mentions = mentions or []
+        return msg
+
+    def test_quote_with_attribution(self):
+        msg = self._msg('"Im so bricked rn" - @CurlyWhirly')
+        quotes = _parse_quotes_from_message(msg)
+        assert len(quotes) == 1
+        assert quotes[0][0] == "Im so bricked rn"
+        assert "CurlyWhirly" in (quotes[0][1] or "")
+
+    def test_at_user_quote(self):
+        msg = self._msg('@SkellyStar "Yes, I have a pussy."')
+        quotes = _parse_quotes_from_message(msg)
+        assert len(quotes) >= 1
+        assert "Yes, I have a pussy." in [q[0] for q in quotes]
+
+    def test_standalone_quote(self):
+        msg = self._msg('"Free Range Bottom"', author_name="Kallen027")
+        quotes = _parse_quotes_from_message(msg)
+        assert len(quotes) == 1
+        assert quotes[0][0] == "Free Range Bottom"
+        assert quotes[0][1] == "Kallen027"
+
+    def test_multiple_quotes_in_message(self):
+        msg = self._msg('@A "First quote" @B "Second quote"')
+        quotes = _parse_quotes_from_message(msg)
+        assert len(quotes) >= 2
+        texts = [q[0] for q in quotes]
+        assert "First quote" in texts
+        assert "Second quote" in texts
+
+    def test_empty_message(self):
+        msg = self._msg("")
+        assert _parse_quotes_from_message(msg) == []
+
+
 class TestQuoteSubmit:
     @pytest.mark.asyncio
     async def test_submit_success(self, cog):
         conn = AsyncMock(execute=AsyncMock())
         cog.bot.db_pool.acquire.return_value = _db_ctx(conn)
         i = _interaction()
-        await cog.quote_submit.callback(cog, i, "Hello world", None)
+        await cog.quote_group.submit_cmd.callback(cog.quote_group, i, "Hello world", None)
         conn.execute.assert_awaited_once()
         i.followup.send.assert_awaited_with(
             "Quote submitted! An admin will review it.", ephemeral=True
@@ -51,14 +94,14 @@ class TestQuoteSubmit:
         conn = AsyncMock(execute=AsyncMock())
         cog.bot.db_pool.acquire.return_value = _db_ctx(conn)
         i = _interaction()
-        await cog.quote_submit.callback(cog, i, "Quote text", "— Einstein")
+        await cog.quote_group.submit_cmd.callback(cog.quote_group, i, "Quote text", "— Einstein")
         call = conn.execute.call_args
         assert "Einstein" in str(call)
 
     @pytest.mark.asyncio
     async def test_submit_empty_rejected(self, cog):
         i = _interaction()
-        await cog.quote_submit.callback(cog, i, "   ", None)
+        await cog.quote_group.submit_cmd.callback(cog.quote_group, i, "   ", None)
         i.followup.send.assert_awaited_with("Quote cannot be empty.", ephemeral=True)
         cog.bot.db_pool.acquire.assert_not_called()
 
@@ -68,7 +111,7 @@ class TestQuoteSubmit:
         cog.bot.db_pool.acquire.return_value = _db_ctx(conn)
         i = _interaction()
         long_text = "A" * 600
-        await cog.quote_submit.callback(cog, i, long_text, None)
+        await cog.quote_group.submit_cmd.callback(cog.quote_group, i, long_text, None)
         call = conn.execute.call_args
         assert len(call[0][2]) <= 500
 
@@ -79,8 +122,8 @@ class TestQuoteList:
         conn = AsyncMock(fetch=AsyncMock(return_value=[]))
         cog.bot.db_pool.acquire.return_value = _db_ctx(conn)
         i = _interaction()
-        await cog.quote_list.callback(cog, i)
-        i.followup.send.assert_awaited_with("No pending quotes.", ephemeral=True)
+        await cog.quote_group.list_cmd.callback(cog.quote_group, i)
+        i.followup.send.assert_awaited_with("No quotes in the book yet.", ephemeral=True)
 
     @pytest.mark.asyncio
     async def test_list_shows_pending(self, cog):
@@ -90,18 +133,17 @@ class TestQuoteList:
                     {
                         "id": "a1b2c3d4-0000-0000-0000-000000000001",
                         "quote_text": "Test quote",
-                        "submitter_id": 123,
                         "attribution": "— Someone",
-                        "created_at": None,
+                        "approved": False,
                     }
                 ]
             )
         )
         cog.bot.db_pool.acquire.return_value = _db_ctx(conn)
         i = _interaction()
-        await cog.quote_list.callback(cog, i)
+        await cog.quote_group.list_cmd.callback(cog.quote_group, i)
         call_args = i.followup.send.call_args
-        assert "Pending quotes" in call_args[0][0]
+        assert "Quotebook" in call_args[0][0]
         assert "Test quote" in call_args[0][0]
 
 
@@ -111,13 +153,13 @@ class TestQuoteApprove:
         conn = AsyncMock(execute=AsyncMock(return_value="UPDATE 1"))
         cog.bot.db_pool.acquire.return_value = _db_ctx(conn)
         i = _interaction()
-        await cog.quote_approve.callback(cog, i, "a1b2c3d4-0000-0000-0000-000000000001")
+        await cog.quote_group.approve_cmd.callback(cog.quote_group, i, "a1b2c3d4-0000-0000-0000-000000000001")
         i.followup.send.assert_awaited_with("Quote approved!", ephemeral=True)
 
     @pytest.mark.asyncio
     async def test_approve_invalid_id(self, cog):
         i = _interaction()
-        await cog.quote_approve.callback(cog, i, "not-a-uuid")
+        await cog.quote_group.approve_cmd.callback(cog.quote_group, i, "not-a-uuid")
         i.followup.send.assert_awaited_with("Invalid quote ID.", ephemeral=True)
 
     @pytest.mark.asyncio
@@ -125,7 +167,7 @@ class TestQuoteApprove:
         conn = AsyncMock(execute=AsyncMock(return_value="UPDATE 0"))
         cog.bot.db_pool.acquire.return_value = _db_ctx(conn)
         i = _interaction()
-        await cog.quote_approve.callback(cog, i, "a1b2c3d4-0000-0000-0000-000000000001")
+        await cog.quote_group.approve_cmd.callback(cog.quote_group, i, "a1b2c3d4-0000-0000-0000-000000000001")
         i.followup.send.assert_awaited_with("Quote not found or already approved.", ephemeral=True)
 
 
@@ -135,13 +177,13 @@ class TestQuoteDelete:
         conn = AsyncMock(execute=AsyncMock())
         cog.bot.db_pool.acquire.return_value = _db_ctx(conn)
         i = _interaction()
-        await cog.quote_delete.callback(cog, i, "a1b2c3d4-0000-0000-0000-000000000001")
+        await cog.quote_group.delete_cmd.callback(cog.quote_group, i, "a1b2c3d4-0000-0000-0000-000000000001")
         i.followup.send.assert_awaited_with("Quote deleted.", ephemeral=True)
 
     @pytest.mark.asyncio
     async def test_delete_invalid_id(self, cog):
         i = _interaction()
-        await cog.quote_delete.callback(cog, i, "bad-id")
+        await cog.quote_group.delete_cmd.callback(cog.quote_group, i, "bad-id")
         i.followup.send.assert_awaited_with("Invalid quote ID.", ephemeral=True)
 
 
@@ -152,7 +194,7 @@ class TestQuoteSubmitVariants:
         conn = AsyncMock(execute=AsyncMock())
         cog.bot.db_pool.acquire.return_value = _db_ctx(conn)
         i = _interaction()
-        await cog.quote_submit.callback(cog, i, text, None)
+        await cog.quote_group.submit_cmd.callback(cog.quote_group, i, text, None)
         conn.execute.assert_awaited_once()
 
 
@@ -162,7 +204,7 @@ class TestQuoteRandom:
         conn = AsyncMock(fetch=AsyncMock(return_value=[]))
         cog.bot.db_pool.acquire.return_value = _db_ctx(conn)
         i = _interaction()
-        await cog.quote_random.callback(cog, i)
+        await cog.quote_group.random_cmd.callback(cog.quote_group, i)
         i.followup.send.assert_awaited_with("No quotes in the book yet.", ephemeral=True)
 
     @pytest.mark.asyncio
@@ -172,7 +214,7 @@ class TestQuoteRandom:
         )
         cog.bot.db_pool.acquire.return_value = _db_ctx(conn)
         i = _interaction()
-        await cog.quote_random.callback(cog, i)
+        await cog.quote_group.random_cmd.callback(cog.quote_group, i)
         call_args = i.followup.send.call_args
         embed = call_args[1].get("embed")
         assert embed is not None

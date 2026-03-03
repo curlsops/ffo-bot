@@ -51,5 +51,5 @@ async def test_command_permission_allowed(mock_cache):
     mock_db_pool = MagicMock()
     mock_db_pool.acquire = acquire
     checker = PermissionChecker(mock_db_pool, mock_cache)
-    ctx = PermissionContext(server_id=123456789, user_id=987654321, command_name="reactbot_add")
+    ctx = PermissionContext(server_id=123456789, user_id=987654321, command_name="reactbot add")
     assert await checker.check_command_permission(ctx) is True

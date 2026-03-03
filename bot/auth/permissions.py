@@ -88,22 +88,41 @@ class PermissionChecker:
         if cached is not None:
             return cached
 
-        try:
-            async with self.db_pool.acquire() as conn:
-                role_str = await conn.fetchval(
-                    """
-                    SELECT role FROM user_permissions
-                    WHERE server_id = $1 AND user_id = $2 AND is_active = true
-                    ORDER BY CASE role WHEN 'super_admin' THEN 3 WHEN 'admin' THEN 2 WHEN 'moderator' THEN 1 END DESC
-                    LIMIT 1
-                    """,
-                    server_id,
-                    user_id,
-                )
-        except TRANSIENT_DB_ERRORS:
-            return None
+        role = None
 
-        role = Role(role_str) if role_str else None
+        # Check Discord role membership first (server-configured roles)
+        if self.bot:
+            from bot.utils.server_roles import get_server_role_ids
+
+            role_ids = await get_server_role_ids(self.db_pool, server_id, cache=self.cache)
+            if role_ids:
+                guild = self.bot.get_guild(server_id)
+                member = guild.get_member(user_id) if guild else None
+                if member:
+                    user_role_ids = {r.id for r in member.roles}
+                    for r in (Role.SUPER_ADMIN, Role.ADMIN, Role.MODERATOR):
+                        if r in role_ids and role_ids[r] in user_role_ids:
+                            role = r
+                            break
+
+        # Fall back to user_permissions (explicit grants)
+        if role is None:
+            try:
+                async with self.db_pool.acquire() as conn:
+                    role_str = await conn.fetchval(
+                        """
+                        SELECT role FROM user_permissions
+                        WHERE server_id = $1 AND user_id = $2 AND is_active = true
+                        ORDER BY CASE role WHEN 'super_admin' THEN 3 WHEN 'admin' THEN 2 WHEN 'moderator' THEN 1 END DESC
+                        LIMIT 1
+                        """,
+                        server_id,
+                        user_id,
+                    )
+                role = Role(role_str) if role_str else None
+            except TRANSIENT_DB_ERRORS:
+                pass
+
         self.cache.set(cache_key, role, ttl=300)
         return role
 

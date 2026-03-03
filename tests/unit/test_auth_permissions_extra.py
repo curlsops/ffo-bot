@@ -1,5 +1,5 @@
 from contextlib import asynccontextmanager
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import asyncpg
 import pytest
@@ -153,6 +153,146 @@ class TestGetUserRole:
         checker, _, _ = _checker(fetchval_side_effect=asyncpg.CannotConnectNowError("down"))
         assert await checker.get_user_role(1, 2) is None
 
+    @pytest.mark.asyncio
+    async def test_from_server_roles_when_member_has_role(self):
+        checker, conn, cache = _checker(bot=MagicMock())
+        guild = MagicMock()
+        role_obj = MagicMock()
+        role_obj.id = 111
+        member = MagicMock()
+        member.roles = [role_obj]
+        guild.get_member.return_value = member
+        checker.bot.get_guild.return_value = guild
+
+        with patch(
+            "bot.utils.server_roles.get_server_role_ids",
+            new_callable=AsyncMock,
+            return_value={Role.ADMIN: 111},
+        ):
+            result = await checker.get_user_role(1, 2)
+        assert result == Role.ADMIN
+        conn.fetchval.assert_not_awaited()
+        cache.set.assert_called_once_with("user_role:1:2", Role.ADMIN, ttl=300)
+
+    @pytest.mark.asyncio
+    async def test_from_server_roles_falls_to_db_when_member_has_no_matching_role(self):
+        checker, conn, cache = _checker(bot=MagicMock(), fetchval_result="admin")
+        guild = MagicMock()
+        member = MagicMock()
+        member.roles = [MagicMock(id=999)]
+        guild.get_member.return_value = member
+        checker.bot.get_guild.return_value = guild
+
+        with patch(
+            "bot.utils.server_roles.get_server_role_ids",
+            new_callable=AsyncMock,
+            return_value={Role.ADMIN: 111},
+        ):
+            result = await checker.get_user_role(1, 2)
+        assert result == Role.ADMIN
+        conn.fetchval.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_from_server_roles_matches_super_admin_first(self):
+        checker, conn, cache = _checker(bot=MagicMock())
+        guild = MagicMock()
+        role_obj = MagicMock()
+        role_obj.id = 333
+        member = MagicMock()
+        member.roles = [role_obj]
+        guild.get_member.return_value = member
+        checker.bot.get_guild.return_value = guild
+
+        with patch(
+            "bot.utils.server_roles.get_server_role_ids",
+            new_callable=AsyncMock,
+            return_value={Role.SUPER_ADMIN: 333, Role.ADMIN: 111},
+        ):
+            result = await checker.get_user_role(1, 2)
+        assert result == Role.SUPER_ADMIN
+        conn.fetchval.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_from_server_roles_matches_moderator_third_in_loop(self):
+        checker, conn, cache = _checker(bot=MagicMock())
+        guild = MagicMock()
+        role_obj = MagicMock()
+        role_obj.id = 555
+        member = MagicMock()
+        member.roles = [role_obj]
+        guild.get_member.return_value = member
+        checker.bot.get_guild.return_value = guild
+
+        with patch(
+            "bot.utils.server_roles.get_server_role_ids",
+            new_callable=AsyncMock,
+            return_value={
+                Role.SUPER_ADMIN: 111,
+                Role.ADMIN: 222,
+                Role.MODERATOR: 555,
+            },
+        ):
+            result = await checker.get_user_role(1, 2)
+        assert result == Role.MODERATOR
+        conn.fetchval.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_from_server_roles_no_match_falls_back_to_db(self):
+        checker, conn, cache = _checker(bot=MagicMock())
+        guild = MagicMock()
+        member = MagicMock()
+        member.roles = []
+        guild.get_member.return_value = member
+        checker.bot.get_guild.return_value = guild
+        conn.fetchval.return_value = "admin"
+
+        with patch(
+            "bot.utils.server_roles.get_server_role_ids",
+            new_callable=AsyncMock,
+            return_value={Role.SUPER_ADMIN: 111, Role.ADMIN: 222, Role.MODERATOR: 333},
+        ):
+            result = await checker.get_user_role(1, 2)
+        assert result == Role.ADMIN
+        conn.fetchval.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_empty_role_ids_falls_back_to_db(self):
+        checker, conn, cache = _checker(bot=MagicMock())
+        conn.fetchval.return_value = "moderator"
+
+        with patch(
+            "bot.utils.server_roles.get_server_role_ids",
+            new_callable=AsyncMock,
+            return_value={},
+        ):
+            result = await checker.get_user_role(1, 2)
+        assert result == Role.MODERATOR
+        checker.bot.get_guild.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_member_not_in_guild_falls_back_to_db(self):
+        checker, conn, cache = _checker(bot=MagicMock())
+        guild = MagicMock()
+        guild.get_member.return_value = None
+        checker.bot.get_guild.return_value = guild
+        conn.fetchval.return_value = "admin"
+
+        with patch(
+            "bot.utils.server_roles.get_server_role_ids",
+            new_callable=AsyncMock,
+            return_value={Role.ADMIN: 111},
+        ):
+            result = await checker.get_user_role(1, 2)
+        assert result == Role.ADMIN
+        conn.fetchval.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_get_user_role_db_transient_error_caches_none(self):
+        checker, _, cache = _checker(fetchval_side_effect=asyncpg.CannotConnectNowError("down"))
+        result = await checker.get_user_role(1, 2)
+        assert result is None
+        cache.set.assert_called_once_with("user_role:1:2", None, ttl=300)
+
 
 class TestLogPermissionDenial:
     @pytest.mark.asyncio
@@ -180,7 +320,6 @@ class TestLogPermissionDenial:
 
     @pytest.mark.asyncio
     async def test_log_permission_denial_exception_logged(self):
-        from unittest.mock import patch
         from bot.auth import permissions as perm_module
         checker, _, _ = _checker(execute_side_effect=ValueError("constraint violation"))
         with patch.object(perm_module.logger, "error") as mock_log:
