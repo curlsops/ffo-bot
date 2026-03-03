@@ -1,5 +1,6 @@
 """Tests for whitelist channel utilities."""
 
+import logging
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -68,6 +69,7 @@ async def test_get_whitelist_channel_id_no_channel_key():
 
 @pytest.mark.asyncio
 async def test_get_whitelist_channel_id_exception_returns_none(caplog):
+    caplog.set_level(logging.WARNING, logger="bot.utils.whitelist_channel")
     conn = AsyncMock()
     conn.fetchrow.side_effect = Exception("DB error")
     pool = make_pool(conn)
@@ -147,6 +149,7 @@ async def test_set_whitelist_channel_clear():
 
 @pytest.mark.asyncio
 async def test_set_whitelist_channel_exception_returns_false(caplog):
+    caplog.set_level(logging.WARNING, logger="bot.utils.whitelist_channel")
     conn = AsyncMock()
     conn.execute.side_effect = Exception("DB error")
     pool = make_pool(conn)
