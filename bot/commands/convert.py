@@ -1,7 +1,6 @@
 """Currency and measurement conversion."""
 
 import logging
-import re
 from typing import Optional
 
 import aiohttp
@@ -60,19 +59,6 @@ async def _convert_unit_autocomplete(
 LENGTH = {"m": 1, "km": 1000, "cm": 0.01, "mm": 0.001, "ft": 0.3048, "in": 0.0254, "mi": 1609.34}
 WEIGHT = {"kg": 1, "g": 0.001, "lb": 0.453592, "oz": 0.0283495}
 TEMP = {"c": 1, "f": 2, "celsius": 1, "fahrenheit": 2}
-
-
-def _parse_amount_unit(s: str) -> Optional[tuple[float, str]]:
-    s = s.strip().upper()
-    m = re.match(r"^([\d.,]+)\s*([A-Za-z°]+)$", s)
-    if not m:
-        return None
-    try:
-        amount = float(m.group(1).replace(",", ""))
-        unit = m.group(2).strip().lower()
-        return (amount, unit)
-    except ValueError:
-        return None
 
 
 async def _convert_currency(amount: float, from_cur: str, to_cur: str) -> Optional[float]:

@@ -53,3 +53,32 @@ class TestDetectAndConvert:
 
     def test_small_length_returns_mm(self):
         assert detect_and_convert("0.01 in") == "0.25 mm"
+
+    @pytest.mark.parametrize(
+        "text,expected_substr",
+        [
+            ("2 lb", "907 g"),
+            ("3 ft", "91.44 cm"),
+            ("212 F", "100"),
+            ("1 mi", "1.61 km"),
+            ("8 oz", "227 g"),
+        ],
+    )
+    def test_various_conversions(self, text, expected_substr):
+        result = detect_and_convert(text)
+        assert result is not None
+        assert expected_substr in result
+
+    def test_empty_string(self):
+        assert detect_and_convert("") is None
+
+    def test_whitespace_only(self):
+        assert detect_and_convert("   ") is None
+
+    def test_no_units_in_text(self):
+        assert detect_and_convert("just words here") is None
+
+    def test_fahrenheit_conversion(self):
+        result = detect_and_convert("it's 68 F today")
+        assert result is not None
+        assert "°C" in result
