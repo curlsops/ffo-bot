@@ -1,18 +1,20 @@
 import asyncio
 import logging
 import sys
+import time
 from typing import Optional
 
 import discord
+from discord import app_commands
 from aiohttp import web
 from discord.ext import commands
 
 from bot.auth.permissions import PermissionChecker
 from bot.cache.memory import InMemoryCache
 from bot.processors.media_downloader import MediaDownloader
+from bot.services.minecraft_rcon import MinecraftRCONClient
 from bot.processors.phrase_matcher import PhraseMatcher
 from bot.processors.voice_transcriber import VoiceTranscriber
-from bot.services.minecraft_rcon import MinecraftRCONClient
 from bot.utils.metrics import BotMetrics
 from bot.utils.notifier import AdminNotifier
 from bot.utils.rate_limiter import RateLimiter
@@ -22,6 +24,34 @@ from database.connection import DatabasePool
 logger = logging.getLogger(__name__)
 
 
+class MetricsCommandTree(app_commands.CommandTree):
+    """CommandTree that records commands_executed and command_duration metrics."""
+
+    async def _call(self, interaction: discord.Interaction) -> None:
+        start = time.perf_counter()
+        command_name = "unknown"
+        server_id = str(interaction.guild_id) if interaction.guild_id else "0"
+        try:
+            data = interaction.data or {}
+            if data.get("type", 1) == 1:
+                command, _ = self._get_app_command_options(data)
+                command_name = command.qualified_name if command else "unknown"
+            else:
+                command_name = data.get("name", "unknown")
+            await super()._call(interaction)
+        finally:
+            if self.client.metrics:
+                status = "error" if getattr(interaction, "command_failed", False) else "success"
+                self.client.metrics.commands_executed.labels(
+                    command_name=command_name,
+                    server_id=server_id,
+                    status=status,
+                ).inc()
+                self.client.metrics.command_duration.labels(command_name=command_name).observe(
+                    time.perf_counter() - start
+                )
+
+
 class FFOBot(commands.Bot):
     def __init__(self, settings: Settings):
         intents = discord.Intents.default()
@@ -29,7 +59,12 @@ class FFOBot(commands.Bot):
         intents.guilds = True
         intents.members = True
         intents.reactions = True
-        super().__init__(command_prefix="!", intents=intents, help_command=None)
+        super().__init__(
+            command_prefix="!",
+            intents=intents,
+            help_command=None,
+            tree_cls=MetricsCommandTree,
+        )
 
         self.settings = settings
         self.db_pool: Optional[DatabasePool] = None
@@ -142,9 +177,7 @@ class FFOBot(commands.Bot):
                     )
 
     async def on_ready(self):
-        logger.info(
-            "Connected as %s (ID: %s) to %d servers", self.user, self.user.id, len(self.guilds)
-        )
+        logger.info("Connected as %s (ID: %s) to %d servers", self.user, self.user.id, len(self.guilds))
 
         for guild in self.guilds:
             await self._register_server(guild)
