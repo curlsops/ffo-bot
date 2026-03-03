@@ -1,5 +1,6 @@
 """Tests for Minecraft RCON client."""
 
+import struct
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -7,8 +8,72 @@ import pytest
 from bot.services.minecraft_rcon import (
     MinecraftRCONClient,
     MinecraftRCONError,
+    RCON_PACKET_COMMAND,
+    RCON_PACKET_LOGIN,
+    _recv_rcon_packet,
+    _rcon_command,
+    _send_rcon_packet,
     parse_whitelist_list_response,
 )
+
+
+class TestRconPacketFunctions:
+    def test_send_rcon_packet(self):
+        mock_sock = MagicMock()
+        _send_rcon_packet(mock_sock, RCON_PACKET_LOGIN, "password", 1)
+        mock_sock.sendall.assert_called_once()
+        packet = mock_sock.sendall.call_args[0][0]
+        length, req_id, packet_type = struct.unpack("<iii", packet[:12])
+        assert req_id == 1
+        assert packet_type == RCON_PACKET_LOGIN
+        assert b"password" in packet
+
+    def test_recv_rcon_packet_success(self):
+        payload = b"response\x00\x00"
+        header = struct.pack("<iii", len(payload) + 8, 1, 0)
+        mock_sock = MagicMock()
+        mock_sock.recv.side_effect = [header, payload]
+        req_id, ptype, response = _recv_rcon_packet(mock_sock)
+        assert req_id == 1
+        assert ptype == 0
+        assert response == "response"
+
+    def test_recv_rcon_packet_incomplete_header(self):
+        mock_sock = MagicMock()
+        mock_sock.recv.return_value = b"\x00" * 5
+        with pytest.raises(MinecraftRCONError, match="incomplete header"):
+            _recv_rcon_packet(mock_sock)
+
+    def test_recv_rcon_packet_body_connection_closed(self):
+        header = struct.pack("<iii", 20, 1, 0)
+        mock_sock = MagicMock()
+        mock_sock.recv.side_effect = [header, b"partial", b""]
+        req_id, ptype, response = _recv_rcon_packet(mock_sock)
+        assert req_id == 1
+        assert response == "partial"
+
+    def test_rcon_command_auth_failed(self):
+        with patch("bot.services.minecraft_rcon.socket.socket") as mock_socket_cls:
+            mock_sock = MagicMock()
+            mock_socket_cls.return_value = mock_sock
+            auth_header = struct.pack("<iii", 10, -1, 0)
+            auth_body = b"\x00\x00"
+            mock_sock.recv.side_effect = [auth_header, auth_body]
+            with pytest.raises(MinecraftRCONError, match="authentication failed"):
+                _rcon_command("localhost", 25575, "wrong", "test")
+
+    def test_rcon_command_success(self):
+        with patch("bot.services.minecraft_rcon.socket.socket") as mock_socket_cls:
+            mock_sock = MagicMock()
+            mock_socket_cls.return_value = mock_sock
+            auth_header = struct.pack("<iii", 10, 1, 0)
+            auth_body = b"\x00\x00"
+            cmd_header = struct.pack("<iii", 24, 2, 0)
+            cmd_body = b"command result\x00\x00"
+            mock_sock.recv.side_effect = [auth_header, auth_body, cmd_header, cmd_body]
+            result = _rcon_command("localhost", 25575, "secret", "test cmd")
+            assert result == "command result"
+            mock_sock.close.assert_called_once()
 
 
 class TestParseWhitelistListResponse:
@@ -104,15 +169,8 @@ class TestMinecraftRCONClient:
     async def test_run_rcon_executes_in_executor(self, configured_settings):
         client = MinecraftRCONClient(configured_settings)
 
-        async def run_callback(executor, func):
-            return func()
+        with patch("bot.services.minecraft_rcon._rcon_command", return_value="ok") as mock_cmd:
+            result = await client._run_rcon("whitelist list")
 
-        with patch("bot.services.minecraft_rcon.asyncio.get_event_loop") as mock_loop:
-            mock_loop.return_value.run_in_executor = run_callback
-
-            with patch("mcrcon.MCRcon") as mock_mcr:
-                mock_mcr.return_value.__enter__.return_value.command.return_value = "ok"
-                result = await client._run_rcon("whitelist list")
-
-            assert result == "ok"
-            mock_mcr.assert_called_once_with("localhost", "secret", port=25575)
+        assert result == "ok"
+        mock_cmd.assert_called_once_with("localhost", 25575, "secret", "whitelist list")

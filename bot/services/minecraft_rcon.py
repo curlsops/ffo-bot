@@ -1,16 +1,22 @@
 """Minecraft RCON client for whitelist management.
 
-Uses mcrcon to send commands to a Minecraft server. Runs sync RCON in a thread
-pool to avoid blocking the event loop.
+Implements RCON protocol directly using sockets with timeout support,
+avoiding signal-based timeouts that don't work in thread pools.
 """
 
 import asyncio
 import logging
 import re
+import socket
+import struct
 
 from config.settings import Settings
 
 logger = logging.getLogger(__name__)
+
+RCON_PACKET_LOGIN = 3
+RCON_PACKET_COMMAND = 2
+RCON_PACKET_RESPONSE = 0
 
 
 class MinecraftRCONError(Exception):
@@ -19,8 +25,46 @@ class MinecraftRCONError(Exception):
     pass
 
 
+def _send_rcon_packet(sock: socket.socket, packet_type: int, payload: str, req_id: int) -> None:
+    data = payload.encode("utf-8") + b"\x00\x00"
+    packet = struct.pack("<iii", len(data) + 8, req_id, packet_type) + data
+    sock.sendall(packet)
+
+
+def _recv_rcon_packet(sock: socket.socket) -> tuple[int, int, str]:
+    header = sock.recv(12)
+    if len(header) < 12:
+        raise MinecraftRCONError("Connection closed or incomplete header")
+    length, req_id, packet_type = struct.unpack("<iii", header)
+    body_len = length - 8
+    body = b""
+    while len(body) < body_len:
+        chunk = sock.recv(body_len - len(body))
+        if not chunk:
+            break
+        body += chunk
+    response = body.rstrip(b"\x00").decode("utf-8", errors="replace")
+    return req_id, packet_type, response
+
+
+def _rcon_command(host: str, port: int, password: str, command: str, timeout: float = 10.0) -> str:
+    sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
+    sock.settimeout(timeout)
+    try:
+        sock.connect((host, port))
+        _send_rcon_packet(sock, RCON_PACKET_LOGIN, password, 1)
+        req_id, _, _ = _recv_rcon_packet(sock)
+        if req_id == -1:
+            raise MinecraftRCONError("RCON authentication failed")
+        _send_rcon_packet(sock, RCON_PACKET_COMMAND, command, 2)
+        _, _, response = _recv_rcon_packet(sock)
+        return response
+    finally:
+        sock.close()
+
+
 class MinecraftRCONClient:
-    """Async wrapper around mcrcon for Minecraft server commands."""
+    """Async wrapper for Minecraft RCON commands using socket-based implementation."""
 
     def __init__(self, settings: Settings):
         self._settings = settings
@@ -37,14 +81,12 @@ class MinecraftRCONClient:
             raise MinecraftRCONError("Minecraft RCON not configured")
 
         def _sync_command() -> str:
-            from mcrcon import MCRcon
-
-            with MCRcon(
+            return _rcon_command(
                 self._settings.minecraft_rcon_host,
+                self._settings.minecraft_rcon_port,
                 self._settings.minecraft_rcon_password,
-                port=self._settings.minecraft_rcon_port,
-            ) as mcr:
-                return mcr.command(command)
+                command,
+            )
 
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, _sync_command)
