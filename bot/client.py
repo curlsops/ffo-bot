@@ -12,6 +12,7 @@ from bot.cache.memory import InMemoryCache
 from bot.processors.media_downloader import MediaDownloader
 from bot.processors.phrase_matcher import PhraseMatcher
 from bot.processors.voice_transcriber import VoiceTranscriber
+from bot.services.minecraft_rcon import MinecraftRCONClient
 from bot.utils.metrics import BotMetrics
 from bot.utils.notifier import AdminNotifier
 from bot.utils.rate_limiter import RateLimiter
@@ -40,6 +41,7 @@ class FFOBot(commands.Bot):
         self.permission_checker: Optional[PermissionChecker] = None
         self.rate_limiter: Optional[RateLimiter] = None
         self.notifier: Optional[AdminNotifier] = None
+        self.minecraft_rcon: Optional[MinecraftRCONClient] = None
         self._shutdown_event = asyncio.Event()
         self._health_server: Optional[web.AppRunner] = None
 
@@ -74,6 +76,8 @@ class FFOBot(commands.Bot):
             server_capacity=self.settings.rate_limit_server_capacity,
         )
         self.notifier = AdminNotifier(self)
+        if self.settings.feature_minecraft_whitelist:
+            self.minecraft_rcon = MinecraftRCONClient(self.settings)
         self.tree.on_error = self._on_app_command_error
 
         await self._start_health_server()
@@ -95,6 +99,14 @@ class FFOBot(commands.Bot):
             "bot.tasks.giveaway_manager",
             "bot.tasks.status_rotator",
         ]
+        if self.settings.feature_quotebook:
+            extensions.append("bot.commands.quotebook")
+        if self.settings.feature_conversion:
+            extensions.append("bot.commands.convert")
+        if self.settings.feature_minecraft_whitelist:
+            extensions.append("bot.commands.whitelist")
+        if self.settings.feature_faq:
+            extensions.append("bot.commands.faq")
 
         for extension in extensions:
             try:

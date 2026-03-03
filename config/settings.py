@@ -53,6 +53,24 @@ class Settings(BaseSettings):
     feature_voice_transcription: bool = Field(
         default=False, description="Transcribe voice messages (requires OPENAI_API_KEY)"
     )
+    feature_quotebook: bool = Field(default=True, description="Enable quotebook submissions")
+    feature_conversion: bool = Field(
+        default=False, description="Auto currency/measurement conversion"
+    )
+    feature_minecraft_whitelist: bool = Field(
+        default=False, description="Enable Minecraft whitelist via RCON"
+    )
+    feature_faq: bool = Field(default=True, description="Enable FAQ commands")
+
+    # Minecraft RCON (when feature_minecraft_whitelist is enabled)
+    # Host: K8s service DNS (e.g. minecraft.discord.svc.cluster.local) or external IP/hostname
+    minecraft_rcon_host: Optional[str] = Field(
+        default=None, description="Minecraft server host for RCON"
+    )
+    minecraft_rcon_port: int = Field(default=25575, description="RCON port (default 25575)")
+    minecraft_rcon_password: Optional[str] = Field(
+        default=None, description="RCON password (from secret)"
+    )
 
     @field_validator("log_level")
     @classmethod
