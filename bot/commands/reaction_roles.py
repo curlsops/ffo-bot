@@ -14,6 +14,12 @@ logger = logging.getLogger(__name__)
 MESSAGE_LINK_RE = re.compile(r"discord\.com/channels/(\d+)/(\d+)/(\d+)")
 
 
+def _invalidate_reaction_role_cache(cache, server_id: int, message_id: int, emoji: str) -> None:
+    if cache:
+        cache.delete(f"reaction_role:{server_id}:{message_id}:{emoji}")
+        cache.delete(f"reactionrole_list:{server_id}")
+
+
 def _parse_message_ref(s: str, guild_id: int, channel_id: int) -> Optional[tuple[int, int]]:
     s = s.strip()
     m = MESSAGE_LINK_RE.search(s)
@@ -104,6 +110,9 @@ class ReactionRoleCommands(commands.Cog):
                     interaction.user.id,
                 )
 
+            _invalidate_reaction_role_cache(
+                self.bot.cache, interaction.guild_id, message_id, str(emoji)
+            )
             await interaction.followup.send(
                 f"Reaction role added: {emoji} → {role.mention}",
                 ephemeral=True,
@@ -163,6 +172,9 @@ class ReactionRoleCommands(commands.Cog):
                 )
                 return
 
+            _invalidate_reaction_role_cache(
+                self.bot.cache, interaction.guild_id, message_id, str(emoji)
+            )
             channel = self.bot.get_channel(channel_id)
             if channel:
                 try:
@@ -194,16 +206,22 @@ class ReactionRoleCommands(commands.Cog):
             return
 
         try:
-            async with self.bot.db_pool.acquire() as conn:
-                rows = await conn.fetch(
-                    """
-                    SELECT message_id, channel_id, emoji, role_id
-                    FROM reaction_roles
-                    WHERE server_id = $1 AND is_active = true
-                    ORDER BY channel_id, message_id
-                    """,
-                    interaction.guild_id,
-                )
+            cache_key = f"reactionrole_list:{interaction.guild_id}"
+            rows = self.bot.cache.get(cache_key) if self.bot.cache else None
+            if rows is None:
+                async with self.bot.db_pool.acquire() as conn:
+                    rows = await conn.fetch(
+                        """
+                        SELECT message_id, channel_id, emoji, role_id
+                        FROM reaction_roles
+                        WHERE server_id = $1 AND is_active = true
+                        ORDER BY channel_id, message_id
+                        """,
+                        interaction.guild_id,
+                    )
+                rows = [dict(r) for r in rows]
+                if self.bot.cache:
+                    self.bot.cache.set(cache_key, rows, ttl=300)
 
             if not rows:
                 await interaction.followup.send(

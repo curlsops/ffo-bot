@@ -8,21 +8,32 @@ import discord
 logger = logging.getLogger(__name__)
 
 
+CACHE_KEY = "notify_channel:{server_id}"
+
+
 class AdminNotifier:
     def __init__(self, bot):
         self.bot = bot
 
     async def get_notify_channel_id(self, server_id: int) -> Optional[int]:
+        cache_key = CACHE_KEY.format(server_id=server_id)
+        if self.bot.cache:
+            cached = self.bot.cache.get(cache_key)
+            if cached is not None:
+                return None if cached == -1 else cached
         async with self.bot.db_pool.acquire() as conn:
             row = await conn.fetchrow("SELECT config FROM servers WHERE server_id = $1", server_id)
         if not row or not row["config"]:
-            return None
-        config = row["config"]
-        if not isinstance(config, dict):
-            return None
-        if channel_id := config.get("notify_channel_id"):
-            return int(channel_id)
-        return None
+            result = None
+        elif not isinstance(row["config"], dict):
+            result = None
+        elif channel_id := row["config"].get("notify_channel_id"):
+            result = int(channel_id)
+        else:
+            result = None
+        if self.bot.cache:
+            self.bot.cache.set(cache_key, result if result is not None else -1, ttl=300)
+        return result
 
     async def get_notify_channel(self, server_id: int) -> Optional[discord.TextChannel]:
         channel_id = await self.get_notify_channel_id(server_id)
@@ -50,6 +61,8 @@ class AdminNotifier:
                         "UPDATE servers SET config = config - 'notify_channel_id', updated_at = NOW() WHERE server_id = $1",
                         server_id,
                     )
+            if self.bot.cache:
+                self.bot.cache.delete(CACHE_KEY.format(server_id=server_id))
             return True
         except Exception:
             logger.exception("Failed to set notify channel")

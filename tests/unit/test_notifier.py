@@ -9,7 +9,9 @@ from bot.utils.notifier import AdminNotifier
 
 @pytest.fixture
 def bot():
-    return MagicMock(db_pool=MagicMock())
+    b = MagicMock(db_pool=MagicMock())
+    b.cache = None
+    return b
 
 
 @pytest.fixture
@@ -56,6 +58,42 @@ class TestGetNotifyChannelId:
         bot.db_pool.acquire.return_value = _db_ctx(conn)
         result = await notifier.get_notify_channel_id(999)
         assert result == expected
+
+    @pytest.mark.asyncio
+    async def test_cache_hit_returns_value(self, notifier, bot):
+        bot.cache = MagicMock()
+        bot.cache.get.return_value = 456
+        result = await notifier.get_notify_channel_id(999)
+        assert result == 456
+        bot.db_pool.acquire.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_cache_hit_sentinel_returns_none(self, notifier, bot):
+        bot.cache = MagicMock()
+        bot.cache.get.return_value = -1
+        result = await notifier.get_notify_channel_id(999)
+        assert result is None
+        bot.db_pool.acquire.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_cache_miss_sets_cache(self, notifier, bot):
+        bot.cache = MagicMock()
+        bot.cache.get.return_value = None
+        conn = _conn_with_config({"notify_channel_id": 789})
+        bot.db_pool.acquire.return_value = _db_ctx(conn)
+        result = await notifier.get_notify_channel_id(999)
+        assert result == 789
+        bot.cache.set.assert_called_once_with("notify_channel:999", 789, ttl=300)
+
+    @pytest.mark.asyncio
+    async def test_cache_miss_none_sets_sentinel(self, notifier, bot):
+        bot.cache = MagicMock()
+        bot.cache.get.return_value = None
+        conn = _conn_with_config(None)
+        bot.db_pool.acquire.return_value = _db_ctx(conn)
+        result = await notifier.get_notify_channel_id(999)
+        assert result is None
+        bot.cache.set.assert_called_once_with("notify_channel:999", -1, ttl=300)
 
 
 class TestGetNotifyChannel:
@@ -114,6 +152,14 @@ class TestSetNotifyChannel:
             conn.execute = AsyncMock(side_effect=Exception())
         bot.db_pool.acquire.return_value = _db_ctx(conn)
         assert await notifier.set_notify_channel(999, channel_id) is expected
+
+    @pytest.mark.asyncio
+    async def test_invalidates_cache(self, notifier, bot):
+        conn = AsyncMock()
+        bot.db_pool.acquire.return_value = _db_ctx(conn)
+        bot.cache = MagicMock()
+        assert await notifier.set_notify_channel(999, 123) is True
+        bot.cache.delete.assert_called_once_with("notify_channel:999")
 
 
 class TestSend:

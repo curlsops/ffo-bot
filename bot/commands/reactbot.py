@@ -13,6 +13,14 @@ from config.constants import Role
 logger = logging.getLogger(__name__)
 
 
+CACHE_REACTBOT_PHRASES = "reactbot_phrases:{server_id}"
+
+
+def _invalidate_reactbot_cache(cache, server_id: int) -> None:
+    if cache:
+        cache.delete(CACHE_REACTBOT_PHRASES.format(server_id=server_id))
+
+
 async def _reactbot_phrase_autocomplete(
     interaction: discord.Interaction, current: str
 ) -> list[app_commands.Choice[str]]:
@@ -20,13 +28,19 @@ async def _reactbot_phrase_autocomplete(
         return []
     try:
         bot = interaction.client
-        async with bot.db_pool.acquire() as conn:
-            rows = await conn.fetch(
-                """SELECT phrase, emoji FROM phrase_reactions
-                   WHERE server_id = $1 AND is_active = true
-                   ORDER BY match_count DESC LIMIT 25""",
-                interaction.guild_id,
-            )
+        cache_key = CACHE_REACTBOT_PHRASES.format(server_id=interaction.guild_id)
+        rows = bot.cache.get(cache_key) if bot.cache else None
+        if rows is None:
+            async with bot.db_pool.acquire() as conn:
+                rows = await conn.fetch(
+                    """SELECT phrase, emoji FROM phrase_reactions
+                       WHERE server_id = $1 AND is_active = true
+                       ORDER BY match_count DESC LIMIT 25""",
+                    interaction.guild_id,
+                )
+            rows = [dict(r) for r in rows]
+            if bot.cache:
+                bot.cache.set(cache_key, rows, ttl=300)
         choices = []
         for row in rows:
             phrase = row["phrase"]
@@ -113,6 +127,7 @@ class ReactBotCommands(commands.Cog):
                     interaction.user.id,
                 )
             self.bot.phrase_matcher.invalidate_cache(interaction.guild_id)
+            _invalidate_reactbot_cache(self.bot.cache, interaction.guild_id)
             await interaction.followup.send(f"✅ Added: `{phrase}` → {emoji}", ephemeral=True)
             if self.bot.metrics:
                 self.bot.metrics.commands_executed.labels(
@@ -140,11 +155,17 @@ class ReactBotCommands(commands.Cog):
     async def reactbot_list(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
         try:
-            async with self.bot.db_pool.acquire() as conn:
-                rows = await conn.fetch(
-                    "SELECT phrase, emoji, match_count FROM phrase_reactions WHERE server_id = $1 AND is_active = true ORDER BY match_count DESC",
-                    interaction.guild_id,
-                )
+            cache_key = CACHE_REACTBOT_PHRASES.format(server_id=interaction.guild_id)
+            rows = self.bot.cache.get(cache_key) if self.bot.cache else None
+            if rows is None:
+                async with self.bot.db_pool.acquire() as conn:
+                    rows = await conn.fetch(
+                        "SELECT phrase, emoji, match_count FROM phrase_reactions WHERE server_id = $1 AND is_active = true ORDER BY match_count DESC",
+                        interaction.guild_id,
+                    )
+                rows = [dict(r) for r in rows]
+                if self.bot.cache:
+                    self.bot.cache.set(cache_key, rows, ttl=300)
             if not rows:
                 await interaction.followup.send("No phrase reactions configured.", ephemeral=True)
                 return
@@ -182,6 +203,7 @@ class ReactBotCommands(commands.Cog):
                 await interaction.followup.send(f"❌ Not found: `{phrase}`", ephemeral=True)
                 return
             self.bot.phrase_matcher.invalidate_cache(interaction.guild_id)
+            _invalidate_reactbot_cache(self.bot.cache, interaction.guild_id)
             await interaction.followup.send(f"✅ Removed: `{phrase}`", ephemeral=True)
         except Exception as e:
             logger.error("reactbot_remove error: %s", e, exc_info=True)

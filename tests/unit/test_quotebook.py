@@ -10,6 +10,7 @@ from bot.commands.quotebook import QuotebookCommands
 @pytest.fixture
 def mock_bot():
     bot = MagicMock()
+    bot.cache = None
     bot.permission_checker.check_role = AsyncMock(return_value=True)
     bot.db_pool.acquire = MagicMock()
     return bot
@@ -144,6 +145,17 @@ class TestQuoteDelete:
         i = _interaction()
         await cog.quote_delete.callback(cog, i, "bad-id")
         i.followup.send.assert_awaited_with("Invalid quote ID.", ephemeral=True)
+
+
+class TestQuoteSubmitVariants:
+    @pytest.mark.parametrize("text", ["Short", "A" * 100, "Unicode: 日本語"])
+    @pytest.mark.asyncio
+    async def test_submit_various_text(self, cog, text):
+        conn = AsyncMock(execute=AsyncMock())
+        cog.bot.db_pool.acquire.return_value = _db_ctx(conn)
+        i = _interaction()
+        await cog.quote_submit.callback(cog, i, text, None)
+        conn.execute.assert_awaited_once()
 
 
 class TestQuoteRandom:

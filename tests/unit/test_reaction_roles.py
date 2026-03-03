@@ -42,6 +42,7 @@ class TestParseMessageRef:
 @pytest.fixture
 def mock_bot():
     bot = MagicMock()
+    bot.cache = None
     bot.permission_checker.check_role = AsyncMock(return_value=True)
     bot.db_pool = _db_ctx(AsyncMock())
     return bot

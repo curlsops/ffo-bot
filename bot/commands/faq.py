@@ -16,6 +16,16 @@ MAX_QUESTION_LEN = 200
 MAX_TOPIC_LEN = 100
 MAX_TOPICS = 25
 
+CACHE_FAQ_TOPICS = "faq_topics:{server_id}"
+CACHE_FAQ_ENTRY = "faq_entry:{server_id}:{topic}"
+
+
+def _invalidate_faq_cache(cache, server_id: int, topic: str | None = None) -> None:
+    if cache:
+        cache.delete(CACHE_FAQ_TOPICS.format(server_id=server_id))
+        if topic:
+            cache.delete(CACHE_FAQ_ENTRY.format(server_id=server_id, topic=topic))
+
 
 async def _faq_topic_autocomplete(
     interaction: discord.Interaction, current: str
@@ -24,16 +34,21 @@ async def _faq_topic_autocomplete(
         return []
     try:
         bot = interaction.client
-        async with bot.db_pool.acquire() as conn:
-            rows = await conn.fetch(
-                """
-                SELECT topic FROM faq_entries
-                WHERE server_id = $1
-                ORDER BY sort_order, topic
-                LIMIT 25
-                """,
-                interaction.guild_id,
-            )
+        cache_key = CACHE_FAQ_TOPICS.format(server_id=interaction.guild_id)
+        rows = bot.cache.get(cache_key) if bot.cache else None
+        if rows is None:
+            async with bot.db_pool.acquire() as conn:
+                rows = await conn.fetch(
+                    """
+                    SELECT topic FROM faq_entries
+                    WHERE server_id = $1
+                    ORDER BY sort_order, topic
+                    """,
+                    interaction.guild_id,
+                )
+            rows = [dict(r) for r in rows]
+            if bot.cache:
+                bot.cache.set(cache_key, rows, ttl=300)
         choices = [
             app_commands.Choice(name=r["topic"], value=r["topic"])
             for r in rows
@@ -73,53 +88,64 @@ class FAQCommands(commands.Cog):
             return
 
         try:
-            async with self.bot.db_pool.acquire() as conn:
-                if topic:
-                    topic_key = topic.strip().lower()
-                    row = await conn.fetchrow(
-                        """
-                        SELECT question, answer FROM faq_entries
-                        WHERE server_id = $1 AND topic = $2
-                        """,
-                        interaction.guild_id,
-                        topic_key,
-                    )
-                    if not row:
-                        await interaction.followup.send(
-                            f"No FAQ entry for **{topic}**. Use `/faq` with no topic to list.",
-                            ephemeral=True,
+            topic_key = topic.strip().lower() if topic else None
+            if topic_key:
+                cache_key = CACHE_FAQ_ENTRY.format(server_id=interaction.guild_id, topic=topic_key)
+                row = self.bot.cache.get(cache_key) if self.bot.cache else None
+                if row is None:
+                    async with self.bot.db_pool.acquire() as conn:
+                        row = await conn.fetchrow(
+                            """
+                            SELECT question, answer FROM faq_entries
+                            WHERE server_id = $1 AND topic = $2
+                            """,
+                            interaction.guild_id,
+                            topic_key,
                         )
-                        return
-                    embed = discord.Embed(
-                        title=row["question"][:256],
-                        description=row["answer"][:MAX_ANSWER_LEN],
-                        color=discord.Color.blue(),
+                    if row and self.bot.cache:
+                        self.bot.cache.set(cache_key, dict(row), ttl=300)
+                if not row:
+                    await interaction.followup.send(
+                        f"No FAQ entry for **{topic}**. Use `/faq` with no topic to list.",
+                        ephemeral=True,
                     )
-                    embed.set_footer(text=f"FAQ • {topic}")
-                    await interaction.followup.send(embed=embed, ephemeral=True)
-                else:
-                    rows = await conn.fetch(
-                        """
-                        SELECT topic FROM faq_entries
-                        WHERE server_id = $1
-                        ORDER BY sort_order, topic
-                        """,
-                        interaction.guild_id,
-                    )
-                    if not rows:
-                        await interaction.followup.send(
-                            "No FAQ entries yet. Admins can add them with `/faq_add`.",
-                            ephemeral=True,
+                    return
+                embed = discord.Embed(
+                    title=row["question"][:256],
+                    description=row["answer"][:MAX_ANSWER_LEN],
+                    color=discord.Color.blue(),
+                )
+                embed.set_footer(text=f"FAQ • {topic}")
+                await interaction.followup.send(embed=embed, ephemeral=True)
+            else:
+                cache_key = CACHE_FAQ_TOPICS.format(server_id=interaction.guild_id)
+                rows = self.bot.cache.get(cache_key) if self.bot.cache else None
+                if rows is None:
+                    async with self.bot.db_pool.acquire() as conn:
+                        rows = await conn.fetch(
+                            """
+                            SELECT topic FROM faq_entries
+                            WHERE server_id = $1
+                            ORDER BY sort_order, topic
+                            """,
+                            interaction.guild_id,
                         )
-                        return
-                    lines = [f"• **{r['topic']}**" for r in rows]
-                    embed = discord.Embed(
-                        title="FAQ Topics",
-                        description="\n".join(lines)[:4096],
-                        color=discord.Color.blue(),
+                    if self.bot.cache:
+                        self.bot.cache.set(cache_key, [dict(r) for r in rows], ttl=300)
+                if not rows:
+                    await interaction.followup.send(
+                        "No FAQ entries yet. Admins can add them with `/faq_add`.",
+                        ephemeral=True,
                     )
-                    embed.set_footer(text="Use /faq topic:<name> to view")
-                    await interaction.followup.send(embed=embed, ephemeral=True)
+                    return
+                lines = [f"• **{r['topic']}**" for r in rows]
+                embed = discord.Embed(
+                    title="FAQ Topics",
+                    description="\n".join(lines)[:4096],
+                    color=discord.Color.blue(),
+                )
+                embed.set_footer(text="Use /faq topic:<name> to view")
+                await interaction.followup.send(embed=embed, ephemeral=True)
         except Exception as e:
             logger.error("faq error: %s", e, exc_info=True)
             await interaction.followup.send("Error fetching FAQ.", ephemeral=True)
@@ -182,6 +208,7 @@ class FAQCommands(commands.Cog):
                     question,
                     answer,
                 )
+            _invalidate_faq_cache(self.bot.cache, interaction.guild_id, topic)
             await interaction.followup.send(f"FAQ **{topic}** added/updated.", ephemeral=True)
         except Exception as e:
             logger.error("faq_add error: %s", e, exc_info=True)
@@ -246,6 +273,7 @@ class FAQCommands(commands.Cog):
                     interaction.guild_id,
                     topic,
                 )
+            _invalidate_faq_cache(self.bot.cache, interaction.guild_id, topic)
             await interaction.followup.send(f"FAQ **{topic}** updated.", ephemeral=True)
         except Exception as e:
             logger.error("faq_edit error: %s", e, exc_info=True)
@@ -280,6 +308,7 @@ class FAQCommands(commands.Cog):
             if "DELETE 0" in result:
                 await interaction.followup.send(f"No FAQ entry for **{topic}**.", ephemeral=True)
                 return
+            _invalidate_faq_cache(self.bot.cache, interaction.guild_id, topic)
             await interaction.followup.send(f"FAQ **{topic}** deleted.", ephemeral=True)
         except Exception as e:
             logger.error("faq_delete error: %s", e, exc_info=True)

@@ -13,6 +13,16 @@ from config.constants import Role
 
 logger = logging.getLogger(__name__)
 
+CACHE_QUOTE_AUTOCOMPLETE = "quotebook_autocomplete:{server_id}"
+CACHE_QUOTE_PENDING = "quotebook_pending:{server_id}"
+CACHE_QUOTE_APPROVED = "quotebook_approved:{server_id}"
+
+
+def _invalidate_quotebook_cache(cache, server_id: int) -> None:
+    if cache:
+        for key in (CACHE_QUOTE_AUTOCOMPLETE, CACHE_QUOTE_PENDING, CACHE_QUOTE_APPROVED):
+            cache.delete(key.format(server_id=server_id))
+
 
 async def _quote_id_autocomplete(
     interaction: discord.Interaction, current: str
@@ -21,17 +31,23 @@ async def _quote_id_autocomplete(
         return []
     try:
         bot = interaction.client
-        async with bot.db_pool.acquire() as conn:
-            rows = await conn.fetch(
-                """
-                SELECT id, quote_text, approved
-                FROM quotebook
-                WHERE server_id = $1
-                ORDER BY approved, created_at DESC
-                LIMIT 25
-                """,
-                interaction.guild_id,
-            )
+        cache_key = CACHE_QUOTE_AUTOCOMPLETE.format(server_id=interaction.guild_id)
+        rows = bot.cache.get(cache_key) if bot.cache else None
+        if rows is None:
+            async with bot.db_pool.acquire() as conn:
+                rows = await conn.fetch(
+                    """
+                    SELECT id, quote_text, approved
+                    FROM quotebook
+                    WHERE server_id = $1
+                    ORDER BY approved, created_at DESC
+                    LIMIT 25
+                    """,
+                    interaction.guild_id,
+                )
+            rows = [dict(r) for r in rows]
+            if bot.cache:
+                bot.cache.set(cache_key, rows, ttl=60)
         choices = []
         for r in rows:
             sid = str(r["id"])
@@ -92,6 +108,7 @@ class QuotebookCommands(commands.Cog):
                     interaction.user.id,
                     attr,
                 )
+            _invalidate_quotebook_cache(self.bot.cache, interaction.guild_id)
             await interaction.followup.send(
                 "Quote submitted! An admin will review it.",
                 ephemeral=True,
@@ -109,17 +126,23 @@ class QuotebookCommands(commands.Cog):
             return
 
         try:
-            async with self.bot.db_pool.acquire() as conn:
-                rows = await conn.fetch(
-                    """
-                    SELECT id, quote_text, submitter_id, attribution, created_at
-                    FROM quotebook
-                    WHERE server_id = $1 AND approved = false
-                    ORDER BY created_at DESC
-                    LIMIT 15
-                    """,
-                    interaction.guild_id,
-                )
+            cache_key = CACHE_QUOTE_PENDING.format(server_id=interaction.guild_id)
+            rows = self.bot.cache.get(cache_key) if self.bot.cache else None
+            if rows is None:
+                async with self.bot.db_pool.acquire() as conn:
+                    rows = await conn.fetch(
+                        """
+                        SELECT id, quote_text, submitter_id, attribution, created_at
+                        FROM quotebook
+                        WHERE server_id = $1 AND approved = false
+                        ORDER BY created_at DESC
+                        LIMIT 15
+                        """,
+                        interaction.guild_id,
+                    )
+                rows = [dict(r) for r in rows]
+                if self.bot.cache:
+                    self.bot.cache.set(cache_key, rows, ttl=60)
 
             if not rows:
                 await interaction.followup.send("No pending quotes.", ephemeral=True)
@@ -172,6 +195,7 @@ class QuotebookCommands(commands.Cog):
                 )
                 return
 
+            _invalidate_quotebook_cache(self.bot.cache, interaction.guild_id)
             await interaction.followup.send("Quote approved!", ephemeral=True)
         except Exception as e:
             logger.error("quote_approve error: %s", e, exc_info=True)
@@ -200,6 +224,7 @@ class QuotebookCommands(commands.Cog):
                     qid,
                     interaction.guild_id,
                 )
+            _invalidate_quotebook_cache(self.bot.cache, interaction.guild_id)
             await interaction.followup.send("Quote deleted.", ephemeral=True)
         except Exception as e:
             logger.error("quote_delete error: %s", e, exc_info=True)
@@ -211,15 +236,21 @@ class QuotebookCommands(commands.Cog):
         await interaction.response.defer()
 
         try:
-            async with self.bot.db_pool.acquire() as conn:
-                rows = await conn.fetch(
-                    """
-                    SELECT quote_text, attribution
-                    FROM quotebook
-                    WHERE server_id = $1 AND approved = true
-                    """,
-                    interaction.guild_id,
-                )
+            cache_key = CACHE_QUOTE_APPROVED.format(server_id=interaction.guild_id)
+            rows = self.bot.cache.get(cache_key) if self.bot.cache else None
+            if rows is None:
+                async with self.bot.db_pool.acquire() as conn:
+                    rows = await conn.fetch(
+                        """
+                        SELECT quote_text, attribution
+                        FROM quotebook
+                        WHERE server_id = $1 AND approved = true
+                        """,
+                        interaction.guild_id,
+                    )
+                rows = [dict(r) for r in rows]
+                if self.bot.cache:
+                    self.bot.cache.set(cache_key, rows, ttl=60)
 
             if not rows:
                 await interaction.followup.send("No quotes in the book yet.", ephemeral=True)
