@@ -1,6 +1,6 @@
 <p align="center">
   <h1 align="center">FFO Discord Bot</h1>
-  <p align="center">Giveaways, automated reactions, reaction roles, media archival.</p>
+  <p align="center">Giveaways, automated reactions, reaction roles, Minecraft whitelist, unit conversion, and more.</p>
 </p>
 
 <p align="center">
@@ -52,6 +52,10 @@ https://discord.com/api/oauth2/authorize?client_id=YOUR_CLIENT_ID&permissions=27
 | 🎉 Giveaways | Role requirements, bonus entries, private prize threads |
 | 🤖 Reactions | Regex patterns → auto-reactions |
 | 👥 Reaction Roles | Self-service role assignment |
+| 📖 Quotebook | Submit and approve quotes with `/quote` commands |
+| ❓ FAQ | Admin-managed FAQ topics with `/faq` |
+| 📏 Unit Conversion | Auto-converts imperial units to SI in chat |
+| ⛏️ Minecraft | Whitelist management via RCON with UUID validation |
 | 📁 Media | Optional archival (disabled by default) |
 | 🔐 Permissions | Super admin, admin, moderator roles |
 | 📊 Metrics | `/metrics` on port 8080 (Prometheus) |
@@ -60,13 +64,25 @@ https://discord.com/api/oauth2/authorize?client_id=YOUR_CLIENT_ID&permissions=27
 
 ## Config
 
-| Variable | Default |
-|----------|---------|
-| `HEALTH_CHECK_PORT` | 8080 |
-| `FEATURE_MEDIA_DOWNLOAD` | false |
-| `FEATURE_GIVEAWAYS` | true |
-| `FEATURE_REACTION_ROLES` | true |
-| `FEATURE_VOICE_TRANSCRIPTION` | false |
+| Variable | Default | Description |
+|----------|---------|-------------|
+| `HEALTH_CHECK_PORT` | 8080 | Health/metrics port |
+| `FEATURE_GIVEAWAYS` | true | Enable giveaway commands |
+| `FEATURE_REACTION_ROLES` | true | Enable reaction role setup |
+| `FEATURE_QUOTEBOOK` | false | Enable quote submissions |
+| `FEATURE_FAQ` | false | Enable FAQ commands |
+| `FEATURE_CONVERSION` | false | Auto-convert imperial to SI |
+| `FEATURE_MINECRAFT_WHITELIST` | false | Enable MC whitelist commands |
+| `FEATURE_MEDIA_DOWNLOAD` | false | Archive media links |
+| `FEATURE_VOICE_TRANSCRIPTION` | false | Transcribe voice messages |
+
+### Minecraft RCON (optional)
+
+| Variable | Description |
+|----------|-------------|
+| `MINECRAFT_RCON_HOST` | RCON server address |
+| `MINECRAFT_RCON_PORT` | RCON port (default 25575) |
+| `MINECRAFT_RCON_PASSWORD` | RCON password |
 
 Endpoints: `/healthz`, `/readyz`, `/metrics`
 
@@ -74,15 +90,15 @@ Endpoints: `/healthz`, `/readyz`, `/metrics`
 
 ## Roadmap
 
-| Feature | Issue |
-|---------|-------|
-| Quotebook submissions | [#92](https://github.com/curlsops/ffo-bot/issues/92) |
-| Minecraft FAQ & whitelist management | [#93](https://github.com/curlsops/ffo-bot/issues/93) |
-| Voice transcription (mobile audio) | [#94](https://github.com/curlsops/ffo-bot/issues/94) |
-| Currency & measurement conversion | [#95](https://github.com/curlsops/ffo-bot/issues/95) |
-| Polls with more options | [#96](https://github.com/curlsops/ffo-bot/issues/96) |
-| Reaction roles (Arcane replacement) | [#98](https://github.com/curlsops/ffo-bot/issues/98) |
-| Ticketing system | [#97](https://github.com/curlsops/ffo-bot/issues/97) |
+| Feature | Status |
+|---------|--------|
+| Quotebook submissions | ✅ Done |
+| FAQ system | ✅ Done |
+| Unit conversion | ✅ Done |
+| Minecraft whitelist (RCON) | ✅ Done |
+| Reaction roles | ✅ Done |
+| Voice transcription | 🚧 In progress |
+| Ticketing system | 📋 Planned |
 
 ---
 
