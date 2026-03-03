@@ -74,6 +74,8 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository }}:edge
             ghcr.io/${{ github.repository }}:edge-${{ steps.sha.outputs.short }}
+          build-args: |
+            FFO_BOT_VERSION=edge-${{ steps.sha.outputs.short }}
           labels: |
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
