@@ -1,5 +1,3 @@
-"""Database utilities for transient error handling and timeouts."""
-
 import asyncio
 
 import asyncpg

@@ -1,5 +1,3 @@
-"""Extended tests for config constants."""
-
 import pytest
 
 from config.constants import AuditAction, Constants, FileType, Role

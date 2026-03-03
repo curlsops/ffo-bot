@@ -1,5 +1,3 @@
-"""Minecraft whitelist commands via RCON (mod+)."""
-
 import logging
 
 import discord

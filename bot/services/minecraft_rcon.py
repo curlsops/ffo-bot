@@ -1,9 +1,3 @@
-"""Minecraft RCON client for whitelist management.
-
-Implements RCON protocol directly using sockets with timeout support,
-avoiding signal-based timeouts that don't work in thread pools.
-"""
-
 import asyncio
 import logging
 import re
@@ -64,8 +58,6 @@ def _rcon_command(host: str, port: int, password: str, command: str, timeout: fl
 
 
 class MinecraftRCONClient:
-    """Async wrapper for Minecraft RCON commands using socket-based implementation."""
-
     def __init__(self, settings: Settings):
         self._settings = settings
 
@@ -102,11 +94,6 @@ class MinecraftRCONClient:
 
 
 def parse_whitelist_list_response(response: str) -> list[str]:
-    """Parse Minecraft whitelist list output into usernames.
-
-    Handles: "There are N whitelisted players: a, b, c"
-    or "There is 1 whitelisted player: a" or "There are 0 whitelisted players: "
-    """
     response = response.strip()
     m = re.search(r":\s*(.+)$", response, re.DOTALL)
     if not m:

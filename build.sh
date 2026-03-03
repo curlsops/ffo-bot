@@ -53,10 +53,10 @@ else
     echo "✓ Flake8 passed"
 fi
 
-# Run tests
+# Run tests (full suite including Docker RCON integration tests)
 echo ""
-echo "Running tests..."
-pytest tests/ -v --cov=bot --cov=config --cov=database --cov-report=term --cov-report=html
+echo "Running tests (full suite including Docker RCON)..."
+pytest tests/ -v --cov=bot --cov=config --cov=database --cov-report=term --cov-report=html -m "slow or not slow"
 
 echo ""
 echo "✓ All tests passed"

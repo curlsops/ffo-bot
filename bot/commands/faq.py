@@ -1,5 +1,3 @@
-"""FAQ commands: list topics, show Q&A. Admin: add, edit, delete."""
-
 import logging
 
 import discord

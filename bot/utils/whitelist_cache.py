@@ -1,5 +1,3 @@
-"""Whitelist cache - sync from RCON, store in DB for autocomplete."""
-
 import logging
 from typing import TYPE_CHECKING, Optional
 
@@ -91,15 +89,6 @@ async def sync_from_rcon(
     batch_fetch=None,
     cache: Optional["InMemoryCache"] = None,
 ) -> bool:
-    """Sync whitelist from RCON to database.
-
-    Args:
-        db_pool: Database connection pool
-        server_id: Discord server ID
-        rcon_client: RCON client instance
-        fetch_uuid: Optional single-username lookup function (deprecated, use batch_fetch)
-        batch_fetch: Optional batch lookup function (usernames) -> {lowercase_name: (uuid, name)}
-    """
     try:
         resp = await rcon_client.whitelist_list()
         usernames = parse_whitelist_list_response(resp)

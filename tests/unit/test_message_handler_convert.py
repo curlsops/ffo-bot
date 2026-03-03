@@ -1,5 +1,3 @@
-"""TDD tests for message handler unit conversion."""
-
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
