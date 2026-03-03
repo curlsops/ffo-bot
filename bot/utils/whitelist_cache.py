@@ -59,21 +59,43 @@ async def remove_from_cache(db_pool, server_id: int, username: str) -> None:
         logger.warning("Failed to remove from whitelist cache: %s", e)
 
 
-async def sync_from_rcon(db_pool, server_id: int, rcon_client, fetch_uuid=None) -> bool:
+async def sync_from_rcon(
+    db_pool, server_id: int, rcon_client, fetch_uuid=None, batch_fetch=None
+) -> bool:
+    """Sync whitelist from RCON to database.
+
+    Args:
+        db_pool: Database connection pool
+        server_id: Discord server ID
+        rcon_client: RCON client instance
+        fetch_uuid: Optional single-username lookup function (deprecated, use batch_fetch)
+        batch_fetch: Optional batch lookup function (usernames) -> {lowercase_name: (uuid, name)}
+    """
     try:
         resp = await rcon_client.whitelist_list()
         usernames = parse_whitelist_list_response(resp)
+
+        uuid_map: dict[str, str] = {}
+        if batch_fetch:
+            try:
+                profiles = await batch_fetch(usernames)
+                uuid_map = {name: profile[0] for name, profile in profiles.items()}
+                logger.debug("Batch fetched %d/%d UUIDs", len(uuid_map), len(usernames))
+            except Exception as e:
+                logger.warning("Batch UUID fetch failed: %s", e)
+        elif fetch_uuid:
+            for username in usernames:
+                try:
+                    profile = await fetch_uuid(username)
+                    if profile:
+                        uuid_map[username.lower()] = profile[0]
+                except Exception as e:
+                    logger.debug("Could not fetch UUID for %s: %s", username, e)
+
         async with db_pool.acquire() as conn:
             await conn.execute("DELETE FROM whitelist_cache WHERE server_id = $1", server_id)
             for username in usernames:
-                uuid_val = None
-                if fetch_uuid:
-                    try:
-                        profile = await fetch_uuid(username)
-                        if profile:
-                            uuid_val = profile[0]
-                    except Exception as e:
-                        logger.debug("Could not fetch UUID for %s: %s", username, e)
+                uuid_val = uuid_map.get(username.lower())
                 await conn.execute(
                     """
                     INSERT INTO whitelist_cache (server_id, username, minecraft_uuid)

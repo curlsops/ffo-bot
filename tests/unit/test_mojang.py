@@ -5,10 +5,12 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from bot.services.mojang import (
+    _batch_lookup,
     _format_uuid,
     _get_profile_from_mojang,
     _get_profile_from_namemc,
     get_profile,
+    get_profiles_batch,
     username_exists,
 )
 
@@ -370,3 +372,133 @@ class TestUsernameExists:
                 mock_namemc.return_value = None
                 result = await username_exists("NonexistentUser")
                 assert result is False
+
+
+class TestBatchLookup:
+    @pytest.mark.asyncio
+    async def test_batch_lookup_200_success(self):
+        resp = make_response_mock(
+            200,
+            json_data=[
+                {"id": "069a79f444e94726a5befca90e38aaf5", "name": "Steve"},
+                {"id": "11111111222233334444555555555555", "name": "Alex"},
+            ],
+        )
+        ctx = MagicMock(
+            __aenter__=AsyncMock(return_value=resp), __aexit__=AsyncMock(return_value=None)
+        )
+
+        with patch("bot.services.mojang.aiohttp.ClientSession") as mock_cls:
+            mock_session = MagicMock()
+            mock_session.post.return_value = ctx
+            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
+
+            result = await _batch_lookup(["Steve", "Alex"])
+            assert "steve" in result
+            assert "alex" in result
+            assert result["steve"][0] == "069a79f4-44e9-4726-a5be-fca90e38aaf5"
+
+    @pytest.mark.asyncio
+    async def test_batch_lookup_429_tries_fallback(self):
+        resp1 = make_response_mock(429)
+        resp2 = make_response_mock(
+            200,
+            json_data=[{"id": "069a79f444e94726a5befca90e38aaf5", "name": "Steve"}],
+        )
+        ctx1 = MagicMock(
+            __aenter__=AsyncMock(return_value=resp1), __aexit__=AsyncMock(return_value=None)
+        )
+        ctx2 = MagicMock(
+            __aenter__=AsyncMock(return_value=resp2), __aexit__=AsyncMock(return_value=None)
+        )
+
+        with patch("bot.services.mojang.aiohttp.ClientSession") as mock_cls:
+            mock_session = MagicMock()
+            mock_session.post.side_effect = [ctx1, ctx2]
+            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
+
+            result = await _batch_lookup(["Steve"])
+            assert "steve" in result
+            assert mock_session.post.call_count == 2
+
+    @pytest.mark.asyncio
+    async def test_batch_lookup_client_error_returns_empty(self):
+        import aiohttp
+
+        with patch("bot.services.mojang.aiohttp.ClientSession") as mock_cls:
+            mock_session = MagicMock()
+            mock_session.post.side_effect = aiohttp.ClientError("Connection failed")
+            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
+
+            result = await _batch_lookup(["Steve"])
+            assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_batch_lookup_500_returns_empty(self):
+        resp = make_response_mock(500)
+        ctx = MagicMock(
+            __aenter__=AsyncMock(return_value=resp), __aexit__=AsyncMock(return_value=None)
+        )
+
+        with patch("bot.services.mojang.aiohttp.ClientSession") as mock_cls:
+            mock_session = MagicMock()
+            mock_session.post.return_value = ctx
+            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
+
+            result = await _batch_lookup(["Steve"])
+            assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_batch_lookup_skips_incomplete_profiles(self):
+        resp = make_response_mock(
+            200,
+            json_data=[
+                {"id": "069a79f444e94726a5befca90e38aaf5", "name": "Steve"},
+                {"id": "", "name": "NoUuid"},
+                {"id": "11111111222233334444555555555555", "name": ""},
+                {"name": "MissingId"},
+            ],
+        )
+        ctx = MagicMock(
+            __aenter__=AsyncMock(return_value=resp), __aexit__=AsyncMock(return_value=None)
+        )
+
+        with patch("bot.services.mojang.aiohttp.ClientSession") as mock_cls:
+            mock_session = MagicMock()
+            mock_session.post.return_value = ctx
+            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
+
+            result = await _batch_lookup(["Steve", "NoUuid", "NoName", "MissingId"])
+            assert len(result) == 1
+            assert "steve" in result
+
+
+class TestGetProfilesBatch:
+    @pytest.mark.asyncio
+    async def test_empty_list_returns_empty(self):
+        result = await get_profiles_batch([])
+        assert result == {}
+
+    @pytest.mark.asyncio
+    async def test_batches_large_list(self):
+        with patch("bot.services.mojang._batch_lookup", new_callable=AsyncMock) as mock_batch:
+            mock_batch.return_value = {}
+            usernames = [f"user{i}" for i in range(25)]
+            await get_profiles_batch(usernames)
+            assert mock_batch.call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_combines_batch_results(self):
+        with patch("bot.services.mojang._batch_lookup", new_callable=AsyncMock) as mock_batch:
+            mock_batch.side_effect = [
+                {"steve": ("uuid1", "Steve")},
+                {"alex": ("uuid2", "Alex")},
+            ]
+            result = await get_profiles_batch([f"user{i}" for i in range(15)])
+            assert "steve" in result
+            assert "alex" in result

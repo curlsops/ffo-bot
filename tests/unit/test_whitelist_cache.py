@@ -198,3 +198,42 @@ async def test_sync_from_rcon_fetch_uuid_returns_none_and_raises(caplog):
     result = await sync_from_rcon(pool, 123, rcon, fetch_uuid=fetch_uuid)
     assert result is True
     assert "Could not fetch UUID" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_sync_from_rcon_with_batch_fetch():
+    conn = AsyncMock()
+    pool = make_pool(conn)
+    rcon = AsyncMock()
+    rcon.whitelist_list.return_value = "There are 2 whitelisted players: Steve, Alex"
+
+    async def batch_fetch(usernames):
+        return {
+            "steve": ("069a79f4-44e9-4726-a5be-fca90e38aaf5", "Steve"),
+            "alex": ("11111111-2222-3333-4444-555555555555", "Alex"),
+        }
+
+    result = await sync_from_rcon(pool, 123, rcon, batch_fetch=batch_fetch)
+    assert result is True
+    assert conn.execute.call_count >= 3
+    insert_calls = [c for c in conn.execute.call_args_list if "INSERT" in str(c)]
+    assert any("069a79f4-44e9-4726-a5be-fca90e38aaf5" in str(c) for c in insert_calls)
+    assert any("11111111-2222-3333-4444-555555555555" in str(c) for c in insert_calls)
+
+
+@pytest.mark.asyncio
+async def test_sync_from_rcon_batch_fetch_exception(caplog):
+    import logging
+
+    caplog.set_level(logging.WARNING, logger="bot.utils.whitelist_cache")
+    conn = AsyncMock()
+    pool = make_pool(conn)
+    rcon = AsyncMock()
+    rcon.whitelist_list.return_value = "There are 1 whitelisted player: Steve"
+
+    async def batch_fetch(usernames):
+        raise ValueError("API error")
+
+    result = await sync_from_rcon(pool, 123, rcon, batch_fetch=batch_fetch)
+    assert result is True
+    assert "Batch UUID fetch failed" in caplog.text

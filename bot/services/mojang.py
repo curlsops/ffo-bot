@@ -14,7 +14,11 @@ logger = logging.getLogger(__name__)
 
 PROFILE_URL = "https://api.minecraftservices.com/minecraft/profile/lookup/name/{username}"
 FALLBACK_URL = "https://api.mojang.com/minecraft/profile/lookup/name/{username}"
+BATCH_URL = "https://api.minecraftservices.com/minecraft/profile/lookup/bulk/byname"
+BATCH_FALLBACK_URL = "https://api.mojang.com/profiles/minecraft"
 NAMEMC_PROFILE_URL = "https://namemc.com/profile/{username}"
+
+BATCH_SIZE = 10
 
 # Regex to extract UUID from NameMC profile page meta tags or data attributes
 NAMEMC_UUID_PATTERN = re.compile(r'data-id="([a-f0-9-]{32,36})"', re.IGNORECASE)
@@ -110,3 +114,49 @@ async def username_exists(username: str) -> bool:
     if namemc_result:
         return True
     return False
+
+
+async def get_profiles_batch(usernames: list[str]) -> dict[str, tuple[str, str]]:
+    if not usernames:
+        return {}
+
+    results: dict[str, tuple[str, str]] = {}
+    remaining = list(usernames)
+
+    for batch_start in range(0, len(remaining), BATCH_SIZE):
+        batch = remaining[batch_start : batch_start + BATCH_SIZE]
+        batch_results = await _batch_lookup(batch)
+        results.update(batch_results)
+
+    return results
+
+
+async def _batch_lookup(usernames: list[str]) -> dict[str, tuple[str, str]]:
+    results: dict[str, tuple[str, str]] = {}
+
+    for url in (BATCH_URL, BATCH_FALLBACK_URL):
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    url,
+                    json=usernames,
+                    headers={"Content-Type": "application/json"},
+                    timeout=aiohttp.ClientTimeout(total=15),
+                ) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        for profile in data:
+                            uuid_raw = profile.get("id") or profile.get("uuid")
+                            name = profile.get("name", "")
+                            if uuid_raw and name:
+                                results[name.lower()] = (_format_uuid(uuid_raw), name)
+                        return results
+                    if resp.status in (403, 429):
+                        logger.debug("Batch API %s, trying fallback", resp.status)
+                        continue
+                    logger.warning("Batch API unexpected status %s", resp.status)
+        except aiohttp.ClientError as e:  # pragma: no branch
+            logger.debug("Batch API request failed: %s", e)
+            continue
+
+    return results

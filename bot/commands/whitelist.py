@@ -34,8 +34,10 @@ async def _whitelist_username_autocomplete(
         return []
     usernames = await get_cached_usernames(bot.db_pool, interaction.guild_id)
     if not usernames and bot.minecraft_rcon._is_configured():
+        from bot.services.mojang import get_profiles_batch
+
         await sync_from_rcon(
-            bot.db_pool, interaction.guild_id, bot.minecraft_rcon, fetch_uuid=get_profile
+            bot.db_pool, interaction.guild_id, bot.minecraft_rcon, batch_fetch=get_profiles_batch
         )
         usernames = await get_cached_usernames(bot.db_pool, interaction.guild_id)
     cur = current.lower()
@@ -219,11 +221,13 @@ class WhitelistCommands(commands.Cog):
                 ephemeral=True,
             )
             return
+        from bot.services.mojang import get_profiles_batch
+
         success = await sync_from_rcon(
             self.bot.db_pool,
             interaction.guild_id,
             self.bot.minecraft_rcon,
-            fetch_uuid=get_profile,
+            batch_fetch=get_profiles_batch,
         )
         if success:
             count = len(await get_cached_usernames(self.bot.db_pool, interaction.guild_id))
