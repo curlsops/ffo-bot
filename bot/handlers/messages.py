@@ -168,10 +168,11 @@ class MessageHandler(commands.Cog):
         try:
             si = detect_and_convert(message.content)
             if si:
-                await message.reply(
-                    f"I think {message.author.display_name} meant to say: **{si}**\n"
-                    f"*[SI units](https://en.wikipedia.org/wiki/International_System_of_Units)*"
+                embed = discord.Embed(
+                    description=f"≈ **{si}**",
+                    color=0x5865F2,
                 )
+                await message.reply(embed=embed, mention_author=False)
         except Exception as e:
             logger.warning("Unit conversion error: %s", e)
 
