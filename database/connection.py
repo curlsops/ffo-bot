@@ -14,8 +14,6 @@ def _query_type(query: str) -> str:
 
 
 class _MetricsConnection:
-    """Wraps asyncpg connection to record query duration."""
-
     def __init__(self, conn: asyncpg.Connection, pool: "DatabasePool"):
         self._conn = conn
         self._pool = pool
@@ -60,8 +58,6 @@ class _MetricsConnection:
 
 
 class _MetricsAcquireContext:
-    """Wraps pool.acquire() to yield _MetricsConnection."""
-
     def __init__(self, raw_cm, pool: "DatabasePool"):
         self._raw_cm = raw_cm
         self._pool = pool

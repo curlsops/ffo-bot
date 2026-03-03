@@ -1,5 +1,3 @@
-"""Currency and measurement conversion."""
-
 import logging
 from typing import Optional
 

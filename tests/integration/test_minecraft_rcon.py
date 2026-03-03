@@ -1,21 +1,9 @@
-"""Integration tests for Minecraft RCON against a real Minecraft server container.
-
-Uses itzg/minecraft-server Docker image (https://docker-minecraft-server.readthedocs.io/).
-Server startup can take 60-120 seconds. Requires Docker and network access.
-
-Tests use rcon-cli (bundled in the container) via docker exec to avoid mcrcon's
-signal.SIGALRM limitation when run from thread pools. Validates:
-- Real Minecraft server whitelist commands
-- parse_whitelist_list_response with actual server output
-"""
-
 import pytest
 
 from bot.services.minecraft_rcon import parse_whitelist_list_response
 
 
 def _rcon_exec(container, command: str) -> str:
-    """Run rcon-cli command inside the Minecraft container. E.g. 'whitelist add TestPlayer'."""
     result = container.exec(["rcon-cli", command])
     output = result.output.decode("utf-8") if isinstance(result.output, bytes) else result.output
     return output.strip()
@@ -23,14 +11,15 @@ def _rcon_exec(container, command: str) -> str:
 
 @pytest.fixture(scope="module")
 def minecraft_container():
-    """Start a real Minecraft server container and wait for it to be ready."""
     from testcontainers.core.container import DockerContainer
     from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 
     # itzg/minecraft-server: RCON enabled by default, rcon-cli available
+    # ONLINE_MODE=false: skip Mojang validation so any username works (avoids "that player does not exist")
     container = (
         DockerContainer("itzg/minecraft-server:latest")
         .with_env("EULA", "TRUE")
+        .with_env("ONLINE_MODE", "false")
         .with_env("RCON_PASSWORD", "testrcon123")
         .with_env("MEMORY", "512M")
         .with_env("TYPE", "VANILLA")
@@ -53,7 +42,6 @@ VALID_USERS = ("pn55", "MrCurlsTV", "notch")
 @pytest.mark.integration
 @pytest.mark.slow
 def test_rcon_whitelist_add_list_remove(minecraft_container):
-    """Add a player via rcon-cli, list whitelist, then remove."""
     user = VALID_USERS[0]
     # Add player (must be valid Mojang username)
     add_resp = _rcon_exec(minecraft_container, f"whitelist add {user}")
@@ -77,7 +65,6 @@ def test_rcon_whitelist_add_list_remove(minecraft_container):
 @pytest.mark.integration
 @pytest.mark.slow
 def test_rcon_whitelist_list_empty(minecraft_container):
-    """List whitelist when empty."""
     list_resp = _rcon_exec(minecraft_container, "whitelist list")
     usernames = parse_whitelist_list_response(list_resp)
     assert isinstance(usernames, list)
@@ -86,7 +73,6 @@ def test_rcon_whitelist_list_empty(minecraft_container):
 @pytest.mark.integration
 @pytest.mark.slow
 def test_rcon_whitelist_add_duplicate(minecraft_container):
-    """Adding same player twice - second add should indicate already whitelisted."""
     user = VALID_USERS[1]
     _rcon_exec(minecraft_container, f"whitelist add {user}")
     dup_resp = _rcon_exec(minecraft_container, f"whitelist add {user}")
@@ -99,7 +85,6 @@ def test_rcon_whitelist_add_duplicate(minecraft_container):
 @pytest.mark.integration
 @pytest.mark.slow
 def test_rcon_whitelist_multiple_users(minecraft_container):
-    """Add multiple users, verify list, remove all."""
     for user in VALID_USERS:
         add_resp = _rcon_exec(minecraft_container, f"whitelist add {user}")
         assert "added" in add_resp.lower() or "already" in add_resp.lower()

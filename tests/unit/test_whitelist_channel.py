@@ -1,5 +1,3 @@
-"""Tests for whitelist channel utilities."""
-
 import logging
 from unittest.mock import AsyncMock, MagicMock
 

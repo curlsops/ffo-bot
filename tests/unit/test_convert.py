@@ -1,5 +1,3 @@
-"""TDD tests for convert command."""
-
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest

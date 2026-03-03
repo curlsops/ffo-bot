@@ -1,5 +1,3 @@
-"""Whitelist channel config (servers.config.whitelist_channel_id)."""
-
 import json
 import logging
 from typing import TYPE_CHECKING, Optional

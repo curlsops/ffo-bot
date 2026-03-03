@@ -1,5 +1,3 @@
-"""Additional edge-case tests for InputValidator."""
-
 import pytest
 
 from bot.utils.validation import InputValidator, ValidationError

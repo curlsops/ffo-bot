@@ -1,5 +1,3 @@
-"""TDD tests for quotebook commands."""
-
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest

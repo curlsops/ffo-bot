@@ -1,5 +1,3 @@
-"""Tests for Minecraft RCON client."""
-
 import struct
 from unittest.mock import MagicMock, patch
 

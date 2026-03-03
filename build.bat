@@ -44,10 +44,10 @@ isort --check-only bot/ config/ database/ main.py
 
 echo ✓ All linters passed
 
-REM Run tests
+REM Run tests (full suite including Docker RCON integration tests)
 echo.
-echo Running tests...
-pytest tests/ -v --cov=bot --cov=config --cov=database --cov-report=term --cov-report=html
+echo Running tests (full suite including Docker RCON)...
+pytest tests/ -v --cov=bot --cov=config --cov=database --cov-report=term --cov-report=html -m "slow or not slow"
 
 echo.
 echo ✓ All tests passed

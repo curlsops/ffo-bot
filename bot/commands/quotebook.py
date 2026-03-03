@@ -1,5 +1,3 @@
-"""Quotebook commands: submit, approve, random."""
-
 import logging
 import random
 from uuid import UUID

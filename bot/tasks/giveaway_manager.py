@@ -14,7 +14,6 @@ logger = logging.getLogger(__name__)
 
 
 def _parse_host_from_message(msg: discord.Message) -> int | None:
-    """Extract host user id from message content (first mention)."""
     if not msg.content:
         return None
     m = re.search(r"<@!?(\d+)>", msg.content)
@@ -22,8 +21,6 @@ def _parse_host_from_message(msg: discord.Message) -> int | None:
 
 
 class CloseGiveawayThreadView(discord.ui.View):
-    """Lock button to close and archive a giveaway prize thread. Host, server admins, or bot moderators."""
-
     def __init__(self, host_id: int, timeout: float = None):
         super().__init__(timeout=timeout)
         self.host_id = host_id
@@ -173,7 +170,6 @@ class GiveawayManager(commands.Cog):
     async def _create_prize_thread(
         self, channel: discord.TextChannel, giveaway: dict, winners: list
     ):
-        """Create a private thread for host + winners to handle prizes."""
         try:
             thread = await channel.create_thread(
                 name=giveaway["prize"][:80],

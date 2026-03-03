@@ -1,5 +1,3 @@
-"""Tests for Mojang API client with NameMC fallback."""
-
 import aiohttp
 from unittest.mock import AsyncMock, MagicMock, patch
 

@@ -1,9 +1,3 @@
-"""Mojang/Minecraft Services API client for username validation and profile lookup.
-
-Uses api.minecraftservices.com (primary) with api.mojang.com and NameMC fallbacks.
-Returns UUID and canonical username for whitelist storage.
-"""
-
 import logging
 import re
 from typing import Optional
@@ -87,14 +81,6 @@ async def _get_profile_from_namemc(username: str) -> Optional[tuple[str, str]]:
 
 
 async def get_profile(username: str) -> Optional[tuple[str, str]]:
-    """Fetch Minecraft profile (UUID, canonical name) from Mojang APIs with NameMC fallback.
-
-    Args:
-        username: Minecraft username (3-16 chars, alphanumeric + underscore)
-
-    Returns:
-        (uuid, name) if username exists, None otherwise. UUID is dashed format.
-    """
     result = await _get_profile_from_mojang(username)
     if result:
         return result
@@ -106,7 +92,6 @@ async def get_profile(username: str) -> Optional[tuple[str, str]]:
 
 
 async def username_exists(username: str) -> bool:
-    """Check if a Minecraft username exists via Mojang APIs with NameMC fallback."""
     result = await _get_profile_from_mojang(username)
     if result:
         return True

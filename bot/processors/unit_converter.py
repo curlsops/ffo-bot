@@ -1,5 +1,3 @@
-"""Auto-detect imperial/non-SI units and convert to SI."""
-
 import re
 from typing import Optional
 
@@ -102,7 +100,6 @@ def detect_and_convert(text: str) -> Optional[str]:
 
 
 def convert_in_text(text: str) -> Optional[str]:
-    """Convert all imperial units in text, returning the modified string."""
     result = text
     converted = False
 

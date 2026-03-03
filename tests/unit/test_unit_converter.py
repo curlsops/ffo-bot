@@ -1,5 +1,3 @@
-"""TDD tests for unit_converter processor."""
-
 import pytest
 
 from bot.processors.unit_converter import detect_and_convert

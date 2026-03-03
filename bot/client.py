@@ -30,8 +30,6 @@ logger = logging.getLogger(__name__)
 
 
 class MetricsCommandTree(app_commands.CommandTree):
-    """CommandTree that records commands_executed and command_duration metrics."""
-
     async def _call(self, interaction: discord.Interaction) -> None:
         start = time.perf_counter()
         command_name = "unknown"

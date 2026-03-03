@@ -1,5 +1,3 @@
-"""Tests for whitelist slash commands."""
-
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest

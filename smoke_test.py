@@ -1,6 +1,4 @@
 #!/usr/bin/env python3
-"""Smoke test: verify all key modules can be imported in the container."""
-
 import bot
 import config
 import database
