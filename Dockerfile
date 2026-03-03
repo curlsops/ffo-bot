@@ -47,7 +47,7 @@ COPY --from=builder --chown=discord:discord /root/.local /home/discord/.local
 COPY --chown=discord:discord bot/ ./bot/
 COPY --chown=discord:discord database/ ./database/
 COPY --chown=discord:discord config/ ./config/
-COPY --chown=discord:discord main.py .
+COPY --chown=discord:discord main.py smoke_test.py .
 COPY --chown=discord:discord alembic.ini .
 COPY --chown=discord:discord entrypoint.sh .
 RUN chmod +x entrypoint.sh

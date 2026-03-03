@@ -58,6 +58,12 @@ echo Building Docker image...
 docker build -t ffobot:test .
 echo ✓ Docker image built successfully
 
+REM Smoke test - verify container can import all modules
+echo.
+echo Running container smoke test...
+docker run --rm --entrypoint python ffobot:test smoke_test.py
+echo ✓ Container smoke test passed
+
 echo.
 echo 🎉 Build and test completed successfully!
 echo.

@@ -90,3 +90,6 @@ jobs:
           tags: ffobot:${{ github.sha }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
+
+      - name: Container smoke test
+        run: docker run --rm --entrypoint python ffobot:${{ github.sha }} smoke_test.py
