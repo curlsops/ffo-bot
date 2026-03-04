@@ -85,31 +85,22 @@ class PermissionsGroup(app_commands.Group):
 
         if not parts:
             await interaction.followup.send(
-                "No permissions configured. Use `/permissions role add` for per-user grants, or `/permissions role set` for Discord role mappings.",
+                "No permissions configured. Use `/permissions add` for per-user grants, or `/permissions set` for Discord role mappings.",
                 ephemeral=True,
             )
             return
         await interaction.followup.send("\n\n".join(parts), ephemeral=True)
 
 
-@app_commands.guild_only()
-@app_commands.default_permissions(administrator=True)
-class RoleGroup(app_commands.Group):
-    """User grants and Discord role mappings."""
-
-    def __init__(self, parent: PermissionsGroup):
-        super().__init__(name="role", description="User grants and Discord role config")
-        self.parent = parent
-
     @app_commands.command(name="add", description="Grant Admin or Moderator to a user")
     @app_commands.describe(user="User to grant role to", role="Role to grant")
     @app_commands.choices(role=ROLE_CHOICES)
     async def add_cmd(self, interaction: discord.Interaction, user: discord.User, role: str):
         await interaction.response.defer(ephemeral=True)
-        if not await self.parent._check_super_admin(interaction, "permissions role add"):
+        if not await self._check_super_admin(interaction, "permissions add"):
             return
         try:
-            async with self.parent.cog.bot.db_pool.acquire() as conn:
+            async with self.cog.bot.db_pool.acquire() as conn:
                 await conn.execute(
                     "INSERT INTO user_permissions (server_id, user_id, role, granted_by) VALUES ($1, $2, $3, $4) ON CONFLICT (server_id, user_id, role, is_active) WHERE is_active = true DO NOTHING",
                     interaction.guild_id,
@@ -117,12 +108,12 @@ class RoleGroup(app_commands.Group):
                     role,
                     interaction.user.id,
                 )
-            self.parent.cog.bot.permission_checker.invalidate_user_cache(
+            self.cog.bot.permission_checker.invalidate_user_cache(
                 interaction.guild_id, user.id
             )
             await interaction.followup.send(f"✅ Granted {role} to {user.mention}", ephemeral=True)
         except Exception as e:
-            logger.error("permissions role add error: %s", e, exc_info=True)
+            logger.error("permissions add error: %s", e, exc_info=True)
             await interaction.followup.send("❌ Error granting role.", ephemeral=True)
 
     @app_commands.command(name="remove", description="Revoke Admin or Moderator from a user")
@@ -130,10 +121,10 @@ class RoleGroup(app_commands.Group):
     @app_commands.choices(role=ROLE_CHOICES)
     async def remove_cmd(self, interaction: discord.Interaction, user: discord.User, role: str):
         await interaction.response.defer(ephemeral=True)
-        if not await self.parent._check_super_admin(interaction, "permissions role remove"):
+        if not await self._check_super_admin(interaction, "permissions remove"):
             return
         try:
-            async with self.parent.cog.bot.db_pool.acquire() as conn:
+            async with self.cog.bot.db_pool.acquire() as conn:
                 result = await conn.execute(
                     "UPDATE user_permissions SET is_active = false, revoked_at = NOW() WHERE server_id = $1 AND user_id = $2 AND role = $3 AND is_active = true",
                     interaction.guild_id,
@@ -145,14 +136,14 @@ class RoleGroup(app_commands.Group):
                     f"❌ {user.mention} doesn't have {role}.", ephemeral=True
                 )
                 return
-            self.parent.cog.bot.permission_checker.invalidate_user_cache(
+            self.cog.bot.permission_checker.invalidate_user_cache(
                 interaction.guild_id, user.id
             )
             await interaction.followup.send(
                 f"✅ Revoked {role} from {user.mention}", ephemeral=True
             )
         except Exception as e:
-            logger.error("permissions role remove error: %s", e, exc_info=True)
+            logger.error("permissions remove error: %s", e, exc_info=True)
             await interaction.followup.send("❌ Error revoking role.", ephemeral=True)
 
     @app_commands.command(
@@ -171,16 +162,16 @@ class RoleGroup(app_commands.Group):
         discord_role: discord.Role | None = None,
     ):
         await interaction.response.defer(ephemeral=True)
-        if not await self.parent._check_super_admin(interaction, "permissions role set"):
+        if not await self._check_super_admin(interaction, "permissions set"):
             return
-        await self.parent.cog.bot._register_server(interaction.guild)
+        await self.cog.bot._register_server(interaction.guild)
         role_enum = Role(level)
         success = await set_server_role(
-            self.parent.cog.bot.db_pool,
+            self.cog.bot.db_pool,
             interaction.guild_id,
             role_enum,
             discord_role.id if discord_role else None,
-            cache=self.parent.cog.bot.cache,
+            cache=self.cog.bot.cache,
         )
         if not success:
             await interaction.followup.send("❌ Failed to update.", ephemeral=True)
@@ -198,7 +189,6 @@ class PermissionCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.permissions_group = PermissionsGroup(self)
-        self.permissions_group.add_command(RoleGroup(self.permissions_group))
 
     async def cog_load(self):
         self.bot.tree.add_command(self.permissions_group)
