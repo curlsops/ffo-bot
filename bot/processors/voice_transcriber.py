@@ -1,5 +1,4 @@
 import logging
-from typing import Optional
 
 import aiohttp
 
@@ -9,7 +8,7 @@ SUPPORTED_CONTENT_TYPES = {"audio/ogg", "audio/opus", "audio/webm", "audio/mpeg"
 
 
 class VoiceTranscriber:
-    def __init__(self, api_key: Optional[str] = None):
+    def __init__(self, api_key: str | None = None):
         self.api_key = api_key
         self._enabled = bool(api_key)
 
@@ -17,7 +16,7 @@ class VoiceTranscriber:
     def enabled(self) -> bool:
         return self._enabled
 
-    def is_voice_attachment(self, filename: str, content_type: Optional[str]) -> bool:
+    def is_voice_attachment(self, filename: str, content_type: str | None) -> bool:
         fn_lower = filename.lower()
         if fn_lower.endswith((".ogg", ".opus", ".webm", ".mp3", ".wav", ".m4a")):
             return True
@@ -25,12 +24,13 @@ class VoiceTranscriber:
             return True
         return False
 
-    async def transcribe(self, url: str, filename: str) -> Optional[str]:
+    async def transcribe(self, url: str, filename: str) -> str | None:
         if not self._enabled:
             return None
 
         try:
-            async with aiohttp.ClientSession() as session:
+            timeout = aiohttp.ClientTimeout(total=30)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(url) as resp:
                     if resp.status != 200:
                         logger.warning("Voice fetch failed: %s", resp.status)
@@ -41,7 +41,7 @@ class VoiceTranscriber:
                 logger.warning("Voice message too large for transcription")
                 return None
 
-            async with aiohttp.ClientSession() as session:
+            async with aiohttp.ClientSession(timeout=timeout) as session:
                 form = aiohttp.FormData()
                 form.add_field("file", data, filename=filename)
                 form.add_field("model", "whisper-1")

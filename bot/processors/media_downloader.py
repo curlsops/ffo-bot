@@ -3,7 +3,6 @@ import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import List, Optional
 
 import aiofiles
 import aiohttp
@@ -27,7 +26,7 @@ class MediaDownloader:
         self.db_pool = db_pool
         self.storage_base = Path(storage_base_path)
         self.metrics = metrics
-        self.session: Optional[aiohttp.ClientSession] = None
+        self.session: aiohttp.ClientSession | None = None
 
     async def initialize(self):
         self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=300))
@@ -42,7 +41,7 @@ class MediaDownloader:
         channel_id: int,
         server_id: int,
         uploader_id: int,
-        attachments: List[MediaAttachment],
+        attachments: list[MediaAttachment],
     ):
         if not self.session:
             await self.initialize()
@@ -97,7 +96,7 @@ class MediaDownloader:
                         status="error",
                     ).inc()
 
-    def _get_file_type(self, content_type: Optional[str]) -> Optional[str]:
+    def _get_file_type(self, content_type: str | None) -> str | None:
         if not content_type:
             return None
         if content_type.startswith("image/gif"):

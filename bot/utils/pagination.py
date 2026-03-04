@@ -1,6 +1,15 @@
 import discord
 
+from config.constants import Constants
+
 PER_PAGE = 10
+DISCORD_LIMIT = Constants.DISCORD_MESSAGE_LIMIT
+
+
+def truncate_for_discord(content: str) -> str:
+    if len(content) <= DISCORD_LIMIT:
+        return content
+    return content[: DISCORD_LIMIT - 20] + "\n\n...(truncated)"
 
 
 class ListPaginatedView(discord.ui.View):
@@ -52,7 +61,7 @@ class ListPaginatedView(discord.ui.View):
         start = self.page * PER_PAGE
         chunk = self.rows[start : start + PER_PAGE]
         lines = [self.format_row(r) for r in chunk]
-        return self.header + "\n\n" + "\n".join(lines)
+        return truncate_for_discord(self.header + "\n\n" + "\n".join(lines))
 
     async def _prev_callback(self, interaction: discord.Interaction):
         if self.page <= 0:

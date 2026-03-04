@@ -3,7 +3,6 @@ import random
 import re
 import uuid
 from datetime import datetime, timedelta, timezone
-from typing import Optional
 
 import discord
 from discord import app_commands
@@ -11,6 +10,7 @@ from discord.ext import commands
 
 from bot.auth.permissions import PermissionContext
 from bot.utils.db import TRANSIENT_DB_ERRORS
+from bot.utils.pagination import truncate_for_discord
 from config.constants import Role
 
 logger = logging.getLogger(__name__)
@@ -36,8 +36,15 @@ GIVEAWAY_DURATIONS = [
 TIME_REGEX = re.compile(r"^(\d+)([smhdw])$", re.IGNORECASE)
 TIME_UNITS = {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}
 
+GIVEAWAY_COLUMNS = (
+    "id, server_id, channel_id, message_id, host_id, donor_id, prize, winners_count, "
+    "ends_at, started_at, ended_at, required_roles, blacklist_roles, bypass_roles, "
+    "bonus_roles, message_req, no_donor_win, no_defaults, ping, extra_text, image_url, "
+    "is_active, created_at, updated_at"
+)
 
-def parse_duration(duration: str) -> Optional[int]:
+
+def parse_duration(duration: str) -> int | None:
     match = TIME_REGEX.match(duration.strip())
     if not match:
         return None
@@ -84,7 +91,8 @@ async def _giveaway_message_id_autocomplete(
             if not current or current in mid or current.lower() in prize.lower():
                 choices.append(app_commands.Choice(name=label[:100], value=mid))
         return choices[:25]
-    except Exception:
+    except Exception as e:
+        logger.debug("Giveaway message autocomplete failed: %s", e)
         return []
 
 
@@ -136,7 +144,7 @@ PER_PAGE = 10
 
 
 class EntriesPaginatedView(discord.ui.View):
-    def __init__(self, rows: list, user_id: Optional[int] = None, timeout: float = 60):
+    def __init__(self, rows: list, user_id: int | None = None, timeout: float = 60):
         super().__init__(timeout=timeout)
         self.rows = rows
         self.user_id = user_id
@@ -187,7 +195,7 @@ class EntriesPaginatedView(discord.ui.View):
         chunk = self.rows[start : start + PER_PAGE]
         lines = [f"<@{r['user_id']}>" for r in chunk]
         body = "\n".join(lines)
-        return f"**Giveaway Participants**\n\n{body}"
+        return truncate_for_discord(f"**Giveaway Participants**\n\n{body}")
 
     def _update_buttons(self):
         self.page_btn.label = f"{self.page + 1}/{self.max_page + 1}"
@@ -269,7 +277,7 @@ class AlreadyJoinedView(discord.ui.View):
                     "SELECT COUNT(*) FROM giveaway_entries WHERE giveaway_id = $1", self.giveaway_id
                 )
                 giveaway = await conn.fetchrow(
-                    "SELECT * FROM giveaways WHERE id = $1", self.giveaway_id
+                    "SELECT " + GIVEAWAY_COLUMNS + " FROM giveaways WHERE id = $1", self.giveaway_id
                 )
             if giveaway:
                 view = GiveawayView(self.giveaway_id, self.bot, entry_count=count or 0)
@@ -389,7 +397,8 @@ class GiveawayView(discord.ui.View):
         try:
             async with self.bot.db_pool.acquire() as conn:
                 row = await conn.fetchrow(
-                    "SELECT * FROM giveaways WHERE message_id = $1", message_id
+                    "SELECT " + GIVEAWAY_COLUMNS + " FROM giveaways WHERE message_id = $1",
+                    message_id,
                 )
             if row and cache:
                 cache.set(cache_key, dict(row), ttl=300)
@@ -434,7 +443,8 @@ class GiveawayView(discord.ui.View):
                     entries,
                 )
                 return True
-            except Exception:
+            except Exception as e:
+                logger.debug("Add entry failed: %s", e)
                 return False
 
     async def _update_embed(self, message: discord.Message, giveaway_id: uuid.UUID):
@@ -442,13 +452,15 @@ class GiveawayView(discord.ui.View):
             count = await conn.fetchval(
                 "SELECT COUNT(*) FROM giveaway_entries WHERE giveaway_id = $1", giveaway_id
             )
-            giveaway = await conn.fetchrow("SELECT * FROM giveaways WHERE id = $1", giveaway_id)
+            giveaway = await conn.fetchrow(
+                "SELECT " + GIVEAWAY_COLUMNS + " FROM giveaways WHERE id = $1", giveaway_id
+            )
         if giveaway:
             try:
                 view = GiveawayView(giveaway_id, self.bot, entry_count=count or 0)
                 await message.edit(embed=build_embed(giveaway, count or 0), view=view)
-            except Exception:
-                pass
+            except Exception as e:
+                logger.debug("Update embed failed: %s", e)
 
 
 @app_commands.guild_only()
@@ -484,17 +496,17 @@ class GiveawayGroup(app_commands.Group):
         duration: str,
         winners: int,
         prize: str,
-        donor: Optional[discord.Member] = None,
-        required_roles: Optional[str] = None,
-        blacklist_roles: Optional[str] = None,
-        bypass_roles: Optional[str] = None,
-        bonus_roles: Optional[str] = None,
-        messages: Optional[str] = None,
+        donor: discord.Member | None = None,
+        required_roles: str | None = None,
+        blacklist_roles: str | None = None,
+        bypass_roles: str | None = None,
+        bonus_roles: str | None = None,
+        messages: str | None = None,
         nodonorwin: bool = False,
         ping: bool = False,
         nodefaults: bool = False,
-        extra_text: Optional[str] = None,
-        image: Optional[str] = None,
+        extra_text: str | None = None,
+        image: str | None = None,
     ):
         await interaction.response.defer()
         try:
@@ -591,7 +603,7 @@ class GiveawayGroup(app_commands.Group):
         count="Number of winners to reroll (default: all). Use when some winners didn't claim.",
     )
     async def reroll_cmd(
-        self, interaction: discord.Interaction, message_id: str, count: Optional[int] = None
+        self, interaction: discord.Interaction, message_id: str, count: int | None = None
     ):
         await interaction.response.defer(ephemeral=True)
         try:
@@ -608,7 +620,8 @@ class GiveawayGroup(app_commands.Group):
 
             async with self.cog.bot.db_pool.acquire() as conn:
                 giveaway = await conn.fetchrow(
-                    "SELECT * FROM giveaways WHERE message_id = $1", msg_id
+                    "SELECT " + GIVEAWAY_COLUMNS + " FROM giveaways WHERE message_id = $1",
+                    msg_id,
                 )
             if not giveaway:
                 await interaction.followup.send("Giveaway not found.", ephemeral=True)
@@ -719,7 +732,7 @@ class GiveawayCommands(commands.Cog):
             return False
         return True
 
-    def _parse_message_id(self, s: str) -> Optional[int]:
+    def _parse_message_id(self, s: str) -> int | None:
         s = s.strip()
         m = re.search(r"/(\d{17,20})$", s)
         if m:
@@ -744,12 +757,12 @@ class GiveawayCommands(commands.Cog):
                 break
         return winners
 
-    def _parse_roles(self, roles_str: Optional[str]) -> list:
+    def _parse_roles(self, roles_str: str | None) -> list:
         if not roles_str:
             return []
         return [int(m.group(1)) for m in re.finditer(r"<@&(\d+)>", roles_str)]
 
-    def _parse_bonus_roles(self, bonus_str: Optional[str]) -> dict:
+    def _parse_bonus_roles(self, bonus_str: str | None) -> dict:
         if not bonus_str:
             return {}
         bonus = {}
@@ -759,7 +772,7 @@ class GiveawayCommands(commands.Cog):
                 bonus[m.group(1)] = int(m.group(2))
         return bonus
 
-    def _parse_messages(self, messages_str: Optional[str]) -> Optional[dict]:
+    def _parse_messages(self, messages_str: str | None) -> dict | None:
         if not messages_str:
             return None
         parts = messages_str.split(",")

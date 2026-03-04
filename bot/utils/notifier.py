@@ -1,7 +1,6 @@
 import json
 import logging
 import traceback
-from typing import Optional
 
 import discord
 
@@ -15,7 +14,7 @@ class AdminNotifier:
     def __init__(self, bot):
         self.bot = bot
 
-    async def get_notify_channel_id(self, server_id: int) -> Optional[int]:
+    async def get_notify_channel_id(self, server_id: int) -> int | None:
         cache_key = CACHE_KEY.format(server_id=server_id)
         if self.bot.cache:
             cached = self.bot.cache.get(cache_key)
@@ -35,7 +34,7 @@ class AdminNotifier:
             self.bot.cache.set(cache_key, result if result is not None else -1, ttl=300)
         return result
 
-    async def get_notify_channel(self, server_id: int) -> Optional[discord.TextChannel]:
+    async def get_notify_channel(self, server_id: int) -> discord.TextChannel | None:
         channel_id = await self.get_notify_channel_id(server_id)
         if not channel_id:
             return None
@@ -47,7 +46,7 @@ class AdminNotifier:
                 logger.warning("Could not fetch notify channel %s", channel_id)
         return ch
 
-    async def set_notify_channel(self, server_id: int, channel_id: Optional[int]) -> bool:
+    async def set_notify_channel(self, server_id: int, channel_id: int | None) -> bool:
         try:
             async with self.bot.db_pool.acquire() as conn:
                 if channel_id:
@@ -106,8 +105,8 @@ class AdminNotifier:
         server_id: int,
         error: Exception,
         context: str,
-        user_id: Optional[int] = None,
-        channel_id: Optional[int] = None,
+        user_id: int | None = None,
+        channel_id: int | None = None,
     ):
         embed = discord.Embed(
             title="Error", description=f"**{context}**", color=discord.Color.red()

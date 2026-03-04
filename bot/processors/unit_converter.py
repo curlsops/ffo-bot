@@ -1,5 +1,4 @@
 import re
-from typing import Optional
 
 # Imperial -> SI conversions
 LENGTH_SI = {"m": 1, "km": 1000, "cm": 0.01, "mm": 0.001}
@@ -92,14 +91,14 @@ PATTERNS = [
 ]
 
 
-def detect_and_convert(text: str) -> Optional[str]:
+def detect_and_convert(text: str) -> str | None:
     result = convert_in_text(text)
     if result and result != text:
         return result
     return None
 
 
-def convert_in_text(text: str) -> Optional[str]:
+def convert_in_text(text: str) -> str | None:
     result = text
     converted = False
 

@@ -24,7 +24,8 @@ class StatusRotator(commands.Cog):
 
     async def _fetch_joke(self):
         try:
-            async with aiohttp.ClientSession() as session:
+            timeout = aiohttp.ClientTimeout(total=10)
+            async with aiohttp.ClientSession(timeout=timeout) as session:
                 async with session.get(
                     DAD_JOKE_API, headers={"Accept": "application/json"}
                 ) as resp:
@@ -33,7 +34,8 @@ class StatusRotator(commands.Cog):
                     data = await resp.json()
                     joke = data.get("joke", "").strip()
                     return joke or None
-        except Exception:
+        except Exception as e:
+            logger.debug("Status rotator joke fetch failed: %s", e)
             return None
 
     @tasks.loop(hours=1)
@@ -45,8 +47,8 @@ class StatusRotator(commands.Cog):
             joke = joke[: MAX_ACTIVITY_LEN - 3] + "..."
         try:
             await self.bot.change_presence(activity=discord.CustomActivity(name=joke))
-        except Exception:
-            pass
+        except Exception as e:
+            logger.debug("Status rotator change_presence failed: %s", e)
 
     @rotate_status.before_loop
     async def before_rotate(self):

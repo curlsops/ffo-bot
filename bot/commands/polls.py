@@ -1,7 +1,6 @@
 import logging
 import re
 from datetime import timedelta
-from typing import Optional
 
 import discord
 from discord import app_commands
@@ -25,7 +24,7 @@ async def _poll_duration_autocomplete(
     return matches if matches else [app_commands.Choice(name=d, value=d) for d in POLL_DURATIONS]
 
 
-def _parse_duration(s: str) -> Optional[timedelta]:
+def _parse_duration(s: str) -> timedelta | None:
     m = re.match(r"^(\d+)([mhd])$", s.strip().lower())
     if not m:
         return None

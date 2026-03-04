@@ -2,7 +2,7 @@
 
 import json
 import logging
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from config.constants import Role
 
@@ -22,7 +22,7 @@ ROLE_KEYS = {
 
 
 async def get_server_role_ids(
-    db_pool, server_id: int, cache: Optional["InMemoryCache"] = None
+    db_pool, server_id: int, cache: "InMemoryCache | None" = None
 ) -> dict[Role, int]:
     """Return configured Discord role IDs for each bot role. Empty dict if none."""
     cache_key = CACHE_KEY.format(server_id=server_id)
@@ -56,9 +56,9 @@ async def set_server_role(
     db_pool,
     server_id: int,
     role: Role,
-    discord_role_id: Optional[int],
-    cache: Optional["InMemoryCache"] = None,
-    server_name: Optional[str] = None,
+    discord_role_id: int | None,
+    cache: "InMemoryCache | None" = None,
+    server_name: str | None = None,
 ) -> bool:
     """Set or clear a Discord role mapping for a bot role."""
     key = ROLE_KEYS.get(role)

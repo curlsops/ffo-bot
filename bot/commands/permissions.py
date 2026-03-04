@@ -5,6 +5,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from bot.auth.permissions import PermissionContext
+from bot.utils.pagination import truncate_for_discord
 from bot.utils.server_roles import get_server_role_ids, set_server_role
 from config.constants import Role
 
@@ -39,6 +40,38 @@ def _role_members(guild: discord.Guild, role_ids: dict) -> list[tuple[int, Role]
     return sorted(user_highest.items(), key=lambda x: (-x[1].hierarchy, x[0]))
 
 
+def _make_perm_nav_buttons(view: "PermissionsListView") -> tuple[discord.ui.Button, ...]:
+    toggle = discord.ui.Button(
+        label="User Mapped" if view.mode == "role" else "Role Mapped",
+        style=discord.ButtonStyle.primary,
+        custom_id="perm:toggle",
+        row=0,
+    )
+    toggle.callback = view._toggle_callback
+    prev_btn = discord.ui.Button(
+        label="◀",
+        style=discord.ButtonStyle.secondary,
+        custom_id="perm:prev",
+        row=0,
+    )
+    prev_btn.callback = view._prev_callback
+    page_btn = discord.ui.Button(
+        label="1/1",
+        style=discord.ButtonStyle.success,
+        custom_id="perm:page",
+        disabled=True,
+        row=0,
+    )
+    next_btn = discord.ui.Button(
+        label="▶",
+        style=discord.ButtonStyle.secondary,
+        custom_id="perm:next",
+        row=0,
+    )
+    next_btn.callback = view._next_callback
+    return toggle, prev_btn, page_btn, next_btn
+
+
 class PermissionsListView(discord.ui.View):
     def __init__(
         self,
@@ -55,42 +88,11 @@ class PermissionsListView(discord.ui.View):
         self.page = 0
         self._max_page = 0
         self._update_max_page()
-
-        toggle = discord.ui.Button(
-            label="User Mapped" if self.mode == "role" else "Role Mapped",
-            style=discord.ButtonStyle.primary,
-            custom_id="perm:toggle",
-            row=0,
-        )
-        toggle.callback = self._toggle_callback
-        self.add_item(toggle)
-
-        prev_btn = discord.ui.Button(
-            label="◀",
-            style=discord.ButtonStyle.secondary,
-            custom_id="perm:prev",
-            row=0,
-        )
-        prev_btn.callback = self._prev_callback
-        self.add_item(prev_btn)
-
-        self.page_btn = discord.ui.Button(
-            label="1/1",
-            style=discord.ButtonStyle.success,
-            custom_id="perm:page",
-            disabled=True,
-            row=0,
-        )
-        self.add_item(self.page_btn)
-
-        next_btn = discord.ui.Button(
-            label="▶",
-            style=discord.ButtonStyle.secondary,
-            custom_id="perm:next",
-            row=0,
-        )
-        next_btn.callback = self._next_callback
-        self.add_item(next_btn)
+        self.page_btn = None
+        for btn in _make_perm_nav_buttons(self):
+            if btn.custom_id == "perm:page":
+                self.page_btn = btn
+            self.add_item(btn)
         self._update_buttons()
 
     def _update_max_page(self):
@@ -126,7 +128,7 @@ class PermissionsListView(discord.ui.View):
                 for r in chunk
             ]
         body = "\n".join(lines) if lines else "*(none)*"
-        return header + body
+        return truncate_for_discord(header + body)
 
     def _update_buttons(self):
         self.page_btn.label = f"{self.page + 1}/{self._max_page + 1}"

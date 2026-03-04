@@ -1,6 +1,5 @@
 import logging
 import re
-from typing import Optional
 
 import aiohttp
 
@@ -26,7 +25,7 @@ def _format_uuid(uuid_raw: str) -> str:
     return str(uuid_raw)
 
 
-async def _get_profile_from_mojang(username: str) -> Optional[tuple[str, str]]:
+async def _get_profile_from_mojang(username: str) -> tuple[str, str] | None:
     for url_template in (PROFILE_URL, FALLBACK_URL):
         url = url_template.format(username=username)
         try:
@@ -52,7 +51,7 @@ async def _get_profile_from_mojang(username: str) -> Optional[tuple[str, str]]:
     return None
 
 
-async def _get_profile_from_namemc(username: str) -> Optional[tuple[str, str]]:
+async def _get_profile_from_namemc(username: str) -> tuple[str, str] | None:
     url = NAMEMC_PROFILE_URL.format(username=username)
     try:
         async with aiohttp.ClientSession() as session:
@@ -80,7 +79,7 @@ async def _get_profile_from_namemc(username: str) -> Optional[tuple[str, str]]:
         return None
 
 
-async def get_profile(username: str) -> Optional[tuple[str, str]]:
+async def get_profile(username: str) -> tuple[str, str] | None:
     result = await _get_profile_from_mojang(username)
     if result:
         return result

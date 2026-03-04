@@ -2,7 +2,7 @@
 
 import json
 import logging
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 if TYPE_CHECKING:
     from bot.cache.memory import InMemoryCache
@@ -13,8 +13,8 @@ CACHE_KEY = "quotebook_channel:{server_id}"
 
 
 async def get_quotebook_channel_id(
-    db_pool, server_id: int, cache: Optional["InMemoryCache"] = None
-) -> Optional[int]:
+    db_pool, server_id: int, cache: "InMemoryCache | None" = None
+) -> int | None:
     cache_key = CACHE_KEY.format(server_id=server_id)
     if cache:
         cached = cache.get(cache_key)
@@ -42,8 +42,8 @@ async def get_quotebook_channel_id(
 async def set_quotebook_channel(
     db_pool,
     server_id: int,
-    channel_id: Optional[int],
-    cache: Optional["InMemoryCache"] = None,
+    channel_id: int | None,
+    cache: "InMemoryCache | None" = None,
 ) -> bool:
     try:
         async with db_pool.acquire() as conn:

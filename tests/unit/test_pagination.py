@@ -2,7 +2,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from bot.utils.pagination import PER_PAGE, ListPaginatedView
+from bot.utils.pagination import PER_PAGE, ListPaginatedView, truncate_for_discord
 
 
 def _fmt(x):
@@ -76,3 +76,11 @@ class TestListPaginatedView:
 
         assert view.page == 0
         interaction.response.edit_message.assert_not_awaited()
+
+    def test_truncate_when_over_limit(self):
+        short = "hello"
+        assert truncate_for_discord(short) == short
+        long_content = "x" * 2500
+        result = truncate_for_discord(long_content)
+        assert len(result) <= 2000
+        assert result.endswith("...(truncated)")

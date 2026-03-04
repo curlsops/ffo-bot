@@ -1,5 +1,4 @@
 import logging
-from typing import Optional
 
 import discord
 from discord.ext import commands
@@ -176,9 +175,7 @@ class ReactionHandler(commands.Cog):
             if self.bot.metrics:
                 self.bot.metrics.errors_total.labels(error_type="role_removal").inc()
 
-    async def _get_reaction_role(
-        self, server_id: int, message_id: int, emoji: str
-    ) -> Optional[int]:
+    async def _get_reaction_role(self, server_id: int, message_id: int, emoji: str) -> int | None:
         cache_key = f"reaction_role:{server_id}:{message_id}:{emoji}"
         cached = self.bot.cache.get(cache_key) if self.bot.cache else None
         if cached is not None:

@@ -7,6 +7,7 @@ import discord
 from discord.ext import commands, tasks
 
 from bot.auth.permissions import PermissionContext
+from bot.commands.giveaway import GIVEAWAY_COLUMNS
 from bot.utils.db import TRANSIENT_DB_ERRORS
 from config.constants import Role
 
@@ -92,7 +93,9 @@ class GiveawayManager(commands.Cog):
         try:
             async with self.bot.db_pool.acquire() as conn:
                 expired = await conn.fetch(
-                    "SELECT * FROM giveaways WHERE is_active = true AND ends_at <= $1",
+                    "SELECT "
+                    + GIVEAWAY_COLUMNS
+                    + " FROM giveaways WHERE is_active = true AND ends_at <= $1",
                     datetime.now(timezone.utc),
                 )
             for g in expired:

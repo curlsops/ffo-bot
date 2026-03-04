@@ -1,5 +1,5 @@
 import logging
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from bot.services.minecraft_rcon import parse_whitelist_list_response
 
@@ -11,13 +11,13 @@ logger = logging.getLogger(__name__)
 CACHE_KEY_WHITELIST = "whitelist_usernames:{server_id}"
 
 
-def _invalidate_whitelist_cache(cache: Optional["InMemoryCache"], server_id: int) -> None:
+def _invalidate_whitelist_cache(cache: "InMemoryCache | None", server_id: int) -> None:
     if cache:
         cache.delete(CACHE_KEY_WHITELIST.format(server_id=server_id))
 
 
 async def get_cached_usernames(
-    db_pool, server_id: int, cache: Optional["InMemoryCache"] = None
+    db_pool, server_id: int, cache: "InMemoryCache | None" = None
 ) -> list[str]:
     if cache:
         cached = cache.get(CACHE_KEY_WHITELIST.format(server_id=server_id))
@@ -42,9 +42,9 @@ async def add_to_cache(
     db_pool,
     server_id: int,
     username: str,
-    added_by: Optional[int] = None,
-    minecraft_uuid: Optional[str] = None,
-    cache: Optional["InMemoryCache"] = None,
+    added_by: int | None = None,
+    minecraft_uuid: str | None = None,
+    cache: "InMemoryCache | None" = None,
 ) -> None:
     try:
         async with db_pool.acquire() as conn:
@@ -67,7 +67,7 @@ async def add_to_cache(
 
 
 async def remove_from_cache(
-    db_pool, server_id: int, username: str, cache: Optional["InMemoryCache"] = None
+    db_pool, server_id: int, username: str, cache: "InMemoryCache | None" = None
 ) -> None:
     try:
         async with db_pool.acquire() as conn:
@@ -87,7 +87,7 @@ async def sync_from_rcon(
     rcon_client,
     fetch_uuid=None,
     batch_fetch=None,
-    cache: Optional["InMemoryCache"] = None,
+    cache: "InMemoryCache | None" = None,
 ) -> bool:
     try:
         resp = await rcon_client.whitelist_list()

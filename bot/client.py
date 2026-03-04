@@ -4,7 +4,7 @@ import asyncio
 import logging
 import sys
 import time
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 import discord
 from aiohttp import web
@@ -70,18 +70,18 @@ class FFOBot(commands.Bot):
         )
 
         self.settings = settings
-        self.db_pool: Optional[DatabasePool] = None
-        self.cache: Optional[InMemoryCache] = None
-        self.metrics: Optional[BotMetrics] = None
-        self.phrase_matcher: Optional[PhraseMatcher] = None
-        self.media_downloader: Optional[MediaDownloader] = None
-        self.voice_transcriber: Optional[VoiceTranscriber] = None
-        self.permission_checker: Optional[PermissionChecker] = None
-        self.rate_limiter: Optional[RateLimiter] = None
-        self.notifier: Optional[AdminNotifier] = None
-        self.minecraft_rcon: Optional[MinecraftRCONClient] = None
+        self.db_pool: DatabasePool | None = None
+        self.cache: InMemoryCache | None = None
+        self.metrics: BotMetrics | None = None
+        self.phrase_matcher: PhraseMatcher | None = None
+        self.media_downloader: MediaDownloader | None = None
+        self.voice_transcriber: VoiceTranscriber | None = None
+        self.permission_checker: PermissionChecker | None = None
+        self.rate_limiter: RateLimiter | None = None
+        self.notifier: AdminNotifier | None = None
+        self.minecraft_rcon: MinecraftRCONClient | None = None
         self._shutdown_event = asyncio.Event()
-        self._health_server: Optional[web.AppRunner] = None
+        self._health_server: web.AppRunner | None = None
 
     async def setup_hook(self):
         logger.info("Initializing...")
@@ -279,7 +279,7 @@ class FFOBot(commands.Bot):
         if self.notifier and (server_id := self._extract_server_id(args)):
             await self.notifier.notify_error(server_id, error, f"Event: {event_method}")
 
-    def _extract_server_id(self, args) -> Optional[int]:
+    def _extract_server_id(self, args) -> int | None:
         for arg in args:
             if hasattr(arg, "guild") and arg.guild:
                 return arg.guild.id

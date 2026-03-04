@@ -1,7 +1,7 @@
 import json
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING, Optional
+from typing import TYPE_CHECKING
 
 from bot.utils.db import TRANSIENT_DB_ERRORS
 from config.constants import Role
@@ -20,7 +20,7 @@ def _log_audit_failure(e: Exception) -> None:
 class PermissionContext:
     server_id: int
     user_id: int
-    command_name: Optional[str] = None
+    command_name: str | None = None
 
 
 class PermissionChecker:
@@ -82,7 +82,7 @@ class PermissionChecker:
         self.cache.set(cache_key, has_permission, ttl=60)
         return has_permission
 
-    async def get_user_role(self, server_id: int, user_id: int) -> Optional[Role]:
+    async def get_user_role(self, server_id: int, user_id: int) -> Role | None:
         cache_key = f"user_role:{server_id}:{user_id}"
         cached = self.cache.get(cache_key)
         if cached is not None:

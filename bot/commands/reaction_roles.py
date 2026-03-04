@@ -1,6 +1,5 @@
 import logging
 import re
-from typing import Optional
 
 import discord
 from discord import app_commands
@@ -21,7 +20,7 @@ def _invalidate_reaction_role_cache(cache, server_id: int, message_id: int, emoj
         cache.delete(f"reactionrole_list:{server_id}")
 
 
-def _parse_message_ref(s: str, guild_id: int, channel_id: int) -> Optional[tuple[int, int]]:
+def _parse_message_ref(s: str, guild_id: int, channel_id: int) -> tuple[int, int] | None:
     s = s.strip()
     m = MESSAGE_LINK_RE.search(s)
     if m:

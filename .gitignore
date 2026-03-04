@@ -1,5 +1,7 @@
 .git
 .cursor/
+.cursorrules/
+.cursor/*
 .vscode
 .idea
 rules/

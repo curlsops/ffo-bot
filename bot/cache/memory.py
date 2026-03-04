@@ -2,7 +2,7 @@ import asyncio
 import logging
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any, Dict, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -18,12 +18,12 @@ class CacheEntry:
 
 class InMemoryCache:
     def __init__(self, max_size: int = 10000, default_ttl: int = 300):
-        self._store: Dict[str, CacheEntry] = {}
+        self._store: dict[str, CacheEntry] = {}
         self.max_size = max_size
         self.default_ttl = default_ttl
         self._lock = asyncio.Lock()
 
-    def get(self, key: str) -> Optional[Any]:
+    def get(self, key: str) -> Any | None:
         if key not in self._store:
             return None
         entry = self._store[key]
@@ -32,7 +32,7 @@ class InMemoryCache:
             return None
         return entry.value
 
-    def set(self, key: str, value: Any, ttl: Optional[int] = None):
+    def set(self, key: str, value: Any, ttl: int | None = None):
         self._prune_expired()
         if len(self._store) >= self.max_size:
             self._evict_oldest()

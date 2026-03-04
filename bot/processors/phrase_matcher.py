@@ -2,7 +2,6 @@ import asyncio
 import logging
 import re
 from dataclasses import dataclass
-from typing import Dict, List, Optional, Tuple
 
 from bot.utils.db import TRANSIENT_DB_ERRORS
 from bot.utils.regex_validator import RegexValidationError, RegexValidator
@@ -25,7 +24,7 @@ class PhraseMatcher:
         self.db_pool = db_pool
         self.cache = cache
         self.validator = RegexValidator()
-        self._patterns_by_server: Dict[int, List[PhrasePattern]] = {}
+        self._patterns_by_server: dict[int, list[PhrasePattern]] = {}
 
     async def load_patterns(self, server_id: int):
         cache_key = f"phrase_patterns:{server_id}"
@@ -65,7 +64,7 @@ class PhraseMatcher:
         self._patterns_by_server[server_id] = patterns
         self.cache.set(cache_key, patterns, ttl=300)
 
-    async def match_phrases(self, message_content: str, server_id: int) -> List[Tuple[str, str]]:
+    async def match_phrases(self, message_content: str, server_id: int) -> list[tuple[str, str]]:
         if server_id not in self._patterns_by_server:
             await self.load_patterns(server_id)
 
@@ -87,7 +86,7 @@ class PhraseMatcher:
                 await self._disable_pattern(p.phrase_id)
         return matches
 
-    async def _match_with_timeout(self, pattern: re.Pattern, text: str) -> Optional[re.Match]:
+    async def _match_with_timeout(self, pattern: re.Pattern, text: str) -> re.Match | None:
         return await asyncio.get_event_loop().run_in_executor(None, pattern.search, text)
 
     def _normalize_message(self, content: str) -> str:

@@ -52,7 +52,8 @@ async def _reactbot_phrase_autocomplete(
                     display = display[:97] + "..."
                 choices.append(app_commands.Choice(name=display, value=phrase))
         return choices[:25]
-    except Exception:
+    except Exception as e:
+        logger.debug("Reactbot phrase autocomplete failed: %s", e)
         return []
 
 

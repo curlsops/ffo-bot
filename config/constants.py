@@ -2,6 +2,8 @@ from enum import Enum
 
 
 class Constants:
+    DISCORD_MESSAGE_LIMIT = 2000
+
     REGEX_TIMEOUT_SECONDS = 0.5
     MAX_PATTERN_LENGTH = 500
 

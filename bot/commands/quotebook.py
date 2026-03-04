@@ -107,7 +107,8 @@ async def _quote_id_autocomplete(
             if not current or current.lower() in sid.lower() or current.lower() in short.lower():
                 choices.append(app_commands.Choice(name=label[:100], value=sid))
         return choices[:25]
-    except Exception:
+    except Exception as e:
+        logger.debug("Quote ID autocomplete failed: %s", e)
         return []
 
 
@@ -143,7 +144,8 @@ async def _quote_id_approve_autocomplete(
             if not current or current.lower() in sid.lower() or current.lower() in short.lower():
                 choices.append(app_commands.Choice(name=label[:100], value=sid))
         return choices[:25]
-    except Exception:
+    except Exception as e:
+        logger.debug("Quote approve autocomplete failed: %s", e)
         return []
 
 
