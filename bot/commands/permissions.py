@@ -91,7 +91,6 @@ class PermissionsGroup(app_commands.Group):
             return
         await interaction.followup.send("\n\n".join(parts), ephemeral=True)
 
-
     @app_commands.command(name="add", description="Grant Admin or Moderator to a user")
     @app_commands.describe(user="User to grant role to", role="Role to grant")
     @app_commands.choices(role=ROLE_CHOICES)
@@ -108,9 +107,7 @@ class PermissionsGroup(app_commands.Group):
                     role,
                     interaction.user.id,
                 )
-            self.cog.bot.permission_checker.invalidate_user_cache(
-                interaction.guild_id, user.id
-            )
+            self.cog.bot.permission_checker.invalidate_user_cache(interaction.guild_id, user.id)
             await interaction.followup.send(f"✅ Granted {role} to {user.mention}", ephemeral=True)
         except Exception as e:
             logger.error("permissions add error: %s", e, exc_info=True)
@@ -136,9 +133,7 @@ class PermissionsGroup(app_commands.Group):
                     f"❌ {user.mention} doesn't have {role}.", ephemeral=True
                 )
                 return
-            self.cog.bot.permission_checker.invalidate_user_cache(
-                interaction.guild_id, user.id
-            )
+            self.cog.bot.permission_checker.invalidate_user_cache(interaction.guild_id, user.id)
             await interaction.followup.send(
                 f"✅ Revoked {role} from {user.mention}", ephemeral=True
             )
@@ -172,6 +167,7 @@ class PermissionsGroup(app_commands.Group):
             role_enum,
             discord_role.id if discord_role else None,
             cache=self.cog.bot.cache,
+            server_name=interaction.guild.name if interaction.guild else None,
         )
         if not success:
             await interaction.followup.send("❌ Failed to update.", ephemeral=True)

@@ -58,6 +58,7 @@ async def set_server_role(
     role: Role,
     discord_role_id: Optional[int],
     cache: Optional["InMemoryCache"] = None,
+    server_name: Optional[str] = None,
 ) -> bool:
     """Set or clear a Discord role mapping for a bot role."""
     key = ROLE_KEYS.get(role)
@@ -66,10 +67,19 @@ async def set_server_role(
     try:
         async with db_pool.acquire() as conn:
             if discord_role_id is not None:
+                merge = json.dumps({key: discord_role_id})
                 await conn.execute(
-                    "UPDATE servers SET config = COALESCE(config, '{}'::jsonb) || $1::jsonb, updated_at = NOW() WHERE server_id = $2",
-                    json.dumps({key: discord_role_id}),
+                    """
+                    INSERT INTO servers (server_id, server_name, config)
+                    VALUES ($1, $2, $3::jsonb)
+                    ON CONFLICT (server_id) DO UPDATE
+                    SET config = COALESCE(servers.config, '{}'::jsonb) || EXCLUDED.config,
+                        server_name = COALESCE(NULLIF(EXCLUDED.server_name, 'Unknown'), servers.server_name),
+                        updated_at = NOW()
+                    """,
                     server_id,
+                    server_name or "Unknown",
+                    merge,
                 )
             else:
                 await conn.execute(
