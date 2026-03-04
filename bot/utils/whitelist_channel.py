@@ -1,4 +1,3 @@
-import json
 import logging
 from typing import TYPE_CHECKING
 
@@ -48,7 +47,7 @@ async def set_whitelist_channel(
             if channel_id:
                 await conn.execute(
                     "UPDATE servers SET config = COALESCE(config, '{}'::jsonb) || $1::jsonb, updated_at = NOW() WHERE server_id = $2",
-                    json.dumps({"whitelist_channel_id": channel_id}),
+                    {"whitelist_channel_id": channel_id},
                     server_id,
                 )
             else:

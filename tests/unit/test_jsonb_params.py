@@ -1,4 +1,3 @@
-import json
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -32,7 +31,7 @@ class TestNotifierJsonbParams:
         await AdminNotifier(bot).set_notify_channel(999, 123456789)
         conn.execute.assert_awaited_once()
         param = conn.execute.call_args[0][1]
-        assert isinstance(param, str) and json.loads(param) == {"notify_channel_id": 123456789}
+        assert param == {"notify_channel_id": 123456789}
 
 
 class TestGiveawayJsonbParams:
@@ -91,10 +90,7 @@ class TestAuditLogJsonbParams:
 
         conn.execute.assert_awaited_once()
         param = conn.execute.call_args[0][3]
-        assert isinstance(param, str) and json.loads(param) == {
-            "command": "test_cmd",
-            "required_role": "super_admin",
-        }
+        assert param == {"command": "test_cmd", "required_role": "super_admin"}
 
 
 class TestDatabasePoolJsonbCodec:
@@ -114,9 +110,7 @@ class TestNotifierJsonbParamsExtended:
         bot, conn = bot_with_conn
         await AdminNotifier(bot).set_notify_channel(1, 999)
         param = conn.execute.call_args[0][1]
-        parsed = json.loads(param)
-        assert "notify_channel_id" in parsed
-        assert parsed["notify_channel_id"] == 999
+        assert param == {"notify_channel_id": 999}
 
 
 class TestAuditLogJsonbParamsExtended:
@@ -132,6 +126,5 @@ class TestAuditLogJsonbParamsExtended:
         ctx = PermissionContext(server_id=1, user_id=2, command_name="whitelist_add")
         await PermissionChecker(db_pool, MagicMock())._log_permission_denial(ctx, Role.ADMIN)
         param = conn.execute.call_args[0][3]
-        parsed = json.loads(param)
-        assert parsed["command"] == "whitelist_add"
-        assert parsed["required_role"] == "admin"
+        assert param["command"] == "whitelist_add"
+        assert param["required_role"] == "admin"

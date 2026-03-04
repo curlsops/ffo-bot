@@ -1,4 +1,3 @@
-import json
 import logging
 import traceback
 
@@ -52,7 +51,7 @@ class AdminNotifier:
                 if channel_id:
                     await conn.execute(
                         "UPDATE servers SET config = COALESCE(config, '{}'::jsonb) || $1::jsonb, updated_at = NOW() WHERE server_id = $2",
-                        json.dumps({"notify_channel_id": channel_id}),
+                        {"notify_channel_id": channel_id},
                         server_id,
                     )
                 else:

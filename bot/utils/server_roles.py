@@ -1,6 +1,5 @@
 """Server role configuration: map Discord roles to bot permission levels."""
 
-import json
 import logging
 from typing import TYPE_CHECKING
 
@@ -67,7 +66,7 @@ async def set_server_role(
     try:
         async with db_pool.acquire() as conn:
             if discord_role_id is not None:
-                merge = json.dumps({key: discord_role_id})
+                merge = {key: discord_role_id}
                 await conn.execute(
                     """
                     INSERT INTO servers (server_id, server_name, config)

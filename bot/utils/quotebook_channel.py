@@ -1,6 +1,5 @@
 """Quotebook channel: where approved quotes are posted."""
 
-import json
 import logging
 from typing import TYPE_CHECKING
 
@@ -50,7 +49,7 @@ async def set_quotebook_channel(
             if channel_id:
                 await conn.execute(
                     "UPDATE servers SET config = COALESCE(config, '{}'::jsonb) || $1::jsonb, updated_at = NOW() WHERE server_id = $2",
-                    json.dumps({"quotebook_channel_id": channel_id}),
+                    {"quotebook_channel_id": channel_id},
                     server_id,
                 )
             else:

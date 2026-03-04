@@ -1,4 +1,3 @@
-import json
 import logging
 from dataclasses import dataclass
 from typing import TYPE_CHECKING
@@ -141,7 +140,7 @@ class PermissionChecker:
                     """,
                     ctx.server_id,
                     ctx.user_id,
-                    json.dumps({"command": ctx.command_name, "required_role": required_role.value}),
+                    {"command": ctx.command_name, "required_role": required_role.value},
                 )
         except TRANSIENT_DB_ERRORS:
             pass
