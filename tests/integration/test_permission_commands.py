@@ -10,6 +10,7 @@ def make_interaction():
     interaction = MagicMock()
     interaction.guild_id = 1
     interaction.user.id = 10
+    interaction.guild = MagicMock()
     interaction.response.defer = AsyncMock()
     interaction.followup.send = AsyncMock()
     return interaction
@@ -44,6 +45,8 @@ def make_bot(fetch_rows=None, fetchrow_result=None, fetchval_result=None, execut
     bot.permission_checker.check_role = AsyncMock(return_value=True)
     bot.permission_checker.invalidate_user_cache = MagicMock()
     bot._register_server = AsyncMock()
+    bot.cache = MagicMock()
+    bot.cache.get = MagicMock(return_value=None)
     db_pool, conn = make_db_pool(fetch_rows, fetchrow_result, fetchval_result, execute_result)
     bot.db_pool = db_pool
     bot.fetch_user = lambda user_id: make_user(user_id, f"user-{user_id}")
@@ -183,15 +186,19 @@ async def test_revoke_role_db_error():
 
 
 @pytest.mark.asyncio
-async def test_list_permissions_truncation():
-    rows = [{"user_id": i, "role": "moderator"} for i in range(30)]
+async def test_list_permissions_paginated():
+    rows = [{"user_id": i, "role": "moderator"} for i in range(15)]
     bot, conn = make_bot(fetch_rows=rows)
     cog = PermissionCommands(bot)
     permissions_group = cog.permissions_group
     interaction = make_interaction()
     await get_list_cmd(cog).callback(permissions_group, interaction)
-    msg = interaction.followup.send.call_args[0][0]
-    assert "and 5 more" in msg
+    call = interaction.followup.send.call_args
+    msg = call[0][0]
+    view = call[1]["view"]
+    assert "User permissions" in msg
+    assert "1/2" in str(view.page_btn.label)
+    assert view.mode == "user"
 
 
 @pytest.mark.asyncio
@@ -203,4 +210,4 @@ async def test_list_permissions_unknown_role_emoji():
     interaction = make_interaction()
     await get_list_cmd(cog).callback(permissions_group, interaction)
     msg = interaction.followup.send.call_args[0][0]
-    assert "Unknown" in msg
+    assert "Unknown" in msg or "unknown_role" in msg

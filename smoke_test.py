@@ -6,7 +6,6 @@ from bot.auth.permissions import PermissionChecker
 from bot.cache.memory import InMemoryCache
 from bot.client import FFOBot
 from bot.commands.admin import AdminCommands
-from bot.commands.convert import ConvertCommands
 from bot.commands.faq import FAQCommands
 from bot.commands.giveaway import GiveawayCommands, GiveawayView
 from bot.commands.permissions import PermissionCommands

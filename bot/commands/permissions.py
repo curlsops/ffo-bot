@@ -1,5 +1,3 @@
-"""Permission management commands - nested under /permissions."""
-
 import logging
 
 import discord
@@ -12,6 +10,10 @@ from config.constants import Role
 
 logger = logging.getLogger(__name__)
 
+PER_PAGE = 10
+
+ROLE_EMOJI = {"super_admin": "👑", "admin": "🛡️", "moderator": "🔰"}
+
 ROLE_CHOICES = [
     app_commands.Choice(name="Admin", value="admin"),
     app_commands.Choice(name="Moderator", value="moderator"),
@@ -22,6 +24,140 @@ LEVEL_CHOICES = [
     app_commands.Choice(name="Admin", value="admin"),
     app_commands.Choice(name="Moderator", value="moderator"),
 ]
+
+
+def _role_members(guild: discord.Guild, role_ids: dict) -> list[tuple[int, Role]]:
+    user_highest: dict[int, Role] = {}
+    for r in (Role.SUPER_ADMIN, Role.ADMIN, Role.MODERATOR):
+        if r not in role_ids:
+            continue
+        role = guild.get_role(role_ids[r])
+        if role:
+            for m in role.members:
+                if m.id not in user_highest or r.hierarchy > user_highest[m.id].hierarchy:
+                    user_highest[m.id] = r
+    return sorted(user_highest.items(), key=lambda x: (-x[1].hierarchy, x[0]))
+
+
+class PermissionsListView(discord.ui.View):
+    def __init__(
+        self,
+        role_ids: dict,
+        role_members: list[tuple[int, Role]],
+        user_rows: list,
+        timeout: float = 120,
+    ):
+        super().__init__(timeout=timeout)
+        self.role_ids = role_ids
+        self.role_members = role_members
+        self.user_rows = user_rows
+        self.mode = "role" if role_ids or role_members else "user"
+        self.page = 0
+        self._max_page = 0
+        self._update_max_page()
+
+        toggle = discord.ui.Button(
+            label="User Mapped" if self.mode == "role" else "Role Mapped",
+            style=discord.ButtonStyle.primary,
+            custom_id="perm:toggle",
+            row=0,
+        )
+        toggle.callback = self._toggle_callback
+        self.add_item(toggle)
+
+        prev_btn = discord.ui.Button(
+            label="◀",
+            style=discord.ButtonStyle.secondary,
+            custom_id="perm:prev",
+            row=0,
+        )
+        prev_btn.callback = self._prev_callback
+        self.add_item(prev_btn)
+
+        self.page_btn = discord.ui.Button(
+            label="1/1",
+            style=discord.ButtonStyle.success,
+            custom_id="perm:page",
+            disabled=True,
+            row=0,
+        )
+        self.add_item(self.page_btn)
+
+        next_btn = discord.ui.Button(
+            label="▶",
+            style=discord.ButtonStyle.secondary,
+            custom_id="perm:next",
+            row=0,
+        )
+        next_btn.callback = self._next_callback
+        self.add_item(next_btn)
+        self._update_buttons()
+
+    def _update_max_page(self):
+        items = self.role_members if self.mode == "role" else self.user_rows
+        self._max_page = max(0, (len(items) - 1) // PER_PAGE)
+
+    def _format_page(self) -> str:
+        if self.mode == "role":
+            header = "**Discord role config:**\n"
+            if self.role_ids:
+                header += "\n".join(
+                    f"{ROLE_EMOJI.get(r.value, '•')} **{r.value.replace('_', ' ').title()}:** <@&{self.role_ids[r]}>"
+                    for r in (Role.SUPER_ADMIN, Role.ADMIN, Role.MODERATOR)
+                    if r in self.role_ids
+                )
+                header += "\n\n**Members with these roles:**\n"
+            else:
+                header += "*(no roles configured)*\n\n"
+            items = self.role_members
+            start = self.page * PER_PAGE
+            chunk = items[start : start + PER_PAGE]
+            lines = [
+                f"{ROLE_EMOJI.get(role.value, '•')} <@{uid}> - {role.value.replace('_', ' ').title()}"
+                for uid, role in chunk
+            ]
+        else:
+            header = "**User permissions (per-user grants):**\n\n"
+            items = self.user_rows
+            start = self.page * PER_PAGE
+            chunk = items[start : start + PER_PAGE]
+            lines = [
+                f"{ROLE_EMOJI.get(r['role'], '•')} <@{r['user_id']}> - {r['role'].replace('_', ' ').title()}"
+                for r in chunk
+            ]
+        body = "\n".join(lines) if lines else "*(none)*"
+        return header + body
+
+    def _update_buttons(self):
+        self.page_btn.label = f"{self.page + 1}/{self._max_page + 1}"
+        for child in self.children:
+            if child.custom_id == "perm:prev":
+                child.disabled = self.page <= 0
+            elif child.custom_id == "perm:next":
+                child.disabled = self.page >= self._max_page
+            elif child.custom_id == "perm:toggle":
+                child.label = "User Mapped" if self.mode == "role" else "Role Mapped"
+
+    async def _toggle_callback(self, interaction: discord.Interaction):
+        self.mode = "user" if self.mode == "role" else "role"
+        self.page = 0
+        self._update_max_page()
+        self._update_buttons()
+        await interaction.response.edit_message(content=self._format_page(), view=self)
+
+    async def _prev_callback(self, interaction: discord.Interaction):
+        if self.page <= 0:
+            return
+        self.page -= 1
+        self._update_buttons()
+        await interaction.response.edit_message(content=self._format_page(), view=self)
+
+    async def _next_callback(self, interaction: discord.Interaction):
+        if self.page >= self._max_page:
+            return
+        self.page += 1
+        self._update_buttons()
+        await interaction.response.edit_message(content=self._format_page(), view=self)
 
 
 @app_commands.guild_only()
@@ -49,47 +185,41 @@ class PermissionsGroup(app_commands.Group):
             return
 
         bot = self.cog.bot
-        parts = []
+        guild = interaction.guild
+        if not guild:
+            await interaction.followup.send("❌ Server only.", ephemeral=True)
+            return
 
-        # Role config (Discord role mappings)
-        role_ids = await get_server_role_ids(bot.db_pool, interaction.guild_id, cache=bot.cache)
-        if role_ids:
-            lines = [
-                f"**{r.value.replace('_', ' ').title()}:** <@&{role_ids[r]}>"
-                for r in (Role.SUPER_ADMIN, Role.ADMIN, Role.MODERATOR)
-                if r in role_ids
-            ]
-            parts.append("**Discord role config:**\n" + "\n".join(lines))
-
-        # User permissions
         try:
+            role_ids = await get_server_role_ids(bot.db_pool, interaction.guild_id, cache=bot.cache)
+            role_members = _role_members(guild, role_ids) if role_ids else []
             async with bot.db_pool.acquire() as conn:
-                rows = await conn.fetch(
+                user_rows = await conn.fetch(
                     "SELECT user_id, role FROM user_permissions WHERE server_id = $1 AND is_active = true ORDER BY CASE role WHEN 'super_admin' THEN 3 WHEN 'admin' THEN 2 WHEN 'moderator' THEN 1 END DESC",
                     interaction.guild_id,
                 )
-            if rows:
-                role_emoji = {"super_admin": "👑", "admin": "🛡️", "moderator": "🔰"}
-                lines = [
-                    f"{role_emoji.get(r['role'], '•')} <@{r['user_id']}> - {r['role'].replace('_', ' ').title()}"
-                    for r in rows[:25]
-                ]
-                section = "**User permissions:**\n" + "\n".join(lines)
-                if len(rows) > 25:
-                    section += f"\n*... and {len(rows) - 25} more*"
-                parts.append(section)
         except Exception as e:
             logger.error("permissions list error: %s", e, exc_info=True)
             await interaction.followup.send("❌ Error fetching permissions.", ephemeral=True)
             return
 
-        if not parts:
+        if not role_ids and not role_members and not user_rows:
             await interaction.followup.send(
                 "No permissions configured. Use `/permissions add` for per-user grants, or `/permissions set` for Discord role mappings.",
                 ephemeral=True,
             )
             return
-        await interaction.followup.send("\n\n".join(parts), ephemeral=True)
+
+        view = PermissionsListView(
+            role_ids=role_ids or {},
+            role_members=role_members,
+            user_rows=list(user_rows),
+        )
+        await interaction.followup.send(
+            view._format_page(),
+            view=view,
+            ephemeral=True,
+        )
 
     @app_commands.command(name="add", description="Grant Admin or Moderator to a user")
     @app_commands.describe(user="User to grant role to", role="Role to grant")

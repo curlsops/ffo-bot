@@ -262,7 +262,7 @@ class TestFFOBotExtensions:
     async def test_load_extensions_success(self, bot):
         with patch.object(bot, "load_extension", new_callable=AsyncMock) as mock_load:
             await bot._load_extensions()
-            assert mock_load.call_count >= 11  # base + optional (quotebook, convert)
+            assert mock_load.call_count >= 10  # base + optional (quotebook, whitelist, faq)
 
     @pytest.mark.asyncio
     async def test_load_extensions_handles_failure(self, bot):
@@ -282,16 +282,6 @@ class TestFFOBotExtensions:
         with patch.object(bot, "load_extension", new_callable=AsyncMock) as mock_load:
             await bot._load_extensions()
             assert any("quotebook" in str(c) for c in mock_load.call_args_list)
-
-    @pytest.mark.asyncio
-    async def test_load_extensions_with_convert(self, mock_settings):
-        mock_settings.feature_conversion = True
-        from bot.client import FFOBot
-
-        bot = FFOBot(mock_settings)
-        with patch.object(bot, "load_extension", new_callable=AsyncMock) as mock_load:
-            await bot._load_extensions()
-            assert any("convert" in str(c) for c in mock_load.call_args_list)
 
     @pytest.mark.asyncio
     async def test_load_extensions_with_whitelist(self, mock_settings):

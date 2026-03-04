@@ -55,16 +55,23 @@ class TestFaqList:
     @pytest.mark.asyncio
     async def test_list_with_topics(self, cog):
         conn = AsyncMock(
-            fetch=AsyncMock(return_value=[{"topic": "rules"}, {"topic": "whitelist"}])
+            fetch=AsyncMock(
+                return_value=[
+                    {"topic": "rules", "question": "Rules?", "answer": "Be nice."},
+                    {"topic": "whitelist", "question": "Whitelist?", "answer": "Post IGN."},
+                ]
+            )
         )
         cog.bot.db_pool.acquire.return_value = _db_ctx(conn)
         i = _interaction()
         await cog.faq_group.list_cmd.callback(cog.faq_group, i, None)
         call_kw = i.followup.send.call_args[1]
         embed = call_kw.get("embed")
+        view = call_kw.get("view")
         assert embed is not None
         assert "rules" in embed.description
         assert "whitelist" in embed.description
+        assert view is not None
 
 
 class TestFaqGet:

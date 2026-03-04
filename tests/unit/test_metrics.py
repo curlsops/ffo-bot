@@ -115,7 +115,7 @@ class TestBotMetricsLabels:
             command_name="faq", server_id="1", status="success"
         ).inc()
         metrics.commands_executed.labels(
-            command_name="convert", server_id="1", status="error"
+            command_name="permissions", server_id="1", status="error"
         ).inc()
 
     def test_media_downloads_labels(self, metrics):

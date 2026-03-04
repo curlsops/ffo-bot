@@ -8,6 +8,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from bot.auth.permissions import PermissionContext
+from bot.utils.pagination import ListPaginatedView
 from bot.utils.quotebook_channel import get_quotebook_channel_id, set_quotebook_channel
 from config.constants import Role
 
@@ -77,7 +78,6 @@ def _parse_quotes_from_message(
 async def _quote_id_autocomplete(
     interaction: discord.Interaction, current: str
 ) -> list[app_commands.Choice[str]]:
-    """Autocomplete for delete: all quotes."""
     if not interaction.guild_id:
         return []
     try:
@@ -114,7 +114,6 @@ async def _quote_id_autocomplete(
 async def _quote_id_approve_autocomplete(
     interaction: discord.Interaction, current: str
 ) -> list[app_commands.Choice[str]]:
-    """Autocomplete for approve: only pending quotes."""
     if not interaction.guild_id:
         return []
     try:
@@ -214,24 +213,25 @@ class QuoteGroup(app_commands.Group):
                     FROM quotebook
                     WHERE server_id = $1
                     ORDER BY approved, created_at DESC
-                    LIMIT 25
                     """,
                     interaction.guild_id,
                 )
+            rows = [dict(r) for r in rows]
 
             if not rows:
                 await interaction.followup.send("No quotes in the book yet.", ephemeral=True)
                 return
 
-            lines = []
-            for r in rows:
+            def fmt(r):
                 short = r["quote_text"][:80] + "…" if len(r["quote_text"]) > 80 else r["quote_text"]
                 attr = f" — {r['attribution']}" if r["attribution"] else ""
                 status = " ✓" if r["approved"] else " (pending)"
-                lines.append(f"`{str(r['id'])[:8]}` {short}{attr}{status}")
+                return f"`{str(r['id'])[:8]}` {short}{attr}{status}"
 
+            view = ListPaginatedView(rows, "**Quotebook:**", fmt)
             await interaction.followup.send(
-                "**Quotebook:**\n" + "\n".join(lines),
+                view._format_page(),
+                view=view,
                 ephemeral=True,
             )
         except Exception as e:

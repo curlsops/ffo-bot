@@ -13,16 +13,113 @@ MAX_ANSWER_LEN = 1024
 MAX_QUESTION_LEN = 200
 MAX_TOPIC_LEN = 100
 MAX_TOPICS = 25
+FAQ_CHAR_LIMIT_PER_PAGE = 1800
 
 CACHE_FAQ_TOPICS = "faq_topics:{server_id}"
 CACHE_FAQ_ENTRY = "faq_entry:{server_id}:{topic}"
+CACHE_FAQ_ALL = "faq_all:{server_id}"
 
 
 def _invalidate_faq_cache(cache, server_id: int, topic: str | None = None) -> None:
     if cache:
         cache.delete(CACHE_FAQ_TOPICS.format(server_id=server_id))
+        cache.delete(CACHE_FAQ_ALL.format(server_id=server_id))
         if topic:
             cache.delete(CACHE_FAQ_ENTRY.format(server_id=server_id, topic=topic))
+
+
+def _build_faq_blocks(rows: list) -> list[str]:
+    blocks = []
+    for r in rows:
+        block = f"**{r['topic']}**\n**Q:** {r['question']}\n**A:** {r['answer']}\n\n"
+        blocks.append(block)
+    return blocks
+
+
+def _paginate_by_char_limit(blocks: list[str], limit: int) -> list[str]:
+    pages = []
+    current = []
+    current_len = 0
+    for block in blocks:
+        block_len = len(block)
+        if current_len + block_len > limit and current:
+            pages.append("".join(current))
+            current = []
+            current_len = 0
+        current.append(block)
+        current_len += block_len
+    if current:
+        pages.append("".join(current))
+    return pages
+
+
+class FAQListView(discord.ui.View):
+    def __init__(self, pages: list[str], timeout: float = 120):
+        super().__init__(timeout=timeout)
+        self.pages = pages
+        self.page = 0
+        self._max_page = max(0, len(pages) - 1)
+
+        prev_btn = discord.ui.Button(
+            label="◀",
+            style=discord.ButtonStyle.secondary,
+            custom_id="faq:prev",
+            row=0,
+        )
+        prev_btn.callback = self._prev_callback
+        self.add_item(prev_btn)
+
+        self.page_btn = discord.ui.Button(
+            label="1/1",
+            style=discord.ButtonStyle.success,
+            custom_id="faq:page",
+            disabled=True,
+            row=0,
+        )
+        self.add_item(self.page_btn)
+
+        next_btn = discord.ui.Button(
+            label="▶",
+            style=discord.ButtonStyle.secondary,
+            custom_id="faq:next",
+            row=0,
+        )
+        next_btn.callback = self._next_callback
+        self.add_item(next_btn)
+        self._update_buttons()
+
+    def _update_buttons(self):
+        self.page_btn.label = f"{self.page + 1}/{self._max_page + 1}"
+        for child in self.children:
+            if child.custom_id == "faq:prev":
+                child.disabled = self.page <= 0
+            elif child.custom_id == "faq:next":
+                child.disabled = self.page >= self._max_page
+
+    def _format_page(self) -> discord.Embed:
+        embed = discord.Embed(
+            title="FAQ",
+            description=self.pages[self.page][:4096],
+            color=discord.Color.blue(),
+        )
+        embed.set_footer(
+            text=f"Page {self.page + 1}/{len(self.pages)} • Use /faq list topic:<name> for single topic"
+        )
+        return embed
+
+    async def _prev_callback(self, interaction: discord.Interaction):
+        if self.page <= 0:
+            return
+        self.page -= 1
+        self._update_buttons()
+        await interaction.response.edit_message(embed=self._format_page(), view=self)
+
+    async def _next_callback(self, interaction: discord.Interaction):
+        if self.page >= self._max_page:
+            return
+        self.page += 1
+        self._update_buttons()
+        await interaction.response.edit_message(embed=self._format_page(), view=self)
 
 
 async def _faq_topic_autocomplete(
@@ -108,34 +205,35 @@ class FAQGroup(app_commands.Group):
                 embed.set_footer(text=f"FAQ • {topic}")
                 await interaction.followup.send(embed=embed, ephemeral=True)
             else:
-                cache_key = CACHE_FAQ_TOPICS.format(server_id=interaction.guild_id)
+                cache_key = CACHE_FAQ_ALL.format(server_id=interaction.guild_id)
                 rows = self.cog.bot.cache.get(cache_key) if self.cog.bot.cache else None
                 if rows is None:
                     async with self.cog.bot.db_pool.acquire() as conn:
                         rows = await conn.fetch(
                             """
-                            SELECT topic FROM faq_entries
+                            SELECT topic, question, answer FROM faq_entries
                             WHERE server_id = $1
                             ORDER BY sort_order, topic
                             """,
                             interaction.guild_id,
                         )
+                    rows = [dict(r) for r in rows]
                     if self.cog.bot.cache:
-                        self.cog.bot.cache.set(cache_key, [dict(r) for r in rows], ttl=300)
+                        self.cog.bot.cache.set(cache_key, rows, ttl=300)
                 if not rows:
                     await interaction.followup.send(
                         "No FAQ entries yet. Admins can add them with `/faq add`.",
                         ephemeral=True,
                     )
                     return
-                lines = [f"• **{r['topic']}**" for r in rows]
-                embed = discord.Embed(
-                    title="FAQ Topics",
-                    description="\n".join(lines)[:4096],
-                    color=discord.Color.blue(),
+                blocks = _build_faq_blocks(rows)
+                pages = _paginate_by_char_limit(blocks, FAQ_CHAR_LIMIT_PER_PAGE)
+                view = FAQListView(pages)
+                await interaction.followup.send(
+                    embed=view._format_page(),
+                    view=view,
+                    ephemeral=True,
                 )
-                embed.set_footer(text="Use /faq list topic:<name> to view")
-                await interaction.followup.send(embed=embed, ephemeral=True)
         except Exception as e:
             logger.error("faq list error: %s", e, exc_info=True)
             await interaction.followup.send("Error fetching FAQ.", ephemeral=True)

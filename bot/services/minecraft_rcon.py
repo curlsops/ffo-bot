@@ -14,8 +14,6 @@ RCON_PACKET_RESPONSE = 0
 
 
 class MinecraftRCONError(Exception):
-    """Raised when RCON command fails."""
-
     pass
 
 

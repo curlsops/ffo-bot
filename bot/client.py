@@ -146,8 +146,6 @@ class FFOBot(commands.Bot):
         ]
         if self.settings.feature_quotebook:
             extensions.append("bot.commands.quotebook")
-        if self.settings.feature_conversion:
-            extensions.append("bot.commands.convert")
         if self.settings.feature_minecraft_whitelist:
             extensions.append("bot.commands.whitelist")
         if self.settings.feature_faq:

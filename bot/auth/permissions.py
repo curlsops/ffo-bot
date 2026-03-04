@@ -98,6 +98,11 @@ class PermissionChecker:
             if role_ids:
                 guild = self.bot.get_guild(server_id)
                 member = guild.get_member(user_id) if guild else None
+                if member is None and guild:
+                    try:
+                        member = await guild.fetch_member(user_id)
+                    except Exception:
+                        pass
                 if member:
                     user_role_ids = {r.id for r in member.roles}
                     for r in (Role.SUPER_ADMIN, Role.ADMIN, Role.MODERATOR):

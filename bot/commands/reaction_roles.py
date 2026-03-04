@@ -7,6 +7,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from bot.auth.permissions import PermissionContext
+from bot.utils.pagination import ListPaginatedView
 from config.constants import Role
 
 logger = logging.getLogger(__name__)
@@ -219,16 +220,20 @@ class ReactionRoleGroup(app_commands.Group):
                 )
                 return
 
-            lines = []
-            for r in rows[:25]:
-                lines.append(
-                    f"• [msg](https://discord.com/channels/{interaction.guild_id}/{r['channel_id']}/{r['message_id']}) "
+            guild_id = interaction.guild_id
+
+            def fmt(r):
+                return (
+                    f"• [msg](https://discord.com/channels/{guild_id}/{r['channel_id']}/{r['message_id']}) "
                     f"{r['emoji']} → <@&{r['role_id']}>"
                 )
-            text = "**Reaction Roles:**\n\n" + "\n".join(lines)
-            if len(rows) > 25:
-                text += f"\n*... and {len(rows) - 25} more*"
-            await interaction.followup.send(text, ephemeral=True)
+
+            view = ListPaginatedView(rows, "**Reaction Roles:**", fmt)
+            await interaction.followup.send(
+                view._format_page(),
+                view=view,
+                ephemeral=True,
+            )
         except Exception as e:
             logger.error("reactionrole_list error: %s", e, exc_info=True)
             await interaction.followup.send(

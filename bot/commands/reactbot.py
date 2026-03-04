@@ -6,6 +6,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from bot.auth.permissions import PermissionContext
+from bot.utils.pagination import ListPaginatedView
 from bot.utils.regex_validator import RegexValidationError
 from bot.utils.validation import InputValidator, ValidationError
 from config.constants import Role
@@ -135,13 +136,16 @@ class ReactBotGroup(app_commands.Group):
             if not rows:
                 await interaction.followup.send("No phrase reactions configured.", ephemeral=True)
                 return
-            lines = [
-                f"• `{r['phrase']}` → {r['emoji']} ({r['match_count']} matches)" for r in rows[:25]
-            ]
-            response = "**Phrase Reactions:**\n\n" + "\n".join(lines)
-            if len(rows) > 25:
-                response += f"\n*... and {len(rows) - 25} more*"
-            await interaction.followup.send(response, ephemeral=True)
+
+            def fmt(r):
+                return f"• `{r['phrase']}` → {r['emoji']} ({r['match_count']} matches)"
+
+            view = ListPaginatedView(rows, "**Phrase Reactions:**", fmt)
+            await interaction.followup.send(
+                view._format_page(),
+                view=view,
+                ephemeral=True,
+            )
         except Exception as e:
             logger.error("reactbot list error: %s", e, exc_info=True)
             await interaction.followup.send("❌ Error fetching reactions.", ephemeral=True)

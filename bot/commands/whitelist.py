@@ -5,8 +5,9 @@ from discord import app_commands
 from discord.ext import commands
 
 from bot.auth.permissions import PermissionContext
-from bot.services.minecraft_rcon import MinecraftRCONError
+from bot.services.minecraft_rcon import MinecraftRCONError, parse_whitelist_list_response
 from bot.services.mojang import get_profile, get_profiles_batch
+from bot.utils.pagination import ListPaginatedView
 from bot.utils.whitelist_cache import (
     add_to_cache,
     get_cached_usernames,
@@ -236,7 +237,20 @@ class WhitelistGroup(app_commands.Group):
 
         try:
             resp = await self.cog.bot.minecraft_rcon.whitelist_list()
-            await interaction.followup.send(f"Whitelist: {resp}", ephemeral=True)
+            usernames = parse_whitelist_list_response(resp)
+            if not usernames:
+                await interaction.followup.send("Whitelist: (empty)", ephemeral=True)
+                return
+
+            def fmt(u):
+                return f"• {u}"
+
+            view = ListPaginatedView(usernames, "**Whitelisted players:**", fmt)
+            await interaction.followup.send(
+                view._format_page(),
+                view=view,
+                ephemeral=True,
+            )
         except MinecraftRCONError as e:
             logger.warning("RCON whitelist list failed: %s", e)
             await interaction.followup.send(
