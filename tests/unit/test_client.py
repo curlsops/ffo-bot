@@ -386,6 +386,7 @@ class TestFFOBotOnReady:
         bot._connection.user = MagicMock(id=123)
         bot._connection.user.__str__ = lambda s: "Bot#1234"
         bot._connection.http.bulk_upsert_global_commands = AsyncMock()
+        bot._connection.http.bulk_upsert_guild_commands = AsyncMock()
 
         with patch.object(FFOBot, "guilds", new_callable=PropertyMock, return_value=guilds):
             with patch.object(bot, "_register_server", new_callable=AsyncMock) as mock_reg:
@@ -393,6 +394,7 @@ class TestFFOBotOnReady:
                     with patch.object(bot.tree, "sync", new_callable=AsyncMock):
                         await bot.on_ready()
                         assert mock_reg.call_count == 2
+                        assert bot._connection.http.bulk_upsert_guild_commands.call_count == 2
                         assert mock_copy.call_count == 2
                         assert bot.tree.sync.call_count == 2
                         bot.metrics.set_guild_count.assert_called_with(2)
