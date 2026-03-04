@@ -3,6 +3,8 @@ import traceback
 
 import discord
 
+from bot.utils.config_repair import repair_servers_config
+
 logger = logging.getLogger(__name__)
 
 
@@ -21,11 +23,10 @@ class AdminNotifier:
                 return None if cached == -1 else cached
         async with self.bot.db_pool.acquire() as conn:
             row = await conn.fetchrow("SELECT config FROM servers WHERE server_id = $1", server_id)
-        if not row or not row["config"]:
+        cfg = repair_servers_config(row["config"]) if row and row["config"] is not None else None
+        if not cfg:
             result = None
-        elif not isinstance(row["config"], dict):
-            result = None
-        elif channel_id := row["config"].get("notify_channel_id"):
+        elif channel_id := cfg.get("notify_channel_id"):
             result = int(channel_id)
         else:
             result = None

@@ -1,6 +1,8 @@
 import logging
 from typing import TYPE_CHECKING
 
+from bot.utils.config_repair import repair_servers_config
+
 if TYPE_CHECKING:
     from bot.cache.memory import InMemoryCache
 
@@ -20,11 +22,10 @@ async def get_whitelist_channel_id(
     try:
         async with db_pool.acquire() as conn:
             row = await conn.fetchrow("SELECT config FROM servers WHERE server_id = $1", server_id)
-        if not row or not row["config"]:
+        cfg = repair_servers_config(row["config"]) if row and row["config"] is not None else None
+        if not cfg:
             result = None
-        elif not isinstance(row["config"], dict):
-            result = None
-        elif channel_id := row["config"].get("whitelist_channel_id"):
+        elif channel_id := cfg.get("whitelist_channel_id"):
             result = int(channel_id)
         else:
             result = None

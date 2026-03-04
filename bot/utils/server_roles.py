@@ -3,6 +3,7 @@
 import logging
 from typing import TYPE_CHECKING
 
+from bot.utils.config_repair import repair_servers_config
 from config.constants import Role
 
 if TYPE_CHECKING:
@@ -20,6 +21,19 @@ ROLE_KEYS = {
 }
 
 
+def _extract_role_ids_from_config(cfg) -> dict[Role, int]:
+    if not isinstance(cfg, dict):
+        return {}
+    result = {}
+    for role, key in ROLE_KEYS.items():
+        if val := cfg.get(key):
+            try:
+                result[role] = int(val)
+            except (TypeError, ValueError):
+                pass
+    return result
+
+
 async def get_server_role_ids(
     db_pool, server_id: int, cache: "InMemoryCache | None" = None
 ) -> dict[Role, int]:
@@ -33,16 +47,8 @@ async def get_server_role_ids(
         async with db_pool.acquire() as conn:
             row = await conn.fetchrow("SELECT config FROM servers WHERE server_id = $1", server_id)
         cfg = row["config"] if row else None
-        if not isinstance(cfg, dict):
-            result = {}
-        else:
-            result = {}
-            for role, key in ROLE_KEYS.items():
-                if val := cfg.get(key):
-                    try:
-                        result[role] = int(val)
-                    except (TypeError, ValueError):
-                        pass
+        repaired = repair_servers_config(cfg) if cfg is not None else None
+        result = _extract_role_ids_from_config(repaired) if repaired else {}
         if cache:
             cache.set(cache_key, result, ttl=CACHE_TTL)
         return result

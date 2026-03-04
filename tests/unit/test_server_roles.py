@@ -3,7 +3,11 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from bot.utils.server_roles import get_server_role_ids, set_server_role
+from bot.utils.server_roles import (
+    _extract_role_ids_from_config,
+    get_server_role_ids,
+    set_server_role,
+)
 from config.constants import Role
 
 
@@ -19,6 +23,11 @@ def _make_pool(fetchrow_result=None, execute_result=None):
     pool = MagicMock()
     pool.acquire = acquire
     return pool, conn
+
+
+def test_extract_role_ids_returns_empty_for_non_dict():
+    assert _extract_role_ids_from_config("invalid") == {}
+    assert _extract_role_ids_from_config(None) == {}
 
 
 @pytest.mark.asyncio
@@ -106,6 +115,15 @@ async def test_get_server_role_ids_config_not_dict():
     pool, _ = _make_pool(fetchrow_result={"config": "invalid"})
     result = await get_server_role_ids(pool, 123)
     assert result == {}
+
+
+@pytest.mark.asyncio
+async def test_get_server_role_ids_repairs_corrupted_list_config():
+    pool, _ = _make_pool(
+        fetchrow_result={"config": [{}, '{"admin_role_id": 456}']}
+    )
+    result = await get_server_role_ids(pool, 123)
+    assert result == {Role.ADMIN: 456}
 
 
 @pytest.mark.asyncio

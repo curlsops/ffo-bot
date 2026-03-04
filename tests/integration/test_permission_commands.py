@@ -10,7 +10,9 @@ def make_interaction():
     interaction = MagicMock()
     interaction.guild_id = 1
     interaction.user.id = 10
-    interaction.guild = MagicMock()
+    guild = MagicMock()
+    guild.get_member = MagicMock(return_value=None)
+    interaction.guild = guild
     interaction.response.defer = AsyncMock()
     interaction.followup.send = AsyncMock()
     return interaction
@@ -49,7 +51,7 @@ def make_bot(fetch_rows=None, fetchrow_result=None, fetchval_result=None, execut
     bot.cache.get = MagicMock(return_value=None)
     db_pool, conn = make_db_pool(fetch_rows, fetchrow_result, fetchval_result, execute_result)
     bot.db_pool = db_pool
-    bot.fetch_user = lambda user_id: make_user(user_id, f"user-{user_id}")
+    bot.fetch_user = AsyncMock(side_effect=lambda uid: make_user(uid, f"user-{uid}"))
     return bot, conn
 
 
@@ -72,7 +74,7 @@ async def test_grant_role_happy_path():
     permissions_group = cog.permissions_group
     interaction = make_interaction()
     target_user = make_user(20, "target")
-    await get_add_cmd(cog).callback(permissions_group, interaction, user=target_user, role="admin")
+    await get_add_cmd(cog).callback(permissions_group, interaction, user=str(target_user.id), role="admin")
     conn.fetchval.assert_awaited_once()
     assert conn.execute.await_count == 1
     bot.permission_checker.invalidate_user_cache.assert_called_once_with(
@@ -88,7 +90,7 @@ async def test_grant_role_already_has_role():
     permissions_group = cog.permissions_group
     interaction = make_interaction()
     target_user = make_user(20, "target")
-    await get_add_cmd(cog).callback(permissions_group, interaction, user=target_user, role="admin")
+    await get_add_cmd(cog).callback(permissions_group, interaction, user=str(target_user.id), role="admin")
     conn.fetchval.assert_awaited_once()
     conn.execute.assert_not_awaited()
     assert "already has" in str(interaction.followup.send.call_args).lower()
@@ -102,7 +104,7 @@ async def test_grant_role_permission_denied():
     permissions_group = cog.permissions_group
     interaction = make_interaction()
     target_user = make_user(20)
-    await get_add_cmd(cog).callback(permissions_group, interaction, user=target_user, role="admin")
+    await get_add_cmd(cog).callback(permissions_group, interaction, user=str(target_user.id), role="admin")
     conn.execute.assert_not_awaited()
     interaction.followup.send.assert_awaited()
 
@@ -114,7 +116,7 @@ async def test_revoke_role_success():
     permissions_group = cog.permissions_group
     interaction = make_interaction()
     target_user = make_user(20)
-    await get_remove_cmd(cog).callback(permissions_group, interaction, user=target_user, role="admin")
+    await get_remove_cmd(cog).callback(permissions_group, interaction, user=str(target_user.id), role="admin")
     assert conn.execute.await_count == 1
     bot.permission_checker.invalidate_user_cache.assert_called_once_with(
         interaction.guild_id, target_user.id
@@ -129,7 +131,7 @@ async def test_revoke_role_not_found():
     permissions_group = cog.permissions_group
     interaction = make_interaction()
     target_user = make_user(20)
-    await get_remove_cmd(cog).callback(permissions_group, interaction, user=target_user, role="admin")
+    await get_remove_cmd(cog).callback(permissions_group, interaction, user=str(target_user.id), role="admin")
     conn.execute.assert_awaited()
     interaction.followup.send.assert_awaited()
 
@@ -169,7 +171,7 @@ async def test_grant_role_db_error():
     permissions_group = cog.permissions_group
     interaction = make_interaction()
     target_user = make_user(20)
-    await get_add_cmd(cog).callback(permissions_group, interaction, user=target_user, role="admin")
+    await get_add_cmd(cog).callback(permissions_group, interaction, user=str(target_user.id), role="admin")
     assert "Error granting" in str(interaction.followup.send.call_args)
 
 
@@ -181,7 +183,7 @@ async def test_revoke_role_db_error():
     permissions_group = cog.permissions_group
     interaction = make_interaction()
     target_user = make_user(20)
-    await get_remove_cmd(cog).callback(permissions_group, interaction, user=target_user, role="admin")
+    await get_remove_cmd(cog).callback(permissions_group, interaction, user=str(target_user.id), role="admin")
     assert "Error revoking" in str(interaction.followup.send.call_args)
 
 

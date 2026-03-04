@@ -27,6 +27,25 @@ LEVEL_CHOICES = [
 ]
 
 
+MAX_AUTOCOMPLETE_CHOICES = 25
+
+
+async def _permissions_user_autocomplete(
+    interaction: discord.Interaction, current: str
+) -> list[app_commands.Choice[str]]:
+    if not interaction.guild:
+        return []
+    cur = current.lower().strip()
+    choices = []
+    for m in interaction.guild.members:
+        if m.bot:
+            continue
+        name = m.display_name or m.name
+        if not cur or cur in name.lower() or cur in (m.name or "").lower():
+            choices.append(app_commands.Choice(name=name[:100], value=str(m.id)))
+    return choices[:MAX_AUTOCOMPLETE_CHOICES]
+
+
 def _role_members(guild: discord.Guild, role_ids: dict) -> list[tuple[int, Role]]:
     user_highest: dict[int, Role] = {}
     for r in (Role.SUPER_ADMIN, Role.ADMIN, Role.MODERATOR):
@@ -226,32 +245,48 @@ class PermissionsGroup(app_commands.Group):
     @app_commands.command(name="add", description="Grant Admin or Moderator to a user")
     @app_commands.describe(user="User to grant role to", role="Role to grant")
     @app_commands.choices(role=ROLE_CHOICES)
-    async def add_cmd(self, interaction: discord.Interaction, user: discord.User, role: str):
+    @app_commands.autocomplete(user=_permissions_user_autocomplete)
+    async def add_cmd(self, interaction: discord.Interaction, user: str, role: str):
         await interaction.response.defer(ephemeral=True)
         if not await self._check_super_admin(interaction, "permissions add"):
+            return
+        guild = interaction.guild
+        if not guild:
+            await interaction.followup.send("❌ Server only.", ephemeral=True)
+            return
+        try:
+            user_id = int(user)
+        except ValueError:
+            await interaction.followup.send("❌ Invalid user.", ephemeral=True)
+            return
+        target = guild.get_member(user_id) or await self.cog.bot.fetch_user(user_id)
+        if not target:
+            await interaction.followup.send("❌ User not found.", ephemeral=True)
             return
         try:
             async with self.cog.bot.db_pool.acquire() as conn:
                 existing = await conn.fetchval(
                     "SELECT 1 FROM user_permissions WHERE server_id = $1 AND user_id = $2 AND role = $3 AND is_active = true LIMIT 1",
                     interaction.guild_id,
-                    user.id,
+                    user_id,
                     role,
                 )
                 if existing:
                     await interaction.followup.send(
-                        f"{user.mention} already has {role}.", ephemeral=True
+                        f"{target.mention} already has {role}.", ephemeral=True
                     )
                     return
                 await conn.execute(
                     "INSERT INTO user_permissions (server_id, user_id, role, granted_by) VALUES ($1, $2, $3, $4)",
                     interaction.guild_id,
-                    user.id,
+                    user_id,
                     role,
                     interaction.user.id,
                 )
-            self.cog.bot.permission_checker.invalidate_user_cache(interaction.guild_id, user.id)
-            await interaction.followup.send(f"✅ Granted {role} to {user.mention}", ephemeral=True)
+            self.cog.bot.permission_checker.invalidate_user_cache(interaction.guild_id, user_id)
+            await interaction.followup.send(
+                f"✅ Granted {role} to {target.mention}", ephemeral=True
+            )
         except Exception as e:
             logger.error("permissions add error: %s", e, exc_info=True)
             await interaction.followup.send("❌ Error granting role.", ephemeral=True)
@@ -259,26 +294,40 @@ class PermissionsGroup(app_commands.Group):
     @app_commands.command(name="remove", description="Revoke Admin or Moderator from a user")
     @app_commands.describe(user="User to revoke role from", role="Role to revoke")
     @app_commands.choices(role=ROLE_CHOICES)
-    async def remove_cmd(self, interaction: discord.Interaction, user: discord.User, role: str):
+    @app_commands.autocomplete(user=_permissions_user_autocomplete)
+    async def remove_cmd(self, interaction: discord.Interaction, user: str, role: str):
         await interaction.response.defer(ephemeral=True)
         if not await self._check_super_admin(interaction, "permissions remove"):
+            return
+        guild = interaction.guild
+        if not guild:
+            await interaction.followup.send("❌ Server only.", ephemeral=True)
+            return
+        try:
+            user_id = int(user)
+        except ValueError:
+            await interaction.followup.send("❌ Invalid user.", ephemeral=True)
+            return
+        target = guild.get_member(user_id) or await self.cog.bot.fetch_user(user_id)
+        if not target:
+            await interaction.followup.send("❌ User not found.", ephemeral=True)
             return
         try:
             async with self.cog.bot.db_pool.acquire() as conn:
                 result = await conn.execute(
                     "UPDATE user_permissions SET is_active = false, revoked_at = NOW() WHERE server_id = $1 AND user_id = $2 AND role = $3 AND is_active = true",
                     interaction.guild_id,
-                    user.id,
+                    user_id,
                     role,
                 )
             if result == "UPDATE 0":
                 await interaction.followup.send(
-                    f"❌ {user.mention} doesn't have {role}.", ephemeral=True
+                    f"❌ {target.mention} doesn't have {role}.", ephemeral=True
                 )
                 return
-            self.cog.bot.permission_checker.invalidate_user_cache(interaction.guild_id, user.id)
+            self.cog.bot.permission_checker.invalidate_user_cache(interaction.guild_id, user_id)
             await interaction.followup.send(
-                f"✅ Revoked {role} from {user.mention}", ephemeral=True
+                f"✅ Revoked {role} from {target.mention}", ephemeral=True
             )
         except Exception as e:
             logger.error("permissions remove error: %s", e, exc_info=True)
