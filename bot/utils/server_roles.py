@@ -33,10 +33,10 @@ async def get_server_role_ids(
     try:
         async with db_pool.acquire() as conn:
             row = await conn.fetchrow("SELECT config FROM servers WHERE server_id = $1", server_id)
-        if not row or not row["config"] or not isinstance(row["config"], dict):
+        cfg = row["config"] if row else None
+        if not isinstance(cfg, dict):
             result = {}
         else:
-            cfg = row["config"]
             result = {}
             for role, key in ROLE_KEYS.items():
                 if val := cfg.get(key):

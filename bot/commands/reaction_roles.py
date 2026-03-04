@@ -83,20 +83,31 @@ class ReactionRoleGroup(app_commands.Group):
                 return
 
             async with self.cog.bot.db_pool.acquire() as conn:
-                await conn.execute(
-                    """
-                    INSERT INTO reaction_roles (server_id, message_id, channel_id, emoji, role_id, created_by)
-                    VALUES ($1, $2, $3, $4, $5, $6)
-                    ON CONFLICT (server_id, message_id, emoji) WHERE (is_active = true)
-                    DO UPDATE SET role_id = EXCLUDED.role_id, updated_at = NOW()
-                    """,
+                existing = await conn.fetchval(
+                    "SELECT id FROM reaction_roles WHERE server_id = $1 AND message_id = $2 AND emoji = $3 AND is_active = true LIMIT 1",
                     interaction.guild_id,
                     message_id,
-                    channel_id,
                     str(emoji),
-                    role.id,
-                    interaction.user.id,
                 )
+                if existing:
+                    await conn.execute(
+                        "UPDATE reaction_roles SET role_id = $1, updated_at = NOW() WHERE id = $2",
+                        role.id,
+                        existing,
+                    )
+                else:
+                    await conn.execute(
+                        """
+                        INSERT INTO reaction_roles (server_id, message_id, channel_id, emoji, role_id, created_by)
+                        VALUES ($1, $2, $3, $4, $5, $6)
+                        """,
+                        interaction.guild_id,
+                        message_id,
+                        channel_id,
+                        str(emoji),
+                        role.id,
+                        interaction.user.id,
+                    )
 
             _invalidate_reaction_role_cache(
                 self.cog.bot.cache, interaction.guild_id, message_id, str(emoji)

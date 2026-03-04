@@ -1,6 +1,8 @@
 .git
+.cursor/
 .vscode
 .idea
+rules/
 __pycache__
 *.py[cod]
 *$py.class

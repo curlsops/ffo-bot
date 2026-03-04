@@ -23,11 +23,12 @@ def make_user(user_id: int, name: str = "user"):
     return user
 
 
-def make_db_pool(fetch_rows=None, fetchrow_result=None, execute_result="OK"):
+def make_db_pool(fetch_rows=None, fetchrow_result=None, fetchval_result=None, execute_result="OK"):
     conn = MagicMock()
     conn.execute = AsyncMock(return_value=execute_result)
     conn.fetch = AsyncMock(return_value=fetch_rows or [])
     conn.fetchrow = AsyncMock(return_value=fetchrow_result or {"config": {}})
+    conn.fetchval = AsyncMock(return_value=fetchval_result)
 
     @asynccontextmanager
     async def acquire():
@@ -38,12 +39,12 @@ def make_db_pool(fetch_rows=None, fetchrow_result=None, execute_result="OK"):
     return db_pool, conn
 
 
-def make_bot(fetch_rows=None, fetchrow_result=None, execute_result="OK"):
+def make_bot(fetch_rows=None, fetchrow_result=None, fetchval_result=None, execute_result="OK"):
     bot = MagicMock()
     bot.permission_checker.check_role = AsyncMock(return_value=True)
     bot.permission_checker.invalidate_user_cache = MagicMock()
     bot._register_server = AsyncMock()
-    db_pool, conn = make_db_pool(fetch_rows, fetchrow_result, execute_result)
+    db_pool, conn = make_db_pool(fetch_rows, fetchrow_result, fetchval_result, execute_result)
     bot.db_pool = db_pool
     bot.fetch_user = lambda user_id: make_user(user_id, f"user-{user_id}")
     return bot, conn
@@ -63,12 +64,13 @@ def get_list_cmd(cog):
 
 @pytest.mark.asyncio
 async def test_grant_role_happy_path():
-    bot, conn = make_bot()
+    bot, conn = make_bot(fetchval_result=None)
     cog = PermissionCommands(bot)
     permissions_group = cog.permissions_group
     interaction = make_interaction()
     target_user = make_user(20, "target")
     await get_add_cmd(cog).callback(permissions_group, interaction, user=target_user, role="admin")
+    conn.fetchval.assert_awaited_once()
     assert conn.execute.await_count == 1
     bot.permission_checker.invalidate_user_cache.assert_called_once_with(
         interaction.guild_id, target_user.id
@@ -77,8 +79,21 @@ async def test_grant_role_happy_path():
 
 
 @pytest.mark.asyncio
+async def test_grant_role_already_has_role():
+    bot, conn = make_bot(fetchval_result=1)
+    cog = PermissionCommands(bot)
+    permissions_group = cog.permissions_group
+    interaction = make_interaction()
+    target_user = make_user(20, "target")
+    await get_add_cmd(cog).callback(permissions_group, interaction, user=target_user, role="admin")
+    conn.fetchval.assert_awaited_once()
+    conn.execute.assert_not_awaited()
+    assert "already has" in str(interaction.followup.send.call_args).lower()
+
+
+@pytest.mark.asyncio
 async def test_grant_role_permission_denied():
-    bot, conn = make_bot()
+    bot, conn = make_bot(fetchval_result=None)
     bot.permission_checker.check_role = AsyncMock(return_value=False)
     cog = PermissionCommands(bot)
     permissions_group = cog.permissions_group
@@ -144,7 +159,8 @@ async def test_list_permissions_empty():
 
 @pytest.mark.asyncio
 async def test_grant_role_db_error():
-    bot, conn = make_bot()
+    bot, conn = make_bot(fetchval_result=None)
+    conn.fetchval = AsyncMock(return_value=None)
     conn.execute = AsyncMock(side_effect=Exception("DB error"))
     cog = PermissionCommands(bot)
     permissions_group = cog.permissions_group

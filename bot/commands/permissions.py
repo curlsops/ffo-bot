@@ -100,8 +100,19 @@ class PermissionsGroup(app_commands.Group):
             return
         try:
             async with self.cog.bot.db_pool.acquire() as conn:
+                existing = await conn.fetchval(
+                    "SELECT 1 FROM user_permissions WHERE server_id = $1 AND user_id = $2 AND role = $3 AND is_active = true LIMIT 1",
+                    interaction.guild_id,
+                    user.id,
+                    role,
+                )
+                if existing:
+                    await interaction.followup.send(
+                        f"{user.mention} already has {role}.", ephemeral=True
+                    )
+                    return
                 await conn.execute(
-                    "INSERT INTO user_permissions (server_id, user_id, role, granted_by) VALUES ($1, $2, $3, $4) ON CONFLICT (server_id, user_id, role, is_active) WHERE is_active = true DO NOTHING",
+                    "INSERT INTO user_permissions (server_id, user_id, role, granted_by) VALUES ($1, $2, $3, $4)",
                     interaction.guild_id,
                     user.id,
                     role,
