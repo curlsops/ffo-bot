@@ -248,3 +248,133 @@ class TestEdgeCases:
         await notifier.notify_error(999, ValueError("x" * 5000), "ctx")
         tb = next(f for f in channel.send.call_args[1]["embed"].fields if f.name == "Traceback")
         assert len(tb.value) <= 1032
+
+
+class TestQuotebookNotifications:
+    @pytest.mark.asyncio
+    async def test_notify_quotebook_submitted(self, notifier, bot):
+        channel = _setup_channel(bot)
+        await notifier.notify_quotebook_submitted(999, "A quote", 111, "abc12345")
+        embed = channel.send.call_args[1]["embed"]
+        assert embed.title == "Quote Submitted"
+        assert "A quote" in embed.description
+        assert "approve" in embed.footer.text
+
+
+class TestPermissionNotifications:
+    @pytest.mark.asyncio
+    async def test_notify_permission_changed_with_target_and_role(self, notifier, bot):
+        channel = _setup_channel(bot)
+        await notifier.notify_permission_changed(
+            999, "Set role", "admin", target_id=111, changed_by_id=222, discord_role=333
+        )
+        fields = str(channel.send.call_args[1]["embed"].fields)
+        assert "<@111>" in fields and "<@222>" in fields and "<@&333>" in fields
+
+    @pytest.mark.asyncio
+    async def test_notify_permission_changed_set_role_cleared(self, notifier, bot):
+        channel = _setup_channel(bot)
+        await notifier.notify_permission_changed(
+            999, "Set role", "admin", target_id=None, changed_by_id=222, discord_role=None
+        )
+        fields = str(channel.send.call_args[1]["embed"].fields)
+        assert "Cleared" in fields
+
+    @pytest.mark.asyncio
+    async def test_notify_permission_changed_no_role_field(self, notifier, bot):
+        channel = _setup_channel(bot)
+        await notifier.notify_permission_changed(
+            999, "Removed", "admin", target_id=111, changed_by_id=222, discord_role=None
+        )
+        fields = str(channel.send.call_args[1]["embed"].fields)
+        assert "<@111>" in fields and "<@222>" in fields
+        assert "Cleared" not in fields and "<@&" not in fields
+
+
+class TestReactionRoleNotifications:
+    @pytest.mark.asyncio
+    async def test_notify_reaction_role_setup(self, notifier, bot):
+        channel = _setup_channel(bot)
+        await notifier.notify_reaction_role_setup(999, "Added", "👍", 111, 222, 333, 444)
+        embed = channel.send.call_args[1]["embed"]
+        assert embed.title == "Reaction Role"
+        assert "👍" in embed.description and "Jump" in str(embed.fields)
+
+
+class TestFaqNotifications:
+    @pytest.mark.asyncio
+    async def test_notify_faq_changed(self, notifier, bot):
+        channel = _setup_channel(bot)
+        await notifier.notify_faq_changed(999, "Added", "rules", 111)
+        embed = channel.send.call_args[1]["embed"]
+        assert embed.title == "FAQ Changed"
+        assert "Added" in embed.description and "rules" in embed.description
+
+
+class TestNotifyChannelNotifications:
+    @pytest.mark.asyncio
+    async def test_notify_notify_channel_changed_with_channel(self, notifier, bot):
+        channel = _setup_channel(bot)
+        await notifier.notify_notify_channel_changed(999, 123, 111)
+        assert "123" in channel.send.call_args[1]["embed"].description
+
+    @pytest.mark.asyncio
+    async def test_notify_notify_channel_changed_disabled(self, notifier, bot):
+        channel = _setup_channel(bot)
+        await notifier.notify_notify_channel_changed(999, None, 111)
+        assert "disabled" in channel.send.call_args[1]["embed"].description.lower()
+
+
+class TestRateLimitNotifications:
+    @pytest.mark.asyncio
+    async def test_notify_rate_limit_hit(self, notifier, bot):
+        channel = _setup_channel(bot)
+        await notifier.notify_rate_limit_hit(999, 111, "Slow down", "test_cmd")
+        embed = channel.send.call_args[1]["embed"]
+        assert embed.title == "Rate Limit Hit"
+        assert "Slow down" in embed.description
+
+
+class TestBotAddedNotifications:
+    @pytest.mark.asyncio
+    async def test_notify_bot_added(self, notifier, bot):
+        channel = _setup_channel(bot)
+        await notifier.notify_bot_added(999, "New Server", 50)
+        embed = channel.send.call_args[1]["embed"]
+        assert embed.title == "Bot Added to Server"
+        assert "New Server" in embed.description
+        assert "50" in str(embed.fields)
+
+
+class TestModerationNotifications:
+    @pytest.mark.asyncio
+    async def test_notify_moderation_with_all_fields(self, notifier, bot):
+        channel = _setup_channel(bot)
+        await notifier.notify_moderation(
+            999, "Kicked", 111, moderator_id=222, reason="Spam", extra="3 strikes"
+        )
+        fields = str(channel.send.call_args[1]["embed"].fields)
+        assert "<@111>" in fields and "<@222>" in fields
+        assert "Spam" in fields and "3 strikes" in fields
+
+    @pytest.mark.asyncio
+    async def test_notify_moderation_minimal(self, notifier, bot):
+        channel = _setup_channel(bot)
+        await notifier.notify_moderation(
+            999, "Banned", 111, moderator_id=None, reason=None, extra=None
+        )
+        embed = channel.send.call_args[1]["embed"]
+        assert embed.title == "Moderation"
+        assert len(embed.fields) == 1
+        assert embed.fields[0].name == "Target"
+
+
+class TestFaqSubmissionNotifications:
+    @pytest.mark.asyncio
+    async def test_notify_faq_submission(self, notifier, bot):
+        channel = _setup_channel(bot)
+        await notifier.notify_faq_submission(999, "How do I X?", 111, "sub-123")
+        embed = channel.send.call_args[1]["embed"]
+        assert embed.title == "FAQ Question Submitted"
+        assert "How do I X?" in embed.description
+        assert "add" in embed.footer.text.lower()

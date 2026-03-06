@@ -36,11 +36,11 @@ pip install -r requirements.txt && alembic upgrade head && python main.py
 
 ## Bot Permissions
 
-Add the bot with: Send Messages, Embed Links, Add Reactions, Read Message History, Use External Emojis, View Channels, Create Private Threads.
+Add the bot with: Send Messages, Embed Links, Add Reactions, Read Message History, Use External Emojis, View Channels, Create Private Threads. For music: Connect, Speak.
 
 Generate invite: [Discord Developer Portal](https://discord.com/developers/applications) → OAuth2 → URL Generator → `bot` + `applications.commands`
 ```
-https://discord.com/api/oauth2/authorize?client_id=YOUR_CLIENT_ID&permissions=277025704000&scope=bot%20applications.commands
+https://discord.com/api/oauth2/authorize?client_id=YOUR_CLIENT_ID&permissions=277831010368&scope=bot%20applications.commands
 ```
 
 ---
@@ -57,6 +57,7 @@ https://discord.com/api/oauth2/authorize?client_id=YOUR_CLIENT_ID&permissions=27
 | 📏 Unit Conversion | Auto-converts imperial units to SI in chat |
 | ⛏️ Minecraft | Whitelist management via RCON with UUID validation |
 | 📁 Media | Optional archival (disabled by default) |
+| 🎵 Music | Lavalink playback: `/music join`, `play`, `leave`, `pause`, `resume`, `skip`, `queue` |
 | 🔐 Permissions | Super admin, admin, moderator roles |
 | 📊 Metrics | `/metrics` on port 8080 (Prometheus) |
 
@@ -78,8 +79,14 @@ https://discord.com/api/oauth2/authorize?client_id=YOUR_CLIENT_ID&permissions=27
 | `FEATURE_FAQ_SUBMISSIONS` | true | Allow users to submit FAQ questions |
 | `FEATURE_NOTIFY_MODERATION` | true | Notify on kicks, bans, nickname changes |
 | `FEATURE_NOTIFY_RATE_LIMIT` | false | Notify when users hit rate limit |
-| `BOT_OWNER_SERVER_ID` | — | Server ID for owner notifications |
-| `BOT_OWNER_NOTIFY_CHANNEL_ID` | — | Channel for bot-added-to-server alerts |
+| `FEATURE_MUSIC` | false | Enable Lavalink music commands |
+| `LAVALINK_HOST` | 127.0.0.1 | Lavalink server host |
+| `LAVALINK_PORT` | 2333 | Lavalink server port |
+| `LAVALINK_PASSWORD` | — | Lavalink server password (required when music enabled) |
+
+### Lavalink (optional, when FEATURE_MUSIC enabled)
+
+Run a [Lavalink](https://github.com/lavalink-devs/Lavalink) server. The bot uses [Mafic](https://github.com/mafic-org/mafic) to connect. Supports YouTube URLs and search; add LavaSrc for Spotify/Tidal.
 
 ### Minecraft RCON (optional)
 
@@ -104,6 +111,7 @@ Endpoints: `/healthz`, `/readyz`, `/metrics`
 | Reaction roles | ✅ Done |
 | Voice transcription | ✅ Done |
 | Rotating status | ✅ Done |
+| Lavalink music | ✅ Done |
 | Ticketing system | 📋 Planned |
 
 ---

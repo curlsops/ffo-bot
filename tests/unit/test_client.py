@@ -48,6 +48,8 @@ class TestMetricsCommandTree:
     @pytest.mark.asyncio
     async def test_call_records_metrics_on_success(self, bot):
         bot.metrics = MagicMock()
+        bot.rate_limiter = MagicMock()
+        bot.rate_limiter.check_rate_limit = AsyncMock(return_value=(True, ""))
         tree = bot.tree
         mock_cmd = MagicMock(qualified_name="test")
 
@@ -134,6 +136,59 @@ class TestMetricsCommandTree:
 
         with patch("bot.client.app_commands.CommandTree._call", new_callable=AsyncMock):
             await tree._call(interaction)
+
+    @pytest.mark.asyncio
+    async def test_call_rate_limited_returns_early(self, bot):
+        bot.metrics = MagicMock()
+        bot.rate_limiter = MagicMock()
+        bot.rate_limiter.check_rate_limit = AsyncMock(return_value=(False, "Rate limited"))
+        bot.settings.feature_notify_rate_limit = False
+        tree = bot.tree
+
+        interaction = MagicMock()
+        interaction.data = {"type": 1, "name": "test", "options": []}
+        interaction.guild_id = 123
+        interaction.user = MagicMock(id=456)
+        interaction.response.is_done.return_value = False
+        interaction.response.send_message = AsyncMock()
+        interaction.followup.send = AsyncMock()
+
+        with patch.object(
+            tree, "_get_app_command_options", return_value=(MagicMock(qualified_name="test"), [])
+        ):
+            with patch(
+                "bot.client.app_commands.CommandTree._call", new_callable=AsyncMock
+            ) as mock_super:
+                await tree._call(interaction)
+
+        mock_super.assert_not_called()
+        interaction.response.send_message.assert_awaited_once_with("Rate limited", ephemeral=True)
+        assert interaction.command_failed is True
+
+    @pytest.mark.asyncio
+    async def test_call_rate_limited_with_notify_uses_followup_when_done(self, bot):
+        bot.metrics = MagicMock()
+        bot.rate_limiter = MagicMock()
+        bot.rate_limiter.check_rate_limit = AsyncMock(return_value=(False, "Slow down"))
+        bot.settings.feature_notify_rate_limit = True
+        bot.notifier = MagicMock(notify_rate_limit_hit=AsyncMock())
+        tree = bot.tree
+
+        interaction = MagicMock()
+        interaction.data = {"type": 1, "name": "cmd", "options": []}
+        interaction.guild_id = 1
+        interaction.user = MagicMock(id=2)
+        interaction.response.is_done.return_value = True
+        interaction.followup.send = AsyncMock()
+
+        with patch.object(
+            tree, "_get_app_command_options", return_value=(MagicMock(qualified_name="cmd"), [])
+        ):
+            with patch("bot.client.app_commands.CommandTree._call", new_callable=AsyncMock):
+                await tree._call(interaction)
+
+        bot.notifier.notify_rate_limit_hit.assert_awaited_once_with(1, 2, "Slow down", "cmd")
+        interaction.followup.send.assert_awaited_once_with("Slow down", ephemeral=True)
 
 
 class TestFFOBotInit:
@@ -230,6 +285,19 @@ class TestFFOBotGuildEvents:
         assert "Failed to register server 123456789" in caplog.text
 
     @pytest.mark.asyncio
+    async def test_on_guild_join_skips_owner_notify_when_not_configured(self, bot):
+        bot.metrics = MagicMock()
+        bot.settings.bot_owner_server_id = None
+        bot.settings.bot_owner_notify_channel_id = None
+        guild = MagicMock(id=123, name="New")
+        with patch.object(bot, "_register_server", new_callable=AsyncMock):
+            with patch.object(bot.tree, "copy_global_to"):
+                with patch.object(bot.tree, "sync", new_callable=AsyncMock):
+                    with patch.object(bot, "get_channel") as mock_get_channel:
+                        await bot.on_guild_join(guild)
+        mock_get_channel.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_on_guild_join(self, bot):
         bot.metrics = MagicMock()
         guild = MagicMock(id=123, name="New")
@@ -258,6 +326,47 @@ class TestFFOBotGuildEvents:
                     await bot.on_guild_join(MagicMock(id=123, name="New"))
         await bot.on_guild_remove(MagicMock(id=123, name="Removed"))
 
+    @pytest.mark.asyncio
+    async def test_on_guild_join_notifies_owner_when_configured(self, bot):
+        bot.metrics = MagicMock()
+        bot.settings.bot_owner_server_id = 999
+        bot.settings.bot_owner_notify_channel_id = 888
+        guild = MagicMock(id=123, name="NewServer", member_count=50)
+        owner_ch = MagicMock()
+        owner_ch.guild = MagicMock(id=999)
+        owner_ch.send = AsyncMock()
+        bot.get_channel = MagicMock(return_value=owner_ch)
+
+        with patch.object(bot, "_register_server", new_callable=AsyncMock):
+            with patch.object(bot.tree, "copy_global_to"):
+                with patch.object(bot.tree, "sync", new_callable=AsyncMock):
+                    await bot.on_guild_join(guild)
+
+        owner_ch.send.assert_awaited_once()
+        embed = owner_ch.send.call_args[1]["embed"]
+        assert embed.title == "Bot Added to Server"
+        assert "NewServer" in embed.description
+        assert str(123) in str(embed.fields)
+
+    @pytest.mark.asyncio
+    async def test_on_guild_join_owner_notify_send_failure_logs_warning(self, bot, caplog):
+        bot.metrics = MagicMock()
+        bot.settings.bot_owner_server_id = 999
+        bot.settings.bot_owner_notify_channel_id = 888
+        guild = MagicMock(id=123, name="NewServer", member_count=50)
+        owner_ch = MagicMock()
+        owner_ch.guild = MagicMock(id=999)
+        owner_ch.send = AsyncMock(side_effect=Exception("send failed"))
+        bot.get_channel = MagicMock(return_value=owner_ch)
+        caplog.set_level(logging.WARNING, logger="bot.client")
+
+        with patch.object(bot, "_register_server", new_callable=AsyncMock):
+            with patch.object(bot.tree, "copy_global_to"):
+                with patch.object(bot.tree, "sync", new_callable=AsyncMock):
+                    await bot.on_guild_join(guild)
+
+        assert "Failed to notify owner" in caplog.text
+
 
 class TestFFOBotExtensions:
     @pytest.mark.asyncio
@@ -267,13 +376,14 @@ class TestFFOBotExtensions:
             assert mock_load.call_count >= 10  # base + optional (quotebook, whitelist, faq)
 
     @pytest.mark.asyncio
-    async def test_load_extensions_handles_failure(self, bot):
-        async def fail_on_messages(*args):
-            if "messages" in args[0]:
-                raise Exception("Load failed")
+    async def test_load_extensions_handles_failure(self, bot, caplog):
+        async def fail_first(*args):
+            raise Exception("Load failed")
 
-        with patch.object(bot, "load_extension", side_effect=fail_on_messages):
+        caplog.set_level(logging.ERROR, logger="bot.client")
+        with patch.object(bot, "load_extension", side_effect=fail_first):
             await bot._load_extensions()
+        assert "Failed to load extension" in caplog.text
 
     @pytest.mark.asyncio
     async def test_load_extensions_with_quotebook(self, mock_settings):
@@ -304,6 +414,16 @@ class TestFFOBotExtensions:
         with patch.object(bot, "load_extension", new_callable=AsyncMock) as mock_load:
             await bot._load_extensions()
             assert any("faq" in str(c) for c in mock_load.call_args_list)
+
+    @pytest.mark.asyncio
+    async def test_load_extensions_with_music(self, mock_settings):
+        mock_settings.feature_music = True
+        from bot.client import FFOBot
+
+        bot = FFOBot(mock_settings)
+        with patch.object(bot, "load_extension", new_callable=AsyncMock) as mock_load:
+            await bot._load_extensions()
+            assert any("music" in str(c) for c in mock_load.call_args_list)
 
 
 class TestFFOBotPersistentViews:
@@ -811,6 +931,18 @@ class TestFFOBotAppCommandError:
         with patch.object(bot, "_drain_message_queue", new_callable=AsyncMock):
             with patch("discord.ext.commands.Bot.close", new_callable=AsyncMock):
                 await bot.close()
+
+    @pytest.mark.asyncio
+    async def test_close_closes_pool_when_present(self, bot):
+        bot.db_pool = AsyncMock()
+        bot.cache = MagicMock()
+        bot.media_downloader = None
+        bot._health_server = None
+        bot.pool = MagicMock(close=AsyncMock())
+        with patch.object(bot, "_drain_message_queue", new_callable=AsyncMock):
+            with patch("discord.ext.commands.Bot.close", new_callable=AsyncMock):
+                await bot.close()
+        bot.pool.close.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_register_persistent_views_acquire_raises(self, bot):
