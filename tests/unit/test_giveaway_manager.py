@@ -270,6 +270,17 @@ class TestEndGiveaway:
         await manager._end_giveaway(_giveaway())
 
     @pytest.mark.asyncio
+    async def test_end_giveaway_no_cache(self, manager):
+        manager.bot.cache = None
+        manager.bot.db_pool = _db_ctx(
+            MagicMock(execute=AsyncMock(), fetch=AsyncMock(return_value=[]))
+        )
+        channel, _ = _channel_with_msg()
+        manager.bot.get_channel.return_value = channel
+        await manager._end_giveaway(_giveaway())
+        channel.send.assert_called()
+
+    @pytest.mark.asyncio
     async def test_fetch_channel_forbidden(self, manager, caplog):
         caplog.set_level(logging.WARNING, logger="bot.tasks.giveaway_manager")
         manager.bot.db_pool = _db_ctx(

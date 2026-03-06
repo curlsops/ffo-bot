@@ -7,10 +7,11 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from bot.auth.permissions import PermissionContext
+from bot.auth.command_helpers import require_admin, send_error
+from bot.utils.autocomplete import cached_autocomplete
+from bot.utils.discord_helpers import get_or_fetch_channel
 from bot.utils.pagination import ListPaginatedView
 from bot.utils.quotebook_channel import get_quotebook_channel_id, set_quotebook_channel
-from config.constants import Role
 
 logger = logging.getLogger(__name__)
 
@@ -75,78 +76,82 @@ def _parse_quotes_from_message(
     return results
 
 
+async def _fetch_quote_ids(pool, guild_id: int):
+    async with pool.acquire() as conn:
+        return await conn.fetch(
+            """
+            SELECT id, quote_text, approved
+            FROM quotebook
+            WHERE server_id = $1
+            ORDER BY approved, created_at DESC
+            LIMIT 25
+            """,
+            guild_id,
+        )
+
+
+async def _fetch_quote_approve_ids(pool, guild_id: int):
+    async with pool.acquire() as conn:
+        return await conn.fetch(
+            """
+            SELECT id, quote_text
+            FROM quotebook
+            WHERE server_id = $1 AND approved = false
+            ORDER BY created_at DESC
+            LIMIT 25
+            """,
+            guild_id,
+        )
+
+
+def _quote_ids_to_choices(rows: list[dict], current: str) -> list[app_commands.Choice[str]]:
+    choices = []
+    for r in rows:
+        sid = str(r["id"])
+        short = (r["quote_text"][:50] + "…") if len(r["quote_text"]) > 50 else r["quote_text"]
+        label = f"{sid[:8]} {short}" + (" ✓" if r.get("approved") else " (pending)")
+        if not current or current.lower() in sid.lower() or current.lower() in short.lower():
+            choices.append(app_commands.Choice(name=label[:100], value=sid))
+    return choices
+
+
+def _quote_approve_to_choices(rows: list[dict], current: str) -> list[app_commands.Choice[str]]:
+    choices = []
+    for r in rows:
+        sid = str(r["id"])
+        short = (r["quote_text"][:50] + "…") if len(r["quote_text"]) > 50 else r["quote_text"]
+        label = f"{sid[:8]} {short}"
+        if not current or current.lower() in sid.lower() or current.lower() in short.lower():
+            choices.append(app_commands.Choice(name=label[:100], value=sid))
+    return choices
+
+
 async def _quote_id_autocomplete(
     interaction: discord.Interaction, current: str
 ) -> list[app_commands.Choice[str]]:
-    if not interaction.guild_id:
-        return []
-    try:
-        bot = interaction.client
-        cache_key = CACHE_QUOTE_AUTOCOMPLETE.format(server_id=interaction.guild_id)
-        rows = bot.cache.get(cache_key) if bot.cache else None
-        if rows is None:
-            async with bot.db_pool.acquire() as conn:
-                rows = await conn.fetch(
-                    """
-                    SELECT id, quote_text, approved
-                    FROM quotebook
-                    WHERE server_id = $1
-                    ORDER BY approved, created_at DESC
-                    LIMIT 25
-                    """,
-                    interaction.guild_id,
-                )
-            rows = [dict(r) for r in rows]
-            if bot.cache:
-                bot.cache.set(cache_key, rows, ttl=60)
-        choices = []
-        for r in rows:
-            sid = str(r["id"])
-            short = (r["quote_text"][:50] + "…") if len(r["quote_text"]) > 50 else r["quote_text"]
-            label = f"{sid[:8]} {short}" + (" ✓" if r["approved"] else " (pending)")
-            if not current or current.lower() in sid.lower() or current.lower() in short.lower():
-                choices.append(app_commands.Choice(name=label[:100], value=sid))
-        return choices[:25]
-    except Exception as e:
-        logger.debug("Quote ID autocomplete failed: %s", e)
-        return []
+    return await cached_autocomplete(
+        interaction,
+        current,
+        CACHE_QUOTE_AUTOCOMPLETE,
+        _fetch_quote_ids,
+        _quote_ids_to_choices,
+        ttl=60,
+        log_prefix="Quote ID",
+    )
 
 
 async def _quote_id_approve_autocomplete(
     interaction: discord.Interaction, current: str
 ) -> list[app_commands.Choice[str]]:
-    if not interaction.guild_id:
-        return []
-    try:
-        bot = interaction.client
-        cache_key = CACHE_QUOTE_APPROVE_AUTOCOMPLETE.format(server_id=interaction.guild_id)
-        rows = bot.cache.get(cache_key) if bot.cache else None
-        if rows is None:
-            async with bot.db_pool.acquire() as conn:
-                rows = await conn.fetch(
-                    """
-                    SELECT id, quote_text
-                    FROM quotebook
-                    WHERE server_id = $1 AND approved = false
-                    ORDER BY created_at DESC
-                    LIMIT 25
-                    """,
-                    interaction.guild_id,
-                )
-            rows = [dict(r) for r in rows]
-            if bot.cache:
-                bot.cache.set(cache_key, rows, ttl=60)
-        choices = []
-        for r in rows:
-            sid = str(r["id"])
-            short = (r["quote_text"][:50] + "…") if len(r["quote_text"]) > 50 else r["quote_text"]
-            label = f"{sid[:8]} {short}"
-            if not current or current.lower() in sid.lower() or current.lower() in short.lower():
-                choices.append(app_commands.Choice(name=label[:100], value=sid))
-        return choices[:25]
-    except Exception as e:
-        logger.debug("Quote approve autocomplete failed: %s", e)
-        return []
+    return await cached_autocomplete(
+        interaction,
+        current,
+        CACHE_QUOTE_APPROVE_AUTOCOMPLETE,
+        _fetch_quote_approve_ids,
+        _quote_approve_to_choices,
+        ttl=60,
+        log_prefix="Quote approve",
+    )
 
 
 @app_commands.guild_only()
@@ -174,7 +179,7 @@ class QuoteGroup(app_commands.Group):
 
         text = text.strip()[:500]
         if not text:
-            await interaction.followup.send("Quote cannot be empty.", ephemeral=True)
+            await send_error(interaction, "Quote cannot be empty.")
             return
 
         attr = attribution.strip()[:255] if attribution else None
@@ -205,13 +210,13 @@ class QuoteGroup(app_commands.Group):
             )
         except Exception as e:
             logger.error("quote submit error: %s", e, exc_info=True)
-            await interaction.followup.send("Error submitting quote.", ephemeral=True)
+            await send_error(interaction, "Error submitting quote.")
 
     @app_commands.command(name="list", description="List all quotes (Admin only)")
     @app_commands.default_permissions(administrator=True)
     async def list_cmd(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        if not await self.cog._check_admin(interaction, "quote list"):
+        if not await require_admin(interaction, "quote list", self.cog.bot):
             return
 
         try:
@@ -228,7 +233,7 @@ class QuoteGroup(app_commands.Group):
             rows = [dict(r) for r in rows]
 
             if not rows:
-                await interaction.followup.send("No quotes in the book yet.", ephemeral=True)
+                await send_error(interaction, "No quotes in the book yet.")
                 return
 
             def fmt(r):
@@ -245,7 +250,7 @@ class QuoteGroup(app_commands.Group):
             )
         except Exception as e:
             logger.error("quote list error: %s", e, exc_info=True)
-            await interaction.followup.send("Error listing quotes.", ephemeral=True)
+            await send_error(interaction, "Error listing quotes.")
 
     @app_commands.command(name="approve", description="Approve a quote (Admin only)")
     @app_commands.default_permissions(administrator=True)
@@ -253,13 +258,13 @@ class QuoteGroup(app_commands.Group):
     @app_commands.autocomplete(quote_id=_quote_id_approve_autocomplete)
     async def approve_cmd(self, interaction: discord.Interaction, quote_id: str):
         await interaction.response.defer(ephemeral=True)
-        if not await self.cog._check_admin(interaction, "quote approve"):
+        if not await require_admin(interaction, "quote approve", self.cog.bot):
             return
 
         try:
             qid = UUID(quote_id)
         except ValueError:
-            await interaction.followup.send("Invalid quote ID.", ephemeral=True)
+            await send_error(interaction, "Invalid quote ID.")
             return
 
         try:
@@ -275,9 +280,7 @@ class QuoteGroup(app_commands.Group):
                 )
 
                 if "UPDATE 0" in result:
-                    await interaction.followup.send(
-                        "Quote not found or already approved.", ephemeral=True
-                    )
+                    await send_error(interaction, "Quote not found or already approved.")
                     return
 
                 row = await conn.fetchrow(
@@ -294,7 +297,9 @@ class QuoteGroup(app_commands.Group):
                     self.cog.bot.cache,
                 )
                 if channel_id:
-                    channel = self.cog.bot.get_channel(channel_id)
+                    channel = await get_or_fetch_channel(self.cog.bot, channel_id)
+                    if channel is None:
+                        logger.warning("Could not fetch quotebook channel %s", channel_id)
                     if channel:
                         text = row["quote_text"]
                         if row["attribution"]:
@@ -312,7 +317,7 @@ class QuoteGroup(app_commands.Group):
                             )
         except Exception as e:
             logger.error("quote approve error: %s", e, exc_info=True)
-            await interaction.followup.send("Error approving quote.", ephemeral=True)
+            await send_error(interaction, "Error approving quote.")
 
     @app_commands.command(name="delete", description="Delete a quote (Admin only)")
     @app_commands.default_permissions(administrator=True)
@@ -320,13 +325,13 @@ class QuoteGroup(app_commands.Group):
     @app_commands.autocomplete(quote_id=_quote_id_autocomplete)
     async def delete_cmd(self, interaction: discord.Interaction, quote_id: str):
         await interaction.response.defer(ephemeral=True)
-        if not await self.cog._check_admin(interaction, "quote delete"):
+        if not await require_admin(interaction, "quote delete", self.cog.bot):
             return
 
         try:
             qid = UUID(quote_id)
         except ValueError:
-            await interaction.followup.send("Invalid quote ID.", ephemeral=True)
+            await send_error(interaction, "Invalid quote ID.")
             return
 
         try:
@@ -340,7 +345,7 @@ class QuoteGroup(app_commands.Group):
             await interaction.followup.send("Quote deleted.", ephemeral=True)
         except Exception as e:
             logger.error("quote delete error: %s", e, exc_info=True)
-            await interaction.followup.send("Error deleting quote.", ephemeral=True)
+            await send_error(interaction, "Error deleting quote.")
 
     @app_commands.command(
         name="import",
@@ -358,10 +363,7 @@ class QuoteGroup(app_commands.Group):
         auto_approve: bool = True,
     ):
         await interaction.response.defer(ephemeral=True)
-        if not await self.cog._check_admin(interaction, "quote import"):
-            return
-
-        if not interaction.guild_id:
+        if not await require_admin(interaction, "quote import", self.cog.bot):
             return
 
         try:
@@ -421,16 +423,10 @@ class QuoteGroup(app_commands.Group):
             await interaction.followup.send(msg, ephemeral=True)
 
         except discord.Forbidden:
-            await interaction.followup.send(
-                "I don't have permission to read that channel.",
-                ephemeral=True,
-            )
+            await send_error(interaction, "I don't have permission to read that channel.")
         except Exception as e:
             logger.error("quote import error: %s", e, exc_info=True)
-            await interaction.followup.send(
-                f"Error importing: {e}",
-                ephemeral=True,
-            )
+            await send_error(interaction, f"Error importing: {e}")
 
     @app_commands.command(name="random", description="Post a random approved quote")
     async def random_cmd(self, interaction: discord.Interaction):
@@ -454,7 +450,7 @@ class QuoteGroup(app_commands.Group):
                     self.cog.bot.cache.set(cache_key, rows, ttl=60)
 
             if not rows:
-                await interaction.followup.send("No quotes in the book yet.", ephemeral=True)
+                await send_error(interaction, "No quotes in the book yet.")
                 return
 
             r = random.choice(rows)
@@ -470,22 +466,13 @@ class QuoteGroup(app_commands.Group):
             await interaction.followup.send(embed=embed, ephemeral=False)
         except Exception as e:
             logger.error("quote random error: %s", e, exc_info=True)
-            await interaction.followup.send("Error fetching quote.", ephemeral=True)
+            await send_error(interaction, "Error fetching quote.")
 
 
 class QuotebookCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.quote_group = QuoteGroup(self)
-
-    async def _check_admin(self, interaction: discord.Interaction, cmd: str) -> bool:
-        ctx = PermissionContext(
-            server_id=interaction.guild_id, user_id=interaction.user.id, command_name=cmd
-        )
-        if not await self.bot.permission_checker.check_role(ctx, Role.ADMIN):
-            await interaction.followup.send("Admin required.", ephemeral=True)
-            return False
-        return True
 
     async def cog_load(self):
         self.bot.tree.add_command(self.quote_group)

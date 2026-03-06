@@ -10,7 +10,6 @@ logger = logging.getLogger(__name__)
 @app_commands.guild_only()
 @app_commands.default_permissions(administrator=True)
 class PrivacyGroup(app_commands.Group):
-    """Privacy and message tracking preferences."""
 
     def __init__(self, cog: "PrivacyCommands"):
         super().__init__(name="privacy", description="Privacy and message tracking preferences")

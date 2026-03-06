@@ -51,7 +51,7 @@ async def spotify_url_to_search_query(url: str) -> str | None:
     if not title or not isinstance(title, str):
         return None
     title = title.strip()[:200]
-    return title if title else None
+    return title or None
 
 
 async def _get_spotify_token(client_id: str, client_secret: str) -> str | None:
@@ -145,4 +145,4 @@ async def spotify_playlist_to_search_queries(
     except aiohttp.ClientError as e:
         logger.debug("Spotify playlist fetch failed for %s: %s", url, e)
         return None
-    return queries if queries else None
+    return queries or None

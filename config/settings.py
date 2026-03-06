@@ -87,11 +87,11 @@ class Settings(BaseSettings):
     lavalink_password: Optional[str] = Field(default=None, description="Lavalink server password")
     spotify_client_id: Optional[str] = Field(
         default=None,
-        description="Spotify app client ID for playlist support (from developer dashboard)",
+        description="Spotify app client ID for playlist support (SPOTIFY_CLIENT_ID env)",
     )
     spotify_client_secret: Optional[str] = Field(
         default=None,
-        description="Spotify app client secret for playlist support",
+        description="Spotify app client secret for playlist support (SPOTIFY_CLIENT_SECRET env)",
     )
 
     # Minecraft RCON (when feature_minecraft_whitelist is enabled)
