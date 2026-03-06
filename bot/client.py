@@ -103,6 +103,7 @@ class FFOBot(commands.Bot):
         self.notifier: AdminNotifier | None = None
         self.minecraft_rcon: MinecraftRCONClient | None = None
         self.pool = None
+        self._lavalink_node_created = False
         self._shutdown_event = asyncio.Event()
         self._health_server: web.AppRunner | None = None
 
@@ -150,12 +151,6 @@ class FFOBot(commands.Bot):
             from mafic import NodePool
 
             self.pool = NodePool(self)
-            await self.pool.create_node(
-                host=self.settings.lavalink_host,
-                port=self.settings.lavalink_port,
-                password=self.settings.lavalink_password,
-                label="main",
-            )
         else:
             self.pool = None
         self.tree.on_error = self._on_app_command_error
@@ -224,6 +219,19 @@ class FFOBot(commands.Bot):
         logger.info(
             "Connected as %s (ID: %s) to %d servers", self.user, self.user.id, len(self.guilds)
         )
+
+        if self.pool and not self._lavalink_node_created:
+            self._lavalink_node_created = True
+            try:
+                await self.pool.create_node(
+                    host=self.settings.lavalink_host,
+                    port=self.settings.lavalink_port,
+                    password=self.settings.lavalink_password,
+                    label="main",
+                )
+            except Exception as e:
+                logger.warning("Lavalink connection failed, music disabled: %s", e)
+                self.pool = None
 
         for guild in self.guilds:
             await self._register_server(guild)
