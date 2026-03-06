@@ -61,6 +61,30 @@ class Settings(BaseSettings):
         default=False, description="Enable Minecraft whitelist via RCON"
     )
     feature_faq: bool = Field(default=True, description="Enable FAQ commands")
+    feature_faq_submissions: bool = Field(
+        default=True, description="Allow users to submit FAQ questions for admins"
+    )
+    feature_notify_moderation: bool = Field(
+        default=True, description="Notify on moderation events (kicks, bans, name changes)"
+    )
+    feature_notify_rate_limit: bool = Field(
+        default=False, description="Notify when users hit rate limit (can be noisy)"
+    )
+    bot_owner_server_id: Optional[int] = Field(
+        default=None,
+        description="Server ID for owner notifications (e.g. bot added to new server)",
+    )
+    bot_owner_notify_channel_id: Optional[int] = Field(
+        default=None,
+        description="Channel ID in bot_owner_server_id for owner notifications",
+    )
+
+    feature_music: bool = Field(
+        default=False, description="Enable music commands (requires Lavalink)"
+    )
+    lavalink_host: Optional[str] = Field(default="127.0.0.1", description="Lavalink server host")
+    lavalink_port: int = Field(default=2333, description="Lavalink server port")
+    lavalink_password: Optional[str] = Field(default=None, description="Lavalink server password")
 
     # Minecraft RCON (when feature_minecraft_whitelist is enabled)
     # Host: K8s service DNS (e.g. minecraft.discord.svc.cluster.local) or external IP/hostname

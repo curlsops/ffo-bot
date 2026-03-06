@@ -41,6 +41,26 @@ class MetricsCommandTree(app_commands.CommandTree):
                 command_name = command.qualified_name if command else "unknown"
             else:
                 command_name = data.get("name", "unknown")
+
+            if self.client.rate_limiter and interaction.guild_id:
+                allowed, reason = await self.client.rate_limiter.check_rate_limit(
+                    interaction.user.id, interaction.guild_id
+                )
+                if not allowed:
+                    if self.client.settings.feature_notify_rate_limit and self.client.notifier:
+                        await self.client.notifier.notify_rate_limit_hit(
+                            interaction.guild_id,
+                            interaction.user.id,
+                            reason,
+                            command_name,
+                        )
+                    if interaction.response.is_done():
+                        await interaction.followup.send(reason, ephemeral=True)
+                    else:
+                        await interaction.response.send_message(reason, ephemeral=True)
+                    interaction.command_failed = True
+                    return
+
             await super()._call(interaction)
         finally:
             if self.client.metrics:
@@ -62,6 +82,8 @@ class FFOBot(commands.Bot):
         intents.guilds = True
         intents.members = True
         intents.reactions = True
+        intents.bans = True
+        intents.voice_states = True
         super().__init__(
             command_prefix="!",
             intents=intents,
@@ -80,6 +102,7 @@ class FFOBot(commands.Bot):
         self.rate_limiter: RateLimiter | None = None
         self.notifier: AdminNotifier | None = None
         self.minecraft_rcon: MinecraftRCONClient | None = None
+        self.pool = None
         self._shutdown_event = asyncio.Event()
         self._health_server: web.AppRunner | None = None
 
@@ -123,6 +146,18 @@ class FFOBot(commands.Bot):
             from bot.services.minecraft_rcon import MinecraftRCONClient
 
             self.minecraft_rcon = MinecraftRCONClient(self.settings)
+        if self.settings.feature_music and self.settings.lavalink_password:
+            from mafic import NodePool
+
+            self.pool = NodePool(self)
+            await self.pool.create_node(
+                host=self.settings.lavalink_host,
+                port=self.settings.lavalink_port,
+                password=self.settings.lavalink_password,
+                label="main",
+            )
+        else:
+            self.pool = None
         self.tree.on_error = self._on_app_command_error
 
         await self._start_health_server()
@@ -134,6 +169,7 @@ class FFOBot(commands.Bot):
         extensions = [
             "bot.handlers.messages",
             "bot.handlers.reactions",
+            "bot.handlers.moderation",
             "bot.commands.admin",
             "bot.commands.permissions",
             "bot.commands.reactbot",
@@ -150,6 +186,8 @@ class FFOBot(commands.Bot):
             extensions.append("bot.commands.whitelist")
         if self.settings.feature_faq:
             extensions.append("bot.commands.faq")
+        if self.settings.feature_music:
+            extensions.append("bot.commands.music")
 
         for extension in extensions:
             try:
@@ -231,6 +269,29 @@ class FFOBot(commands.Bot):
         await self.tree.sync(guild=guild)
         if self.metrics:
             self.metrics.set_guild_count(len(self.guilds))
+        if self.settings.bot_owner_server_id and self.settings.bot_owner_notify_channel_id:
+            owner_ch = self.get_channel(self.settings.bot_owner_notify_channel_id)
+            if (
+                owner_ch
+                and hasattr(owner_ch, "guild")
+                and owner_ch.guild
+                and owner_ch.guild.id == self.settings.bot_owner_server_id
+            ):
+                try:
+                    embed = discord.Embed(
+                        title="Bot Added to Server",
+                        description=guild.name,
+                        color=discord.Color.green(),
+                    )
+                    embed.add_field(name="Server ID", value=str(guild.id), inline=True)
+                    embed.add_field(
+                        name="Members",
+                        value=str(guild.member_count or 0),
+                        inline=True,
+                    )
+                    await owner_ch.send(embed=embed)
+                except Exception as e:
+                    logger.warning("Failed to notify owner of new server: %s", e)
 
     async def on_guild_remove(self, guild: discord.Guild):
         logger.info("Left server: %s (%s)", guild.name, guild.id)
@@ -259,6 +320,8 @@ class FFOBot(commands.Bot):
             await self.db_pool.close()
         if self.cache:
             self.cache.clear()
+        if self.pool:
+            await self.pool.close()
 
         await super().close()
         logger.info("Shutdown complete")

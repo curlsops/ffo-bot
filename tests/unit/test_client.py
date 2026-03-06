@@ -19,6 +19,7 @@ def mock_settings():
     s.feature_conversion = False
     s.feature_minecraft_whitelist = False
     s.feature_faq = False
+    s.feature_music = False
     s.health_check_port = 8080
     s.rate_limit_user_capacity = 10
     s.rate_limit_server_capacity = 100
@@ -155,6 +156,7 @@ class TestFFOBotInit:
         assert bot.intents.guilds is True
         assert bot.intents.members is True
         assert bot.intents.reactions is True
+        assert bot.intents.bans is True
 
 
 class TestFFOBotLifecycle:
@@ -555,6 +557,79 @@ class TestFFOBotSetupHook:
         assert bot.minecraft_rcon is not None
 
     @pytest.mark.asyncio
+    async def test_setup_hook_with_music(self, mock_settings):
+        from bot.client import FFOBot
+
+        mock_settings.feature_music = True
+        mock_settings.lavalink_host = "127.0.0.1"
+        mock_settings.lavalink_port = 2333
+        mock_settings.lavalink_password = "youshallnotpass"
+        bot = FFOBot(mock_settings)
+
+        mock_pool = MagicMock(create_node=AsyncMock())
+        patches = [
+            patch(
+                "bot.client.DatabasePool.create", new_callable=AsyncMock, return_value=MagicMock()
+            ),
+            patch("bot.client.InMemoryCache"),
+            patch("bot.client.BotMetrics"),
+            patch("bot.client.PhraseMatcher"),
+            patch("bot.client.PermissionChecker"),
+            patch("bot.client.RateLimiter"),
+            patch("mafic.NodePool", return_value=mock_pool),
+            patch.object(bot, "_start_health_server", new_callable=AsyncMock),
+            patch.object(bot, "_load_extensions", new_callable=AsyncMock),
+        ]
+        mock_tree = MagicMock(sync=AsyncMock())
+
+        for p in patches:
+            p.start()
+        try:
+            with patch.object(type(bot), "tree", new_callable=PropertyMock, return_value=mock_tree):
+                await bot.setup_hook()
+        finally:
+            for p in patches:
+                p.stop()
+
+        assert bot.pool is not None
+        mock_pool.create_node.assert_called_once_with(
+            host="127.0.0.1", port=2333, password="youshallnotpass", label="main"
+        )
+
+    @pytest.mark.asyncio
+    async def test_setup_hook_music_disabled_without_password(self, mock_settings):
+        from bot.client import FFOBot
+
+        mock_settings.feature_music = True
+        mock_settings.lavalink_password = None
+        bot = FFOBot(mock_settings)
+
+        patches = [
+            patch(
+                "bot.client.DatabasePool.create", new_callable=AsyncMock, return_value=MagicMock()
+            ),
+            patch("bot.client.InMemoryCache"),
+            patch("bot.client.BotMetrics"),
+            patch("bot.client.PhraseMatcher"),
+            patch("bot.client.PermissionChecker"),
+            patch("bot.client.RateLimiter"),
+            patch.object(bot, "_start_health_server", new_callable=AsyncMock),
+            patch.object(bot, "_load_extensions", new_callable=AsyncMock),
+        ]
+        mock_tree = MagicMock(sync=AsyncMock())
+
+        for p in patches:
+            p.start()
+        try:
+            with patch.object(type(bot), "tree", new_callable=PropertyMock, return_value=mock_tree):
+                await bot.setup_hook()
+        finally:
+            for p in patches:
+                p.stop()
+
+        assert bot.pool is None
+
+    @pytest.mark.asyncio
     async def test_setup_hook_voice_transcription_disabled_without_api_key(self, mock_settings):
         from bot.client import FFOBot
 
@@ -761,6 +836,7 @@ class TestFFOBotAppCommandError:
     @pytest.mark.asyncio
     async def test_load_extensions_multiple_failures(self, bot, caplog):
         caplog.set_level(logging.WARNING, logger="bot.client")
+
         async def fail_all(*args):
             raise Exception("load failed")
 

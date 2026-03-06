@@ -12,10 +12,12 @@ from bot.commands.permissions import PermissionCommands
 from bot.commands.polls import PollCommands
 from bot.commands.privacy import PrivacyCommands
 from bot.commands.quotebook import QuotebookCommands
+from bot.commands.music import MusicCommands
 from bot.commands.reactbot import ReactBotCommands
 from bot.commands.reaction_roles import ReactionRoleCommands
 from bot.commands.whitelist import WhitelistCommands
 from bot.handlers.messages import MessageHandler
+from bot.handlers.moderation import ModerationHandler
 from bot.handlers.reactions import ReactionHandler
 from bot.processors.media_downloader import MediaDownloader
 from bot.processors.phrase_matcher import PhraseMatcher
@@ -32,7 +34,12 @@ from bot.utils.notifier import AdminNotifier
 from bot.utils.rate_limiter import RateLimiter
 from bot.utils.regex_validator import RegexValidator
 from bot.utils.validation import InputValidator
-from bot.utils.whitelist_cache import add_to_cache, get_cached_usernames, remove_from_cache, sync_from_rcon
+from bot.utils.whitelist_cache import (
+    add_to_cache,
+    get_cached_usernames,
+    remove_from_cache,
+    sync_from_rcon,
+)
 from bot.utils.whitelist_channel import get_whitelist_channel_id, set_whitelist_channel
 from config.settings import Settings
 from database.connection import DatabasePool
