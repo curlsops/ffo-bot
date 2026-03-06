@@ -2,6 +2,7 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from mafic import SearchType
 from mafic.errors import PlayerNotConnected
 
 from bot.commands.music import (
@@ -19,6 +20,9 @@ from bot.commands.music import (
 def mock_bot():
     bot = MagicMock()
     bot.pool = MagicMock()
+    bot.permission_checker = MagicMock()
+    bot.permission_checker.check_role = AsyncMock(return_value=True)
+    bot.user = MagicMock(id=999)
     return bot
 
 
@@ -117,6 +121,20 @@ class TestMusicJoin:
         assert "timed out" in i.followup.send.call_args[0][0].lower()
         assert i.followup.send.call_args[1]["ephemeral"] is True
 
+    @pytest.mark.asyncio
+    async def test_join_success_sends_embed(self, cog):
+        channel = MagicMock(id=99)
+        channel.mention = "#general"
+        channel.connect = AsyncMock()
+        i = _interaction(cog.bot, voice_channel=channel)
+        i.guild.voice_client = None
+        await cog.music_group.join.callback(cog.music_group, i)
+        i.followup.send.assert_called_once()
+        call_kw = i.followup.send.call_args[1]
+        assert call_kw.get("embed") is not None
+        assert "Joined" in call_kw["embed"].title
+        assert "general" in call_kw["embed"].description
+
 
 class TestMusicPlay:
     @pytest.mark.asyncio
@@ -169,6 +187,193 @@ class TestMusicPlay:
         assert "music connection failed" in i.followup.send.call_args[0][0].lower()
         assert i.followup.send.call_args[1]["ephemeral"] is True
 
+    @pytest.mark.asyncio
+    async def test_play_tidal_url_resolved_to_youtube_search(self, cog):
+        tidal_url = "https://tidal.com/track/110653480/u"
+        search_query = "Excision & Dion Timmer - Time Stood Still"
+        channel = MagicMock(id=99)
+        track = MagicMock(title="Excision & Dion Timmer - Time Stood Still (Official Audio)")
+        player = MagicMock()
+        player.channel = channel
+        player.current = None
+        player.fetch_tracks = AsyncMock(return_value=[track])
+        player.play = AsyncMock()
+        i = _interaction(cog.bot, voice_channel=channel)
+        i.guild.voice_client = player
+        with patch(
+            "bot.commands.music.tidal_url_to_search_query", AsyncMock(return_value=search_query)
+        ):
+            with patch("bot.commands.music.Player", MagicMock):
+                await cog.music_group.play.callback(cog.music_group, i, tidal_url)
+        player.fetch_tracks.assert_called_once_with(search_query, search_type=SearchType.YOUTUBE)
+        i.followup.send.assert_called_once()
+        embed = i.followup.send.call_args[1].get("embed")
+        assert embed is not None and "Playing" in embed.title
+
+    @pytest.mark.asyncio
+    async def test_play_tidal_playlist_queues_tracks(self, cog):
+        tidal_playlist_url = "https://tidal.com/playlist/3f4f1385-aa86-46e5-a6ad-cb18248be3cd"
+        channel = MagicMock(id=99)
+        track1 = MagicMock(title="Dance Gavin Dance - Blood Wolf")
+        track2 = MagicMock(title="Delta Heavy - Reborn")
+        player = MagicMock()
+        player.channel = channel
+        player.current = None
+        player.fetch_tracks = AsyncMock(
+            side_effect=[
+                [track1],
+                [track2],
+            ]
+        )
+        player.play = AsyncMock()
+        i = _interaction(cog.bot, voice_channel=channel)
+        i.guild.voice_client = player
+        with patch(
+            "bot.commands.music.tidal_playlist_to_search_queries",
+            AsyncMock(return_value=["Dance Gavin Dance - Blood Wolf", "Delta Heavy - Reborn"]),
+        ):
+            with patch("bot.commands.music.Player", MagicMock):
+                await cog.music_group.play.callback(cog.music_group, i, tidal_playlist_url)
+        assert player.fetch_tracks.call_count == 2
+        i.followup.send.assert_called_once()
+        embed = i.followup.send.call_args[1].get("embed")
+        assert embed is not None and (
+            "playlist" in (embed.description or "").lower()
+            or "queued" in (embed.description or "").lower()
+        )
+
+    @pytest.mark.asyncio
+    async def test_play_tidal_url_unresolvable(self, cog):
+        tidal_url = "https://tidal.com/track/110653480/u"
+        channel = MagicMock(id=99)
+        player = MagicMock(channel=channel)
+        i = _interaction(cog.bot, voice_channel=channel)
+        i.guild.voice_client = player
+        with patch("bot.commands.music.Player", MagicMock):
+            with patch(
+                "bot.commands.music.tidal_url_to_search_query", AsyncMock(return_value=None)
+            ):
+                await cog.music_group.play.callback(cog.music_group, i, tidal_url)
+        i.followup.send.assert_called_once()
+        assert "Could not resolve Tidal" in i.followup.send.call_args[0][0]
+
+    @pytest.mark.asyncio
+    async def test_play_spotify_url_resolved_to_youtube_search(self, cog):
+        spotify_url = "https://open.spotify.com/track/4iV5W9uYEdYUVa79Axb7Rh"
+        search_query = "Michael Jackson - Billie Jean"
+        channel = MagicMock(id=99)
+        track = MagicMock(title="Billie Jean (Official Video)")
+        player = MagicMock()
+        player.channel = channel
+        player.current = None
+        player.fetch_tracks = AsyncMock(return_value=[track])
+        player.play = AsyncMock()
+        i = _interaction(cog.bot, voice_channel=channel)
+        i.guild.voice_client = player
+        with patch(
+            "bot.commands.music.spotify_url_to_search_query", AsyncMock(return_value=search_query)
+        ):
+            with patch("bot.commands.music.Player", MagicMock):
+                await cog.music_group.play.callback(cog.music_group, i, spotify_url)
+        player.fetch_tracks.assert_called_once_with(search_query, search_type=SearchType.YOUTUBE)
+        i.followup.send.assert_called_once()
+        embed = i.followup.send.call_args[1].get("embed")
+        assert embed is not None and "Playing" in embed.title
+
+    @pytest.mark.asyncio
+    async def test_play_spotify_url_unresolvable(self, cog):
+        spotify_url = "https://open.spotify.com/track/4iV5W9uYEdYUVa79Axb7Rh"
+        channel = MagicMock(id=99)
+        player = MagicMock(channel=channel)
+        i = _interaction(cog.bot, voice_channel=channel)
+        i.guild.voice_client = player
+        with patch("bot.commands.music.Player", MagicMock):
+            with patch(
+                "bot.commands.music.spotify_url_to_search_query", AsyncMock(return_value=None)
+            ):
+                await cog.music_group.play.callback(cog.music_group, i, spotify_url)
+        i.followup.send.assert_called_once()
+        assert "Could not resolve Spotify" in i.followup.send.call_args[0][0]
+
+    @pytest.mark.asyncio
+    async def test_play_queued_while_paused_includes_resume_button(self, cog):
+        channel = MagicMock(id=99)
+        track = MagicMock(title="Queued Song")
+        player = MagicMock()
+        player.channel = channel
+        player.current = MagicMock(title="Now Playing")
+        player.paused = True
+        player.fetch_tracks = AsyncMock(return_value=[track])
+        player.play = AsyncMock()
+        cog.bot._music_queues = {1: []}
+        i = _interaction(cog.bot, voice_channel=channel)
+        i.guild.voice_client = player
+        with patch("bot.commands.music.Player", MagicMock):
+            await cog.music_group.play.callback(cog.music_group, i, "another song")
+        i.followup.send.assert_called_once()
+        call_kw = i.followup.send.call_args[1]
+        assert call_kw.get("view") is not None
+        assert call_kw.get("embed") is not None
+        assert "Queued" in call_kw["embed"].title
+
+    @pytest.mark.asyncio
+    async def test_play_multiple_results_shows_ephemeral_picker(self, cog):
+        channel = MagicMock(id=99)
+        track1 = MagicMock(title="Song A", author="Artist 1")
+        track2 = MagicMock(title="Song B", author="Artist 2")
+        player = MagicMock()
+        player.channel = channel
+        player.current = None
+        player.fetch_tracks = AsyncMock(return_value=[track1, track2])
+        player.play = AsyncMock()
+        i = _interaction(cog.bot, voice_channel=channel)
+        i.guild.voice_client = player
+        with patch("bot.commands.music.Player", MagicMock):
+            await cog.music_group.play.callback(cog.music_group, i, "search query")
+        i.followup.send.assert_called_once()
+        call_kw = i.followup.send.call_args[1]
+        assert call_kw.get("embed") is not None
+        assert "Pick a track" in call_kw["embed"].title
+        assert call_kw.get("view") is not None
+        assert call_kw["ephemeral"] is True
+
+
+class TestMusicStop:
+    @pytest.mark.asyncio
+    async def test_stop_preserves_queue_when_others_in_channel(self, cog):
+        channel = MagicMock(id=99)
+        channel.members = [MagicMock(id=1), MagicMock(id=999)]
+        player = MagicMock()
+        player.channel = channel
+        player.stop = AsyncMock()
+        cog.bot._music_queues = {1: [MagicMock(title="Queued")]}
+        i = _interaction(cog.bot, voice_channel=MagicMock())
+        i.guild.voice_client = player
+        with patch("bot.commands.music.Player", MagicMock):
+            await cog.music_group.stop.callback(cog.music_group, i)
+        player.stop.assert_called_once()
+        assert 1 in cog.bot._music_queues
+        assert len(cog.bot._music_queues[1]) == 1
+        assert "preserved" in i.followup.send.call_args[1]["embed"].description
+
+    @pytest.mark.asyncio
+    async def test_stop_leaves_and_clears_when_no_others_in_channel(self, cog):
+        channel = MagicMock(id=99)
+        channel.members = [MagicMock(id=999)]
+        player = MagicMock()
+        player.channel = channel
+        player.stop = AsyncMock()
+        player.disconnect = AsyncMock()
+        cog.bot._music_queues = {1: [MagicMock(title="Queued")]}
+        i = _interaction(cog.bot, voice_channel=MagicMock())
+        i.guild.voice_client = player
+        with patch("bot.commands.music.Player", MagicMock):
+            await cog.music_group.stop.callback(cog.music_group, i)
+        player.stop.assert_called_once()
+        player.disconnect.assert_called_once()
+        assert 1 not in cog.bot._music_queues
+        assert "left" in i.followup.send.call_args[1]["embed"].description.lower()
+
 
 class TestMusicLeave:
     @pytest.mark.asyncio
@@ -181,6 +386,45 @@ class TestMusicLeave:
         assert "Not in" in i.followup.send.call_args[0][0]
 
 
+class TestMusicAdmin:
+    @pytest.mark.asyncio
+    async def test_clear_queue_admin(self, cog):
+        cog.bot._music_queues = {1: [MagicMock(), MagicMock()]}
+        i = _interaction(cog.bot)
+        await cog.music_group.clear_queue.callback(cog.music_group, i)
+        assert 1 not in cog.bot._music_queues
+        embed = i.followup.send.call_args[1]["embed"]
+        assert "Cleared" in embed.title
+        assert "2" in embed.description
+
+    @pytest.mark.asyncio
+    async def test_clear_queue_empty(self, cog):
+        cog.bot._music_queues = {1: []}
+        i = _interaction(cog.bot)
+        await cog.music_group.clear_queue.callback(cog.music_group, i)
+        embed = i.followup.send.call_args[1]["embed"]
+        assert "already empty" in embed.description
+
+    @pytest.mark.asyncio
+    async def test_force_play_position(self, cog):
+        channel = MagicMock(id=99)
+        track1 = MagicMock(title="Next")
+        track2 = MagicMock(title="Forced")
+        player = MagicMock()
+        player.channel = channel
+        player.current = MagicMock(title="Now Playing")
+        player.stop = AsyncMock()
+        player.play = AsyncMock()
+        cog.bot._music_queues = {1: [track1, track2]}
+        i = _interaction(cog.bot, voice_channel=channel)
+        i.guild.voice_client = player
+        with patch("bot.commands.music.Player", MagicMock):
+            await cog.music_group.force_play.callback(cog.music_group, i, 2)
+        player.play.assert_called_once_with(track2)
+        assert cog.bot._music_queues[1][0].title == "Now Playing"
+        assert "Force Playing" in i.followup.send.call_args[1]["embed"].title
+
+
 class TestMusicQueue:
     @pytest.mark.asyncio
     async def test_queue_empty(self, cog):
@@ -189,7 +433,31 @@ class TestMusicQueue:
         cog.bot._music_queues = {1: []}
         await cog.music_group.queue_cmd.callback(cog.music_group, i)
         i.followup.send.assert_called_once()
-        assert "empty" in i.followup.send.call_args[0][0].lower()
+        embed = i.followup.send.call_args[1].get("embed")
+        assert embed is not None and "empty" in (embed.description or "").lower()
+
+    @pytest.mark.asyncio
+    async def test_queue_with_tracks_shows_paginated_links(self, cog):
+        track = MagicMock()
+        track.title = "Test Song"
+        track.uri = "https://youtube.com/watch?v=abc"
+        track.length = 180000
+        player = MagicMock()
+        player.current = track
+        player.position = 0
+        cog.bot._music_queues = {1: []}
+        i = _interaction(cog.bot)
+        i.guild.voice_client = player
+        with patch("bot.commands.music.Player", MagicMock):
+            await cog.music_group.queue_cmd.callback(cog.music_group, i)
+        i.followup.send.assert_called_once()
+        call_args = i.followup.send.call_args
+        embed = call_args[1].get("embed")
+        assert embed is not None
+        assert "Music Queue" in embed.title
+        assert "Test Song" in (embed.description or "")
+        assert "youtube.com" in (embed.description or "")
+        assert call_args[1].get("view") is not None
 
 
 class TestOtherMembersInChannel:

@@ -11,14 +11,22 @@ from discord.ext import commands
 from mafic import EndReason, Player, SearchType, Track, TrackEndEvent
 from mafic.errors import PlayerNotConnected
 
+from bot.auth.permissions import PermissionContext
+from bot.services.spotify import spotify_url_to_search_query
+from bot.services.tidal import tidal_playlist_to_search_queries, tidal_url_to_search_query
+from config.constants import Constants, Role
+
 if TYPE_CHECKING:
     from bot.client import FFOBot
 
 logger = logging.getLogger(__name__)
 
-QUEUE_MAX_DISPLAY = 10
+QUEUE_PAGE_SIZE = 5
 MAX_QUERY_LEN = 200
 IDLE_LEAVE_SECONDS = 30
+TRACK_PICKER_MAX = 10
+EMBED_COLOR = 0x9B59B6
+CONNECTION_FAILED_MSG = "Music connection failed. Try /music leave then /music join again."
 
 
 def _get_voice_client(guild: discord.Guild, bot: "FFOBot"):
@@ -68,6 +76,203 @@ async def _play_next(player: Player) -> bool:
     return True
 
 
+def _music_embed(title: str, description: str) -> discord.Embed:
+    return discord.Embed(
+        title=title,
+        description=description,
+        color=EMBED_COLOR,
+    )
+
+
+def _track_label(track: Track, i: int) -> str:
+    author = getattr(track, "author", None) or ""
+    parts = [author, track.title] if author else [track.title]
+    label = " – ".join(p for p in parts if p)
+    return (f"{i}. {label}" if label else f"{i}. {track.title}")[:80]
+
+
+def _time_until_track(
+    player: Player | None,
+    current: Track | None,
+    queue: list[Track],
+    idx: int,
+) -> str:
+    def _ms(v) -> int:
+        if v is None:
+            return 0
+        try:
+            return int(v)
+        except (TypeError, ValueError):
+            return 0
+
+    if idx == 0:
+        if not current or not player:
+            return "—"
+        pos_ms = _ms(getattr(player, "position", None))
+        length_ms = _ms(getattr(current, "length", None))
+        left_ms = max(0, length_ms - pos_ms)
+        return _format_duration(left_ms) + " left"
+    cumulative_ms = 0
+    if current and player:
+        pos_ms = _ms(getattr(player, "position", None))
+        length_ms = _ms(getattr(current, "length", None))
+        cumulative_ms = max(0, length_ms - pos_ms)
+    for i in range(idx - 1):
+        cumulative_ms += _ms(getattr(queue[i], "length", None))
+    return "in " + _format_duration(cumulative_ms)
+
+
+class _MusicQueueView(discord.ui.View):
+    def __init__(
+        self,
+        player: Player | None,
+        current: Track | None,
+        queue: list[Track],
+        per_page: int = QUEUE_PAGE_SIZE,
+        timeout: float = 120,
+    ):
+        super().__init__(timeout=timeout)
+        self.player = player
+        self.current = current
+        self.queue = queue
+        self.per_page = per_page
+        self.page = 0
+        rows: list[tuple[Track, str, int]] = []
+        if current:
+            rows.append((current, "Now", 0))
+        for i, t in enumerate(queue, 1):
+            rows.append((t, str(i), i))
+        self.rows = rows
+        self._max_page = max(0, (len(rows) - 1) // per_page)
+
+        prev_btn = discord.ui.Button(
+            label="◀",
+            style=discord.ButtonStyle.secondary,
+            custom_id="mq:prev",
+            row=0,
+        )
+        prev_btn.callback = self._prev_callback
+        self.add_item(prev_btn)
+
+        self.page_btn = discord.ui.Button(
+            label="1/1",
+            style=discord.ButtonStyle.primary,
+            custom_id="mq:page",
+            disabled=True,
+            row=0,
+        )
+        self.add_item(self.page_btn)
+
+        next_btn = discord.ui.Button(
+            label="▶",
+            style=discord.ButtonStyle.secondary,
+            custom_id="mq:next",
+            row=0,
+        )
+        next_btn.callback = self._next_callback
+        self.add_item(next_btn)
+        self._update_buttons()
+
+    def _update_buttons(self):
+        self.page_btn.label = f"{self.page + 1}/{self._max_page + 1}"
+        for child in self.children:
+            if child.custom_id == "mq:prev":
+                child.disabled = self.page <= 0
+            elif child.custom_id == "mq:next":
+                child.disabled = self.page >= self._max_page
+
+    def _format_page(self) -> discord.Embed:
+        start = self.page * self.per_page
+        chunk = self.rows[start : start + self.per_page]
+        lines: list[str] = []
+        for track, label, idx in chunk:
+            dur = _format_duration(track.length)
+            time_info = _time_until_track(self.player, self.current, self.queue, idx)
+            link = f"[{track.title}]({track.uri})" if track.uri else track.title
+            lines.append(f"**#{label}** {link} ({dur}) · {time_info}")
+        desc = "\n".join(lines)
+        if len(desc) > Constants.DISCORD_MESSAGE_LIMIT - 100:
+            desc = desc[: Constants.DISCORD_MESSAGE_LIMIT - 120] + "\n\n...(truncated)"
+        return _music_embed("🎵 Music Queue", desc or "—")
+
+    async def _prev_callback(self, interaction: discord.Interaction):
+        if self.page <= 0:
+            return
+        self.page -= 1
+        self._update_buttons()
+        await interaction.response.edit_message(embed=self._format_page(), view=self)
+
+    async def _next_callback(self, interaction: discord.Interaction):
+        if self.page >= self._max_page:
+            return
+        self.page += 1
+        self._update_buttons()
+        await interaction.response.edit_message(embed=self._format_page(), view=self)
+
+
+class _ResumeView(discord.ui.View):
+    def __init__(self, player: Player, timeout: float = 60):
+        super().__init__(timeout=timeout)
+        self.player = player
+
+    @discord.ui.button(label="▶️ Resume", style=discord.ButtonStyle.success, row=0)
+    async def resume_btn(self, interaction: discord.Interaction, _: discord.ui.Button):
+        if not self.player.paused:
+            await interaction.response.defer()
+            return
+        await self.player.resume()
+        for child in self.children:
+            child.disabled = True
+        embed = _music_embed("▶️ Resumed", "")
+        await interaction.response.edit_message(embed=embed, view=self)
+
+
+class TrackPickerView(discord.ui.View):
+    def __init__(
+        self,
+        tracks: list[Track],
+        player: Player,
+        bot: "FFOBot",
+        timeout: float = 120,
+    ):
+        super().__init__(timeout=timeout)
+        self.tracks = tracks[:TRACK_PICKER_MAX]
+        self.player = player
+        self.bot = bot
+        self._chosen = False
+        for i, t in enumerate(self.tracks):
+            btn = discord.ui.Button(
+                label=_track_label(t, i + 1),
+                style=discord.ButtonStyle.secondary,
+                custom_id=f"music:pick:{i}",
+                row=i // 5,
+            )
+            btn.callback = self._make_callback(i)
+            self.add_item(btn)
+
+    def _make_callback(self, idx: int):
+        async def cb(interaction: discord.Interaction):
+            if self._chosen:
+                await interaction.response.defer(ephemeral=True)
+                return
+            self._chosen = True
+            track = self.tracks[idx]
+            try:
+                await self.player.play(track)
+            except PlayerNotConnected:
+                await interaction.response.send_message(
+                    CONNECTION_FAILED_MSG,
+                    ephemeral=True,
+                )
+                return
+            for child in self.children:
+                child.disabled = True
+            embed = _music_embed("🎵 Playing", f"▶️ **{track.title}**")
+            await interaction.response.edit_message(embed=embed, view=self)
+
+        return cb
+
+
 @app_commands.guild_only()
 class MusicGroup(app_commands.Group):
     def __init__(self, cog: "MusicCommands"):
@@ -98,10 +303,14 @@ class MusicGroup(app_commands.Group):
                 ephemeral=True,
             )
             return
-        await interaction.followup.send(f"Joined {channel.mention}.")
+        await interaction.followup.send(
+            embed=_music_embed("🎵 Joined", f"Connected to {channel.mention}.")
+        )
 
     @app_commands.command(name="play", description="Play a track (URL or search query)")
-    @app_commands.describe(query="YouTube/Spotify URL or search query")
+    @app_commands.describe(
+        query="YouTube URL (incl. playlists), Tidal URL, Spotify URL, or search query"
+    )
     async def play(self, interaction: discord.Interaction, query: str):
         await interaction.response.defer(ephemeral=False)
         query = query.strip()[:MAX_QUERY_LEN]
@@ -134,59 +343,117 @@ class MusicGroup(app_commands.Group):
             return
         is_url = query.startswith("http://") or query.startswith("https://")
         search_type = None if is_url else SearchType.YOUTUBE
-        result = await player.fetch_tracks(query, search_type=search_type)
-        if result is None:
-            await interaction.followup.send("No results found.", ephemeral=True)
-            return
-        if isinstance(result, list):
-            tracks = result
-            playlist = False
-        else:
-            tracks = result.tracks
-            playlist = True
+        tracks = None
+        playlist = False
+        if is_url and "tidal.com" in query.lower():
+            playlist_queries = await tidal_playlist_to_search_queries(query)
+            if playlist_queries:
+                tracks = []
+                for sq in playlist_queries:
+                    result = await player.fetch_tracks(sq, search_type=SearchType.YOUTUBE)
+                    if result and isinstance(result, list) and result:
+                        tracks.append(result[0])
+                    elif result and not isinstance(result, list) and result.tracks:
+                        tracks.append(result.tracks[0])
+                playlist = True
+            else:
+                search_query = await tidal_url_to_search_query(query)
+                if search_query:
+                    query = search_query
+                    search_type = SearchType.YOUTUBE
+                else:
+                    await interaction.followup.send(
+                        "Could not resolve Tidal link. Try searching by song name.",
+                        ephemeral=True,
+                    )
+                    return
+        elif is_url and "spotify.com" in query.lower():
+            search_query = await spotify_url_to_search_query(query)
+            if search_query:
+                query = search_query
+                search_type = SearchType.YOUTUBE
+            else:
+                await interaction.followup.send(
+                    "Could not resolve Spotify link. Try searching by song name.",
+                    ephemeral=True,
+                )
+                return
+        if tracks is None:
+            result = await player.fetch_tracks(query, search_type=search_type)
+            if result is None:
+                await interaction.followup.send("No results found.", ephemeral=True)
+                return
+            if isinstance(result, list):
+                tracks = result
+            else:
+                tracks = result.tracks
+                playlist = True
         if not tracks:
             await interaction.followup.send("No tracks found.", ephemeral=True)
             return
         queue = _get_queue(bot, interaction.guild_id)
+        if not playlist and len(tracks) > 1:
+            lines = [
+                f"**{i + 1}.** {getattr(t, 'author', '') or ''} – {t.title}"
+                for i, t in enumerate(tracks[:TRACK_PICKER_MAX])
+            ]
+            embed = _music_embed("🎵 Pick a track", "\n".join(lines))
+            view = TrackPickerView(tracks, player, bot)
+            await interaction.followup.send(
+                embed=embed,
+                view=view,
+                ephemeral=True,
+            )
+            return
         if player.current:
+            start_pos = len(queue) + 1
             queue.extend(tracks)
             count = len(tracks)
             if playlist:
-                await interaction.followup.send(f"Queued playlist ({count} tracks).")
-            else:
-                await interaction.followup.send(
-                    f"Queued: **{tracks[0].title}**"
-                    + (f" (+{count - 1} more)" if count > 1 else "")
+                pos_range = (
+                    f"#{start_pos}–#{start_pos + count - 1}" if count > 1 else f"#{start_pos}"
                 )
+                desc = f"Added {count} tracks at {pos_range}."
+            else:
+                pos = f"#{start_pos}"
+                desc = f"**{tracks[0].title}** at position {pos}"
+                if count > 1:
+                    desc += f" (+{count - 1} more at #{start_pos + 1}–#{start_pos + count - 1})"
+                desc += "."
+            embed = _music_embed("📥 Queued", desc)
+            if player.paused:
+                await interaction.followup.send(embed=embed, view=_ResumeView(player))
+            else:
+                await interaction.followup.send(embed=embed)
         else:
             try:
                 await player.play(tracks[0])
             except PlayerNotConnected:
-                await interaction.followup.send(
-                    "Music connection failed. Try /music leave then /music join again.",
-                    ephemeral=True,
-                )
+                await interaction.followup.send(CONNECTION_FAILED_MSG, ephemeral=True)
                 return
             if len(tracks) > 1:
                 queue.extend(tracks[1:])
             if playlist:
-                await interaction.followup.send(
-                    f"Playing playlist: **{tracks[0].title}** (+{len(tracks) - 1} queued)"
-                )
+                desc = f"▶️ **{tracks[0].title}**\n📥 +{len(tracks) - 1} queued"
+                await interaction.followup.send(embed=_music_embed("🎵 Playing", desc))
             else:
-                await interaction.followup.send(f"Playing: **{tracks[0].title}**")
+                desc = f"▶️ **{tracks[0].title}**"
+                await interaction.followup.send(embed=_music_embed("🎵 Playing", desc))
 
     @app_commands.command(name="leave", description="Disconnect from voice")
     async def leave(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=False)
         vc = _get_voice_client(interaction.guild, interaction.client)
         if not vc:
-            await interaction.followup.send("Not in a voice channel.")
+            await interaction.followup.send("Not in a voice channel.", ephemeral=True)
             return
+        channel_name = vc.channel.name if vc.channel else "voice"
         _clear_queue(interaction.client, interaction.guild_id)
         await _cancel_leave_task(_get_leave_tasks(interaction.client), interaction.guild_id)
         await vc.disconnect()
-        await interaction.followup.send("Left voice channel.")
+        await interaction.followup.send(
+            embed=_music_embed("👋 Left", f"Disconnected from {channel_name}.")
+        )
 
     @app_commands.command(name="pause", description="Pause playback")
     async def pause(self, interaction: discord.Interaction):
@@ -196,10 +463,11 @@ class MusicGroup(app_commands.Group):
             await interaction.followup.send("Nothing playing.", ephemeral=True)
             return
         if player.paused:
-            await interaction.followup.send("Already paused.")
+            await interaction.followup.send(embed=_music_embed("⏸️ Already paused", ""))
             return
         await player.pause()
-        await interaction.followup.send("Paused.")
+        title = player.current.title if player.current else "Track"
+        await interaction.followup.send(embed=_music_embed("⏸️ Paused", f"**{title}**"))
 
     @app_commands.command(name="resume", description="Resume playback")
     async def resume(self, interaction: discord.Interaction):
@@ -209,10 +477,11 @@ class MusicGroup(app_commands.Group):
             await interaction.followup.send("Nothing playing.", ephemeral=True)
             return
         if not player.paused:
-            await interaction.followup.send("Not paused.")
+            await interaction.followup.send(embed=_music_embed("▶️ Not paused", ""))
             return
         await player.resume()
-        await interaction.followup.send("Resumed.")
+        title = player.current.title if player.current else "Track"
+        await interaction.followup.send(embed=_music_embed("▶️ Resumed", f"**{title}**"))
 
     @app_commands.command(name="skip", description="Skip current track")
     async def skip(self, interaction: discord.Interaction):
@@ -221,11 +490,103 @@ class MusicGroup(app_commands.Group):
         if not player or not isinstance(player, Player):
             await interaction.followup.send("Nothing playing.", ephemeral=True)
             return
+        skipped_title = player.current.title if player.current else None
         await player.stop()
         if await _play_next(player):
-            await interaction.followup.send("Skipped. Playing next.")
+            next_title = player.current.title if player.current else None
+            desc = f"Skipped **{skipped_title}**.\n▶️ Now playing: **{next_title}**"
+            await interaction.followup.send(embed=_music_embed("⏭️ Skipped", desc))
         else:
-            await interaction.followup.send("Skipped.")
+            desc = f"Skipped **{skipped_title}**." if skipped_title else "Skipped."
+            await interaction.followup.send(embed=_music_embed("⏭️ Skipped", desc))
+
+    @app_commands.command(name="stop", description="Stop playback (queue preserved)")
+    async def stop(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=False)
+        player = interaction.guild.voice_client
+        if not player or not isinstance(player, Player):
+            await interaction.followup.send("Nothing playing.", ephemeral=True)
+            return
+        await player.stop()
+        others = (
+            _other_members_in_channel(player.channel, interaction.client.user.id)
+            if player.channel and interaction.client.user
+            else 0
+        )
+        if others == 0:
+            _clear_queue(interaction.client, interaction.guild_id)
+            await _cancel_leave_task(_get_leave_tasks(interaction.client), interaction.guild_id)
+            await player.disconnect()
+            await interaction.followup.send(
+                embed=_music_embed("⏹️ Stopped", "Left and cleared queue.")
+            )
+        else:
+            await interaction.followup.send(embed=_music_embed("⏹️ Stopped", "Queue preserved."))
+
+    @app_commands.command(name="clear-queue", description="[Admin] Clear the queue")
+    @app_commands.default_permissions(administrator=True)
+    async def clear_queue(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        if not await self.cog._check_admin(interaction, "music clear-queue"):
+            return
+        queue = _get_queue(interaction.client, interaction.guild_id)
+        if not queue:
+            await interaction.followup.send(
+                embed=_music_embed("🎵 Clear Queue", "Queue is already empty."),
+                ephemeral=True,
+            )
+            return
+        count = len(queue)
+        _clear_queue(interaction.client, interaction.guild_id)
+        await interaction.followup.send(
+            embed=_music_embed("🎵 Queue Cleared", f"Removed {count} track(s)."),
+            ephemeral=True,
+        )
+
+    @app_commands.command(
+        name="force-play", description="[Admin] Force play a track at queue position"
+    )
+    @app_commands.describe(position="Queue position (1 = next in queue)")
+    @app_commands.default_permissions(administrator=True)
+    async def force_play(self, interaction: discord.Interaction, position: int):
+        await interaction.response.defer(ephemeral=False)
+        if not await self.cog._check_admin(interaction, "music force-play"):
+            return
+        if position < 1:
+            await interaction.followup.send(
+                "Position must be at least 1.",
+                ephemeral=True,
+            )
+            return
+        player = interaction.guild.voice_client
+        if not player or not isinstance(player, Player):
+            await interaction.followup.send(
+                "Not in a voice channel.",
+                ephemeral=True,
+            )
+            return
+        queue = _get_queue(interaction.client, interaction.guild_id)
+        idx = position - 1
+        if idx >= len(queue):
+            await interaction.followup.send(
+                f"No track at position {position}. Queue has {len(queue)} item(s).",
+                ephemeral=True,
+            )
+            return
+        track = queue.pop(idx)
+        current = player.current
+        if current:
+            queue.insert(0, current)
+            await player.stop()
+        try:
+            await player.play(track)
+        except PlayerNotConnected:
+            queue.insert(0, track)
+            await interaction.followup.send(CONNECTION_FAILED_MSG, ephemeral=True)
+            return
+        await interaction.followup.send(
+            embed=_music_embed("🎵 Force Playing", f"▶️ **{track.title}**")
+        )
 
     @app_commands.command(name="queue", description="Show the queue")
     async def queue_cmd(self, interaction: discord.Interaction):
@@ -234,18 +595,17 @@ class MusicGroup(app_commands.Group):
         queue = _get_queue(interaction.client, interaction.guild_id)
         current = player.current if (player and isinstance(player, Player)) else None
         if not current and not queue:
-            await interaction.followup.send("Queue is empty.", ephemeral=True)
+            await interaction.followup.send(
+                embed=_music_embed("🎵 Queue", "Queue is empty."),
+                ephemeral=True,
+            )
             return
-        lines = []
-        if current:
-            dur = _format_duration(current.length)
-            lines.append(f"**Now:** {current.title} ({dur})")
-        for i, t in enumerate(queue[:QUEUE_MAX_DISPLAY], 1):
-            dur = _format_duration(t.length)
-            lines.append(f"{i}. {t.title} ({dur})")
-        if len(queue) > QUEUE_MAX_DISPLAY:
-            lines.append(f"... +{len(queue) - QUEUE_MAX_DISPLAY} more")
-        await interaction.followup.send("\n".join(lines), ephemeral=True)
+        view = _MusicQueueView(player, current, queue)
+        await interaction.followup.send(
+            embed=view._format_page(),
+            view=view,
+            ephemeral=True,
+        )
 
 
 def _get_leave_tasks(bot: FFOBot) -> dict[int, asyncio.Task]:
@@ -270,6 +630,19 @@ class MusicCommands(commands.Cog):
         self.bot = bot
         self.music_group = MusicGroup(self)
         self.bot.tree.add_command(self.music_group)
+
+    async def _check_admin(self, interaction: discord.Interaction, cmd: str) -> bool:
+        if not interaction.guild_id:
+            return False
+        ctx = PermissionContext(
+            server_id=interaction.guild_id,
+            user_id=interaction.user.id,
+            command_name=cmd,
+        )
+        if not await self.bot.permission_checker.check_role(ctx, Role.ADMIN):
+            await interaction.followup.send("Admin required.", ephemeral=True)
+            return False
+        return True
 
     @commands.Cog.listener("on_voice_state_update")
     async def _on_voice_state_update(

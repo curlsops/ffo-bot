@@ -27,6 +27,5 @@ pydantic-settings>=2.1.0,<3.0.0
 mcrcon>=0.7.0,<0.8.0
 
 # Music (optional, when feature_music enabled)
-davey>=0.1.0,<1.0.0
-# Fork with channelId support for Lavalink 4.2+ DAVE/E2EE
+# Using fork with channelId support for Lavalink 4.2+ DAVE/E2EE
 mafic @ git+https://github.com/ArtiArtem8/mafic.git@fix/lavalink-v4-voice-channelid

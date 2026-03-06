@@ -8,11 +8,11 @@ from bot.client import FFOBot
 from bot.commands.admin import AdminCommands
 from bot.commands.faq import FAQCommands
 from bot.commands.giveaway import GiveawayCommands, GiveawayView
+from bot.commands.music import MusicCommands
 from bot.commands.permissions import PermissionCommands
 from bot.commands.polls import PollCommands
 from bot.commands.privacy import PrivacyCommands
 from bot.commands.quotebook import QuotebookCommands
-from bot.commands.music import MusicCommands
 from bot.commands.reactbot import ReactBotCommands
 from bot.commands.reaction_roles import ReactionRoleCommands
 from bot.commands.whitelist import WhitelistCommands
@@ -25,6 +25,8 @@ from bot.processors.unit_converter import detect_and_convert
 from bot.processors.voice_transcriber import VoiceTranscriber
 from bot.services.minecraft_rcon import MinecraftRCONClient, parse_whitelist_list_response
 from bot.services.mojang import username_exists
+from bot.services.spotify import spotify_url_to_search_query
+from bot.services.tidal import tidal_playlist_to_search_queries, tidal_url_to_search_query
 from bot.tasks.giveaway_manager import GiveawayManager
 from bot.tasks.status_rotator import StatusRotator
 from bot.utils.db import TRANSIENT_DB_ERRORS

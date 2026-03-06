@@ -13,13 +13,21 @@ def truncate_for_discord(content: str) -> str:
 
 
 class ListPaginatedView(discord.ui.View):
-    def __init__(self, rows: list, header: str, format_row, timeout: float = 120):
+    def __init__(
+        self,
+        rows: list,
+        header: str,
+        format_row,
+        per_page: int | None = None,
+        timeout: float = 120,
+    ):
         super().__init__(timeout=timeout)
         self.rows = rows
         self.header = header
         self.format_row = format_row
+        self.per_page = per_page if per_page is not None else PER_PAGE
         self.page = 0
-        self._max_page = max(0, (len(rows) - 1) // PER_PAGE)
+        self._max_page = max(0, (len(rows) - 1) // self.per_page)
 
         prev_btn = discord.ui.Button(
             label="◀",
@@ -58,8 +66,8 @@ class ListPaginatedView(discord.ui.View):
                 child.disabled = self.page >= self._max_page
 
     def _format_page(self) -> str:
-        start = self.page * PER_PAGE
-        chunk = self.rows[start : start + PER_PAGE]
+        start = self.page * self.per_page
+        chunk = self.rows[start : start + self.per_page]
         lines = [self.format_row(r) for r in chunk]
         return truncate_for_discord(self.header + "\n\n" + "\n".join(lines))
 
