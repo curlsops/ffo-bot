@@ -5,11 +5,11 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from bot.auth.permissions import PermissionContext
+from bot.auth.command_helpers import require_admin, send_error
+from bot.utils.autocomplete import cached_autocomplete
 from bot.utils.pagination import ListPaginatedView
 from bot.utils.regex_validator import RegexValidationError
 from bot.utils.validation import InputValidator, ValidationError
-from config.constants import Role
 
 logger = logging.getLogger(__name__)
 
@@ -22,39 +22,41 @@ def _invalidate_reactbot_cache(cache, server_id: int) -> None:
         cache.delete(CACHE_REACTBOT_PHRASES.format(server_id=server_id))
 
 
+async def _fetch_reactbot_phrases(pool, guild_id: int):
+    async with pool.acquire() as conn:
+        return await conn.fetch(
+            """SELECT phrase, emoji FROM phrase_reactions
+               WHERE server_id = $1 AND is_active = true
+               ORDER BY match_count DESC LIMIT 25""",
+            guild_id,
+        )
+
+
+def _reactbot_phrases_to_choices(rows: list[dict], current: str) -> list[app_commands.Choice[str]]:
+    choices = []
+    for row in rows:
+        phrase = row["phrase"]
+        emoji = row["emoji"]
+        if not current or current.lower() in phrase.lower():
+            display = f"{phrase} → {emoji}"
+            if len(display) > 100:
+                display = display[:97] + "..."
+            choices.append(app_commands.Choice(name=display, value=phrase))
+    return choices
+
+
 async def _reactbot_phrase_autocomplete(
     interaction: discord.Interaction, current: str
 ) -> list[app_commands.Choice[str]]:
-    if not interaction.guild_id:
-        return []
-    try:
-        bot = interaction.client
-        cache_key = CACHE_REACTBOT_PHRASES.format(server_id=interaction.guild_id)
-        rows = bot.cache.get(cache_key) if bot.cache else None
-        if rows is None:
-            async with bot.db_pool.acquire() as conn:
-                rows = await conn.fetch(
-                    """SELECT phrase, emoji FROM phrase_reactions
-                       WHERE server_id = $1 AND is_active = true
-                       ORDER BY match_count DESC LIMIT 25""",
-                    interaction.guild_id,
-                )
-            rows = [dict(r) for r in rows]
-            if bot.cache:
-                bot.cache.set(cache_key, rows, ttl=300)
-        choices = []
-        for row in rows:
-            phrase = row["phrase"]
-            emoji = row["emoji"]
-            if current.lower() in phrase.lower() or not current:
-                display = f"{phrase} → {emoji}"
-                if len(display) > 100:
-                    display = display[:97] + "..."
-                choices.append(app_commands.Choice(name=display, value=phrase))
-        return choices[:25]
-    except Exception as e:
-        logger.debug("Reactbot phrase autocomplete failed: %s", e)
-        return []
+    return await cached_autocomplete(
+        interaction,
+        current,
+        CACHE_REACTBOT_PHRASES,
+        _fetch_reactbot_phrases,
+        _reactbot_phrases_to_choices,
+        ttl=300,
+        log_prefix="Reactbot phrase",
+    )
 
 
 @app_commands.guild_only()
@@ -72,7 +74,7 @@ class ReactBotGroup(app_commands.Group):
     )
     async def add_cmd(self, interaction: discord.Interaction, phrase: str, emoji: str):
         await interaction.response.defer(ephemeral=True)
-        if not await self.cog._check_admin(interaction, "reactbot add"):
+        if not await require_admin(interaction, "reactbot add", self.cog.bot):
             return
         try:
             phrase = InputValidator.validate_phrase_pattern(phrase)
@@ -81,7 +83,7 @@ class ReactBotGroup(app_commands.Group):
 
             emoji_valid, emoji_error = await self.cog._validate_emoji_accessible(interaction, emoji)
             if not emoji_valid:
-                await interaction.followup.send(emoji_error, ephemeral=True)
+                await send_error(interaction, emoji_error)
                 return
 
             async with self.cog.bot.db_pool.acquire() as conn:
@@ -102,15 +104,15 @@ class ReactBotGroup(app_commands.Group):
                     status="success",
                 ).inc()
         except asyncpg.UniqueViolationError:
-            await interaction.followup.send(
-                f"❌ This exact phrase + emoji combination already exists: `{phrase}` → {emoji}",
-                ephemeral=True,
+            await send_error(
+                interaction,
+                f"This exact phrase + emoji combination already exists: `{phrase}` → {emoji}",
             )
         except (ValidationError, RegexValidationError) as e:
-            await interaction.followup.send(f"❌ {e}", ephemeral=True)
+            await send_error(interaction, str(e))
         except Exception as e:
             logger.error("reactbot add error: %s", e, exc_info=True)
-            await interaction.followup.send("❌ Error processing command.", ephemeral=True)
+            await send_error(interaction, "Error processing command.")
 
     @app_commands.command(name="list", description="List all phrase reactions")
     async def list_cmd(self, interaction: discord.Interaction):
@@ -128,7 +130,7 @@ class ReactBotGroup(app_commands.Group):
                 if self.cog.bot.cache:
                     self.cog.bot.cache.set(cache_key, rows, ttl=300)
             if not rows:
-                await interaction.followup.send("No phrase reactions configured.", ephemeral=True)
+                await send_error(interaction, "No phrase reactions configured.")
                 return
 
             def fmt(r):
@@ -142,7 +144,7 @@ class ReactBotGroup(app_commands.Group):
             )
         except Exception as e:
             logger.error("reactbot list error: %s", e, exc_info=True)
-            await interaction.followup.send("❌ Error fetching reactions.", ephemeral=True)
+            await send_error(interaction, "Error fetching reactions.")
 
     @app_commands.command(name="remove", description="Remove a phrase reaction (Admin only)")
     @app_commands.describe(phrase="Select phrase pattern to remove")
@@ -150,7 +152,7 @@ class ReactBotGroup(app_commands.Group):
     async def remove_cmd(self, interaction: discord.Interaction, phrase: str):
         await interaction.response.defer(ephemeral=True)
         try:
-            if not await self.cog._check_admin(interaction, "reactbot remove"):
+            if not await require_admin(interaction, "reactbot remove", self.cog.bot):
                 return
             async with self.cog.bot.db_pool.acquire() as conn:
                 result = await conn.execute(
@@ -159,29 +161,20 @@ class ReactBotGroup(app_commands.Group):
                     phrase,
                 )
             if result == "UPDATE 0":
-                await interaction.followup.send(f"❌ Not found: `{phrase}`", ephemeral=True)
+                await send_error(interaction, f"Not found: `{phrase}`")
                 return
             self.cog.bot.phrase_matcher.invalidate_cache(interaction.guild_id)
             _invalidate_reactbot_cache(self.cog.bot.cache, interaction.guild_id)
             await interaction.followup.send(f"✅ Removed: `{phrase}`", ephemeral=True)
         except Exception as e:
             logger.error("reactbot remove error: %s", e, exc_info=True)
-            await interaction.followup.send("❌ Error processing command.", ephemeral=True)
+            await send_error(interaction, "Error processing command.")
 
 
 class ReactBotCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.reactbot_group = ReactBotGroup(self)
-
-    async def _check_admin(self, interaction: discord.Interaction, cmd: str) -> bool:
-        ctx = PermissionContext(
-            server_id=interaction.guild_id, user_id=interaction.user.id, command_name=cmd
-        )
-        if not await self.bot.permission_checker.check_role(ctx, Role.ADMIN):
-            await interaction.followup.send("❌ Admin required.", ephemeral=True)
-            return False
-        return True
 
     async def _validate_emoji_accessible(
         self, interaction: discord.Interaction, emoji_str: str

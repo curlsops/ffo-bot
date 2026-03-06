@@ -3,6 +3,8 @@ import logging
 import discord
 from discord.ext import commands
 
+from bot.utils.pagination import truncate_for_discord
+
 logger = logging.getLogger(__name__)
 
 
@@ -186,7 +188,7 @@ class MessageHandler(commands.Cog):
                 text = await vt.transcribe(att.url, att.filename)
                 if text:
                     embed = discord.Embed(
-                        description=text[:2000],
+                        description=truncate_for_discord(text),
                         color=discord.Color.blue(),
                     )
                     embed.set_author(

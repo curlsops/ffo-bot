@@ -5,8 +5,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from bot.auth.permissions import PermissionContext
-from config.constants import Role
+from bot.auth.command_helpers import require_admin, send_error
 
 
 @app_commands.guild_only()
@@ -21,7 +20,7 @@ class AdminGroup(app_commands.Group):
     @app_commands.command(name="version", description="Show bot version")
     async def version(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        if not await self.cog._check_admin(interaction, "admin version"):
+        if not await require_admin(interaction, "admin version", self.cog.bot):
             return
         try:
             ver = importlib.metadata.version("ffo-bot")
@@ -41,9 +40,9 @@ class AdminGroup(app_commands.Group):
     ):
         await interaction.response.defer(ephemeral=True)
         if not interaction.guild:
-            await interaction.followup.send("Server only.")
+            await send_error(interaction, "Server only.")
             return
-        if not await self.cog._check_admin(interaction, "admin notify_channel"):
+        if not await require_admin(interaction, "admin notify_channel", self.cog.bot):
             return
 
         await self.cog.bot._register_server(interaction.guild)
@@ -95,15 +94,6 @@ class AdminCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.admin_group = AdminGroup(self)
-
-    async def _check_admin(self, interaction: discord.Interaction, cmd: str) -> bool:
-        ctx = PermissionContext(
-            server_id=interaction.guild_id, user_id=interaction.user.id, command_name=cmd
-        )
-        if not await self.bot.permission_checker.check_role(ctx, Role.ADMIN):
-            await interaction.followup.send("Admin required.", ephemeral=True)
-            return False
-        return True
 
     @app_commands.command(name="ping", description="Check if bot is responsive")
     async def ping(self, interaction: discord.Interaction):

@@ -6,8 +6,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from bot.auth.permissions import PermissionContext
-from config.constants import Role
+from bot.auth.command_helpers import require_admin
 
 logger = logging.getLogger(__name__)
 
@@ -41,15 +40,6 @@ def _parse_duration(s: str) -> timedelta | None:
 class PollCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-
-    async def _check_admin(self, interaction: discord.Interaction, cmd: str) -> bool:
-        ctx = PermissionContext(
-            server_id=interaction.guild_id, user_id=interaction.user.id, command_name=cmd
-        )
-        if not await self.bot.permission_checker.check_role(ctx, Role.ADMIN):
-            await interaction.followup.send("Admin required.", ephemeral=True)
-            return False
-        return True
 
     def _create_long_poll_emojis(self) -> list[str]:
         return [
@@ -95,7 +85,7 @@ class PollCommands(commands.Cog):
     ):
         await interaction.response.defer(ephemeral=True)
         try:
-            if not await self._check_admin(interaction, "poll"):
+            if not await require_admin(interaction, "poll", self.bot):
                 return
 
             if len(question) > 300:
