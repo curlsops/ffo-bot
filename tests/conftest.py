@@ -6,17 +6,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 
-@pytest.fixture(scope="session")
-def postgres_container():
-    from testcontainers.postgres import PostgresContainer
-
-    with PostgresContainer("postgres:18", driver=None) as postgres:
-        yield postgres
-
-
-@pytest.fixture(scope="session")
-def database_url(postgres_container):
-    url = postgres_container.get_connection_url()
+def _run_alembic(url: str) -> None:
     env = os.environ.copy()
     env["DATABASE_URL"] = url
     result = subprocess.run(
@@ -31,6 +21,25 @@ def database_url(postgres_container):
             f"alembic upgrade head failed (exit {result.returncode}):\n"
             f"stdout: {result.stdout}\nstderr: {result.stderr}"
         )
+
+
+@pytest.fixture(scope="session")
+def postgres_container():
+    from testcontainers.postgres import PostgresContainer
+
+    with PostgresContainer("postgres:18", driver=None) as postgres:
+        yield postgres
+
+
+@pytest.fixture(scope="session")
+def database_url(request):
+    url = os.environ.get("DATABASE_URL")
+    if url:
+        _run_alembic(url)
+        return url
+    postgres = request.getfixturevalue("postgres_container")
+    url = postgres.get_connection_url()
+    _run_alembic(url)
     return url
 
 

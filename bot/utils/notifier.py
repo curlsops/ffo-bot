@@ -118,7 +118,8 @@ class AdminNotifier:
         if channel_id:
             embed.add_field(name="Channel", value=f"<#{channel_id}>", inline=True)
         tb = "".join(traceback.format_exception(type(error), error, error.__traceback__))
-        tb = tb[-1021:] + "..." if len(tb) > 1024 else tb
+        max_tb = 1016  # 1024 limit; "```\n"+tb+"\n```" adds 8
+        tb = tb[-(max_tb - 3) :] + "..." if len(tb) > max_tb else tb
         embed.add_field(name="Traceback", value=f"```\n{tb}\n```", inline=False)
         await self.send(server_id, embed)
 

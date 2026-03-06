@@ -72,7 +72,14 @@ class MusicGroup(app_commands.Group):
                 await interaction.followup.send("Already in your channel.")
                 return
             await interaction.guild.voice_client.disconnect()
-        await channel.connect(cls=Player)
+        try:
+            await channel.connect(cls=Player)
+        except TimeoutError:
+            await interaction.followup.send(
+                "Voice connection timed out. Try again.",
+                ephemeral=True,
+            )
+            return
         await interaction.followup.send(f"Joined {channel.mention}.")
 
     @app_commands.command(name="play", description="Play a track (URL or search query)")
@@ -93,7 +100,14 @@ class MusicGroup(app_commands.Group):
         channel = interaction.user.voice.channel
         player = interaction.guild.voice_client
         if not player or not isinstance(player, Player):
-            await channel.connect(cls=Player)
+            try:
+                await channel.connect(cls=Player)
+            except TimeoutError:
+                await interaction.followup.send(
+                    "Timed out connecting to voice. Try again or check network/firewall.",
+                    ephemeral=True,
+                )
+                return
             player = interaction.guild.voice_client
         if player.channel.id != channel.id:
             await interaction.followup.send(

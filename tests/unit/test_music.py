@@ -103,6 +103,17 @@ class TestMusicJoin:
         i.followup.send.assert_called_once()
         assert "not enabled" in i.followup.send.call_args[0][0].lower()
 
+    @pytest.mark.asyncio
+    async def test_join_voice_connect_timeout(self, cog):
+        channel = MagicMock(id=99)
+        channel.connect = AsyncMock(side_effect=TimeoutError)
+        i = _interaction(cog.bot, voice_channel=channel)
+        i.guild.voice_client = None
+        await cog.music_group.join.callback(cog.music_group, i)
+        i.followup.send.assert_called_once()
+        assert "timed out" in i.followup.send.call_args[0][0].lower()
+        assert i.followup.send.call_args[1]["ephemeral"] is True
+
 
 class TestMusicPlay:
     @pytest.mark.asyncio
@@ -127,6 +138,17 @@ class TestMusicPlay:
         await cog.music_group.play.callback(cog.music_group, i, "test query")
         i.followup.send.assert_called_once()
         assert "not enabled" in i.followup.send.call_args[0][0].lower()
+
+    @pytest.mark.asyncio
+    async def test_play_voice_connect_timeout(self, cog):
+        channel = MagicMock(id=99)
+        channel.connect = AsyncMock(side_effect=TimeoutError)
+        i = _interaction(cog.bot, voice_channel=channel)
+        i.guild.voice_client = None
+        await cog.music_group.play.callback(cog.music_group, i, "never gonna give you up")
+        i.followup.send.assert_called_once()
+        assert "timed out" in i.followup.send.call_args[0][0].lower()
+        assert i.followup.send.call_args[1]["ephemeral"] is True
 
 
 class TestMusicLeave:

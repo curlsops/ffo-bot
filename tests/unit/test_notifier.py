@@ -225,7 +225,7 @@ class TestErrorNotifications:
         except ValueError as e:
             await notifier.notify_error(999, e, "ctx")
         tb = next(f for f in channel.send.call_args[1]["embed"].fields if f.name == "Traceback")
-        assert len(tb.value) <= 1032
+        assert len(tb.value) <= 1024
 
 
 class TestEdgeCases:
@@ -247,7 +247,7 @@ class TestEdgeCases:
         channel = _setup_channel(bot)
         await notifier.notify_error(999, ValueError("x" * 5000), "ctx")
         tb = next(f for f in channel.send.call_args[1]["embed"].fields if f.name == "Traceback")
-        assert len(tb.value) <= 1032
+        assert len(tb.value) <= 1024
 
 
 class TestQuotebookNotifications:
