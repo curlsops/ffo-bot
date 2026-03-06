@@ -7,8 +7,10 @@ import discord
 from discord.ext import commands, tasks
 
 from bot.auth.permissions import PermissionContext
-from bot.commands.giveaway import GIVEAWAY_COLUMNS
+from bot.commands.giveaway import CACHE_GIVEAWAY_MESSAGE_ID
 from bot.utils.db import TRANSIENT_DB_ERRORS
+from bot.utils.discord_helpers import get_or_fetch_channel
+from bot.views.giveaway import GIVEAWAY_COLUMNS
 from config.constants import Role
 
 logger = logging.getLogger(__name__)
@@ -122,6 +124,10 @@ class GiveawayManager(commands.Cog):
                     "SELECT user_id, entries FROM giveaway_entries WHERE giveaway_id = $1",
                     giveaway["id"],
                 )
+            if self.bot.cache:
+                self.bot.cache.delete(
+                    CACHE_GIVEAWAY_MESSAGE_ID.format(server_id=giveaway["server_id"])
+                )
 
             winners = self._select_winners(entries, giveaway["winners_count"])
             if winners:
@@ -131,17 +137,14 @@ class GiveawayManager(commands.Cog):
                         [(giveaway["id"], w) for w in winners],
                     )
 
-            channel = self.bot.get_channel(giveaway["channel_id"])
+            channel = await get_or_fetch_channel(self.bot, giveaway["channel_id"])
             if not channel:
-                try:
-                    channel = await self.bot.fetch_channel(giveaway["channel_id"])
-                except (discord.NotFound, discord.Forbidden):
-                    logger.warning(
-                        "Could not fetch channel %s for giveaway %s",
-                        giveaway["channel_id"],
-                        giveaway["id"],
-                    )
-                    return
+                logger.warning(
+                    "Could not fetch channel %s for giveaway %s",
+                    giveaway["channel_id"],
+                    giveaway["id"],
+                )
+                return
 
             try:
                 msg = await channel.fetch_message(giveaway["message_id"])

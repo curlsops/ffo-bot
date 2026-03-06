@@ -4,7 +4,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from bot.auth.permissions import PermissionContext
+from bot.auth.command_helpers import require_guild, require_super_admin, send_error
 from bot.utils.pagination import truncate_for_discord
 from bot.utils.server_roles import get_server_role_ids, set_server_role
 from config.constants import Role
@@ -44,6 +44,23 @@ async def _permissions_user_autocomplete(
         if not cur or cur in name.lower() or cur in (m.name or "").lower():
             choices.append(app_commands.Choice(name=name[:100], value=str(m.id)))
     return choices[:MAX_AUTOCOMPLETE_CHOICES]
+
+
+async def _parse_user_and_target(
+    interaction: discord.Interaction, user_str: str, bot
+) -> tuple[int | None, discord.User | None, str | None]:
+    """Returns (user_id, target, error_msg). Call require_guild first."""
+    guild = interaction.guild
+    if not guild:
+        return None, None, "Server only."
+    try:
+        user_id = int(user_str)
+    except ValueError:
+        return None, None, "Invalid user."
+    target = guild.get_member(user_id) or await bot.fetch_user(user_id)
+    if not target:
+        return None, None, "User not found."
+    return user_id, target, None
 
 
 def _role_members(guild: discord.Guild, role_ids: dict) -> list[tuple[int, Role]]:
@@ -190,26 +207,16 @@ class PermissionsGroup(app_commands.Group):
         super().__init__(name="permissions", description="Manage permissions")
         self.cog = cog
 
-    async def _check_super_admin(self, interaction: discord.Interaction, cmd: str) -> bool:
-        ctx = PermissionContext(
-            server_id=interaction.guild_id, user_id=interaction.user.id, command_name=cmd
-        )
-        if not await self.cog.bot.permission_checker.check_role(ctx, Role.SUPER_ADMIN):
-            await interaction.followup.send("❌ Super Admin required.", ephemeral=True)
-            return False
-        return True
-
     @app_commands.command(name="list", description="List user permissions and role config")
     async def list_cmd(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        if not await self._check_super_admin(interaction, "permissions list"):
+        if not await require_super_admin(interaction, "permissions list", self.cog.bot):
+            return
+        if not await require_guild(interaction):
             return
 
         bot = self.cog.bot
         guild = interaction.guild
-        if not guild:
-            await interaction.followup.send("❌ Server only.", ephemeral=True)
-            return
 
         try:
             role_ids = await get_server_role_ids(bot.db_pool, interaction.guild_id, cache=bot.cache)
@@ -221,7 +228,7 @@ class PermissionsGroup(app_commands.Group):
                 )
         except Exception as e:
             logger.error("permissions list error: %s", e, exc_info=True)
-            await interaction.followup.send("❌ Error fetching permissions.", ephemeral=True)
+            await send_error(interaction, "Error fetching permissions.")
             return
 
         if not role_ids and not role_members and not user_rows:
@@ -248,20 +255,13 @@ class PermissionsGroup(app_commands.Group):
     @app_commands.autocomplete(user=_permissions_user_autocomplete)
     async def add_cmd(self, interaction: discord.Interaction, user: str, role: str):
         await interaction.response.defer(ephemeral=True)
-        if not await self._check_super_admin(interaction, "permissions add"):
+        if not await require_super_admin(interaction, "permissions add", self.cog.bot):
             return
-        guild = interaction.guild
-        if not guild:
-            await interaction.followup.send("❌ Server only.", ephemeral=True)
+        if not await require_guild(interaction):
             return
-        try:
-            user_id = int(user)
-        except ValueError:
-            await interaction.followup.send("❌ Invalid user.", ephemeral=True)
-            return
-        target = guild.get_member(user_id) or await self.cog.bot.fetch_user(user_id)
-        if not target:
-            await interaction.followup.send("❌ User not found.", ephemeral=True)
+        user_id, target, err = await _parse_user_and_target(interaction, user, self.cog.bot)
+        if err:
+            await send_error(interaction, err)
             return
         try:
             async with self.cog.bot.db_pool.acquire() as conn:
@@ -297,7 +297,7 @@ class PermissionsGroup(app_commands.Group):
             )
         except Exception as e:
             logger.error("permissions add error: %s", e, exc_info=True)
-            await interaction.followup.send("❌ Error granting role.", ephemeral=True)
+            await send_error(interaction, "Error granting role.")
 
     @app_commands.command(name="remove", description="Revoke Admin or Moderator from a user")
     @app_commands.describe(user="User to revoke role from", role="Role to revoke")
@@ -305,20 +305,13 @@ class PermissionsGroup(app_commands.Group):
     @app_commands.autocomplete(user=_permissions_user_autocomplete)
     async def remove_cmd(self, interaction: discord.Interaction, user: str, role: str):
         await interaction.response.defer(ephemeral=True)
-        if not await self._check_super_admin(interaction, "permissions remove"):
+        if not await require_super_admin(interaction, "permissions remove", self.cog.bot):
             return
-        guild = interaction.guild
-        if not guild:
-            await interaction.followup.send("❌ Server only.", ephemeral=True)
+        if not await require_guild(interaction):
             return
-        try:
-            user_id = int(user)
-        except ValueError:
-            await interaction.followup.send("❌ Invalid user.", ephemeral=True)
-            return
-        target = guild.get_member(user_id) or await self.cog.bot.fetch_user(user_id)
-        if not target:
-            await interaction.followup.send("❌ User not found.", ephemeral=True)
+        user_id, target, err = await _parse_user_and_target(interaction, user, self.cog.bot)
+        if err:
+            await send_error(interaction, err)
             return
         try:
             async with self.cog.bot.db_pool.acquire() as conn:
@@ -329,9 +322,7 @@ class PermissionsGroup(app_commands.Group):
                     role,
                 )
             if result == "UPDATE 0":
-                await interaction.followup.send(
-                    f"❌ {target.mention} doesn't have {role}.", ephemeral=True
-                )
+                await send_error(interaction, f"{target.mention} doesn't have {role}.")
                 return
             self.cog.bot.permission_checker.invalidate_user_cache(interaction.guild_id, user_id)
             if self.cog.bot.notifier:
@@ -347,7 +338,7 @@ class PermissionsGroup(app_commands.Group):
             )
         except Exception as e:
             logger.error("permissions remove error: %s", e, exc_info=True)
-            await interaction.followup.send("❌ Error revoking role.", ephemeral=True)
+            await send_error(interaction, "Error revoking role.")
 
     @app_commands.command(
         name="set",
@@ -365,7 +356,7 @@ class PermissionsGroup(app_commands.Group):
         discord_role: discord.Role | None = None,
     ):
         await interaction.response.defer(ephemeral=True)
-        if not await self._check_super_admin(interaction, "permissions set"):
+        if not await require_super_admin(interaction, "permissions set", self.cog.bot):
             return
         await self.cog.bot._register_server(interaction.guild)
         role_enum = Role(level)
@@ -378,7 +369,7 @@ class PermissionsGroup(app_commands.Group):
             server_name=interaction.guild.name if interaction.guild else None,
         )
         if not success:
-            await interaction.followup.send("❌ Failed to update.", ephemeral=True)
+            await send_error(interaction, "Failed to update.")
             return
         if self.cog.bot.notifier:
             await self.cog.bot.notifier.notify_permission_changed(

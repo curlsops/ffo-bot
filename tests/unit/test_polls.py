@@ -83,14 +83,18 @@ class TestParseDuration:
 
 class TestPollCommands:
     @pytest.mark.asyncio
-    async def test_check_admin_success(self, cog):
-        assert await cog._check_admin(_interaction(), "poll") is True
+    async def test_require_admin_success(self, cog):
+        from bot.auth.command_helpers import require_admin
+
+        assert await require_admin(_interaction(), "poll", cog.bot) is True
 
     @pytest.mark.asyncio
-    async def test_check_admin_failure(self, cog):
+    async def test_require_admin_failure(self, cog):
+        from bot.auth.command_helpers import require_admin
+
         cog.bot.permission_checker.check_role = AsyncMock(return_value=False)
         i = _interaction()
-        assert await cog._check_admin(i, "poll") is False
+        assert await require_admin(i, "poll", cog.bot) is False
         i.followup.send.assert_called_with("Admin required.", ephemeral=True)
 
     @pytest.mark.asyncio

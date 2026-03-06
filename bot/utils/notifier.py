@@ -4,11 +4,21 @@ import traceback
 import discord
 
 from bot.utils.config_repair import repair_servers_config
+from bot.utils.discord_helpers import get_or_fetch_channel
 
 logger = logging.getLogger(__name__)
 
-
 CACHE_KEY = "notify_channel:{server_id}"
+TB_MAX = 1016  # 1024 limit; "```\n"+tb+"\n```" adds 8
+
+
+def _truncate(s: str, max_len: int) -> str:
+    return s[:max_len] + "…" if len(s) > max_len else s
+
+
+def _format_traceback(exc: Exception, max_len: int = TB_MAX) -> str:
+    tb = "".join(traceback.format_exception(type(exc), exc, exc.__traceback__))
+    return tb[-(max_len - 3) :] + "..." if len(tb) > max_len else tb
 
 
 class AdminNotifier:
@@ -24,12 +34,7 @@ class AdminNotifier:
         async with self.bot.db_pool.acquire() as conn:
             row = await conn.fetchrow("SELECT config FROM servers WHERE server_id = $1", server_id)
         cfg = repair_servers_config(row["config"]) if row and row["config"] is not None else None
-        if not cfg:
-            result = None
-        elif channel_id := cfg.get("notify_channel_id"):
-            result = int(channel_id)
-        else:
-            result = None
+        result = int(cfg["notify_channel_id"]) if cfg and cfg.get("notify_channel_id") else None
         if self.bot.cache:
             self.bot.cache.set(cache_key, result if result is not None else -1, ttl=300)
         return result
@@ -38,12 +43,9 @@ class AdminNotifier:
         channel_id = await self.get_notify_channel_id(server_id)
         if not channel_id:
             return None
-        ch = self.bot.get_channel(channel_id)
+        ch = await get_or_fetch_channel(self.bot, channel_id)
         if ch is None:
-            try:
-                ch = await self.bot.fetch_channel(channel_id)
-            except Exception:
-                logger.warning("Could not fetch notify channel %s", channel_id)
+            logger.warning("Could not fetch notify channel %s", channel_id)
         return ch
 
     async def set_notify_channel(self, server_id: int, channel_id: int | None) -> bool:
@@ -78,27 +80,46 @@ class AdminNotifier:
             logger.exception("Failed to send notification")
             return False
 
+    async def _notify(
+        self,
+        server_id: int,
+        title: str,
+        desc: str,
+        color: discord.Color,
+        fields: list[tuple[str, str | None, bool]] | None = None,
+        footer: str | None = None,
+    ) -> bool:
+        embed = discord.Embed(title=title, description=desc, color=color)
+        for name, value, inline in fields or []:
+            if value is not None:
+                embed.add_field(name=name, value=str(value)[:1024] or "—", inline=inline)
+        if footer:
+            embed.set_footer(text=footer)
+        return await self.send(server_id, embed)
+
     async def notify_giveaway_created(
         self, server_id: int, prize: str, host_id: int, channel_id: int, ends_at
     ):
-        embed = discord.Embed(
-            title="Giveaway Created", description=f"**{prize}**", color=discord.Color.green()
+        fields = [
+            ("Host", f"<@{host_id}>", True),
+            ("Channel", f"<#{channel_id}>", True),
+            ("Ends", f"<t:{int(ends_at.timestamp())}:R>", True),
+        ]
+        await self._notify(
+            server_id, "Giveaway Created", f"**{prize}**", discord.Color.green(), fields
         )
-        embed.add_field(name="Host", value=f"<@{host_id}>", inline=True)
-        embed.add_field(name="Channel", value=f"<#{channel_id}>", inline=True)
-        embed.add_field(name="Ends", value=f"<t:{int(ends_at.timestamp())}:R>", inline=True)
-        await self.send(server_id, embed)
 
     async def notify_giveaway_ended(
         self, server_id: int, prize: str, winners: list, entry_count: int
     ):
-        embed = discord.Embed(
-            title="Giveaway Ended", description=f"**{prize}**", color=discord.Color.blue()
+        w = ", ".join(f"<@{x}>" for x in winners) if winners else "No valid entries"
+        await self._notify(
+            server_id,
+            "Giveaway Ended",
+            f"**{prize}**",
+            discord.Color.blue(),
+            [("Entries", str(entry_count), True), ("Winners", w, False)],
         )
-        embed.add_field(name="Entries", value=str(entry_count), inline=True)
-        winners_val = ", ".join(f"<@{w}>" for w in winners) if winners else "No valid entries"
-        embed.add_field(name="Winners", value=winners_val, inline=False)
-        await self.send(server_id, embed)
 
     async def notify_error(
         self,
@@ -108,34 +129,26 @@ class AdminNotifier:
         user_id: int | None = None,
         channel_id: int | None = None,
     ):
-        embed = discord.Embed(
-            title="Error", description=f"**{context}**", color=discord.Color.red()
-        )
-        embed.add_field(name="Type", value=type(error).__name__, inline=True)
-        embed.add_field(name="Message", value=str(error)[:1024] or "No message", inline=False)
-        if user_id:
-            embed.add_field(name="User", value=f"<@{user_id}>", inline=True)
-        if channel_id:
-            embed.add_field(name="Channel", value=f"<#{channel_id}>", inline=True)
-        tb = "".join(traceback.format_exception(type(error), error, error.__traceback__))
-        max_tb = 1016  # 1024 limit; "```\n"+tb+"\n```" adds 8
-        tb = tb[-(max_tb - 3) :] + "..." if len(tb) > max_tb else tb
-        embed.add_field(name="Traceback", value=f"```\n{tb}\n```", inline=False)
-        await self.send(server_id, embed)
+        fields = [
+            ("Type", type(error).__name__, True),
+            ("Message", str(error)[:1024] or "No message", False),
+            ("User", f"<@{user_id}>" if user_id else None, True),
+            ("Channel", f"<#{channel_id}>" if channel_id else None, True),
+            ("Traceback", f"```\n{_format_traceback(error)}\n```", False),
+        ]
+        await self._notify(server_id, "Error", f"**{context}**", discord.Color.red(), fields)
 
     async def notify_quotebook_submitted(
         self, server_id: int, quote_text: str, submitter_id: int, quote_id: str
     ):
-        text = quote_text[:200] + "…" if len(quote_text) > 200 else quote_text
-        embed = discord.Embed(
-            title="Quote Submitted",
-            description=text,
-            color=discord.Color.gold(),
+        await self._notify(
+            server_id,
+            "Quote Submitted",
+            _truncate(quote_text, 200),
+            discord.Color.gold(),
+            [("Submitter", f"<@{submitter_id}>", True), ("Quote ID", f"`{quote_id[:8]}`", True)],
+            "Use /quote approve to approve",
         )
-        embed.add_field(name="Submitter", value=f"<@{submitter_id}>", inline=True)
-        embed.add_field(name="Quote ID", value=f"`{quote_id[:8]}`", inline=True)
-        embed.set_footer(text="Use /quote approve to approve")
-        await self.send(server_id, embed)
 
     async def notify_permission_changed(
         self,
@@ -146,19 +159,17 @@ class AdminNotifier:
         changed_by_id: int,
         discord_role: int | None = None,
     ):
-        embed = discord.Embed(
-            title="Permission Changed",
-            description=f"**{action}** {role}",
-            color=discord.Color.blue(),
+        role_val = (
+            f"<@&{discord_role}>" if discord_role else ("Cleared" if action == "Set role" else None)
         )
-        if target_id:
-            embed.add_field(name="Target", value=f"<@{target_id}>", inline=True)
-        embed.add_field(name="By", value=f"<@{changed_by_id}>", inline=True)
-        if discord_role:
-            embed.add_field(name="Role", value=f"<@&{discord_role}>", inline=True)
-        elif action == "Set role":
-            embed.add_field(name="Role", value="Cleared", inline=True)
-        await self.send(server_id, embed)
+        fields = [
+            ("Target", f"<@{target_id}>" if target_id else None, True),
+            ("By", f"<@{changed_by_id}>", True),
+            ("Role", role_val, True),
+        ]
+        await self._notify(
+            server_id, "Permission Changed", f"**{action}** {role}", discord.Color.blue(), fields
+        )
 
     async def notify_reaction_role_setup(
         self,
@@ -170,61 +181,55 @@ class AdminNotifier:
         channel_id: int,
         created_by_id: int,
     ):
-        embed = discord.Embed(
-            title="Reaction Role",
-            description=f"**{action}**: {emoji} → <@&{role_id}>",
-            color=discord.Color.purple(),
+        jump = f"[Jump](https://discord.com/channels/{server_id}/{channel_id}/{message_id})"
+        await self._notify(
+            server_id,
+            "Reaction Role",
+            f"**{action}**: {emoji} → <@&{role_id}>",
+            discord.Color.purple(),
+            [("Message", jump, True), ("By", f"<@{created_by_id}>", True)],
         )
-        embed.add_field(
-            name="Message",
-            value=f"[Jump](https://discord.com/channels/{server_id}/{channel_id}/{message_id})",
-            inline=True,
-        )
-        embed.add_field(name="By", value=f"<@{created_by_id}>", inline=True)
-        await self.send(server_id, embed)
 
     async def notify_faq_changed(self, server_id: int, action: str, topic: str, changed_by_id: int):
-        embed = discord.Embed(
-            title="FAQ Changed",
-            description=f"**{action}**: {topic}",
-            color=discord.Color.green(),
+        await self._notify(
+            server_id,
+            "FAQ Changed",
+            f"**{action}**: {topic}",
+            discord.Color.green(),
+            [("By", f"<@{changed_by_id}>", True)],
         )
-        embed.add_field(name="By", value=f"<@{changed_by_id}>", inline=True)
-        await self.send(server_id, embed)
 
     async def notify_notify_channel_changed(
         self, server_id: int, channel_id: int | None, changed_by_id: int
     ):
         desc = f"Notifications set to <#{channel_id}>" if channel_id else "Notifications disabled"
-        embed = discord.Embed(
-            title="Notify Channel Changed",
-            description=desc,
-            color=discord.Color.blue(),
+        await self._notify(
+            server_id,
+            "Notify Channel Changed",
+            desc,
+            discord.Color.blue(),
+            [("By", f"<@{changed_by_id}>", True)],
         )
-        embed.add_field(name="By", value=f"<@{changed_by_id}>", inline=True)
-        await self.send(server_id, embed)
 
     async def notify_rate_limit_hit(
         self, server_id: int, user_id: int, reason: str, command_name: str
     ):
-        embed = discord.Embed(
-            title="Rate Limit Hit",
-            description=reason[:256],
-            color=discord.Color.orange(),
+        await self._notify(
+            server_id,
+            "Rate Limit Hit",
+            reason[:256],
+            discord.Color.orange(),
+            [("User", f"<@{user_id}>", True), ("Command", command_name, True)],
         )
-        embed.add_field(name="User", value=f"<@{user_id}>", inline=True)
-        embed.add_field(name="Command", value=command_name, inline=True)
-        await self.send(server_id, embed)
 
     async def notify_bot_added(self, server_id: int, server_name: str, member_count: int):
-        embed = discord.Embed(
-            title="Bot Added to Server",
-            description=f"**{server_name}**",
-            color=discord.Color.green(),
+        await self._notify(
+            server_id,
+            "Bot Added to Server",
+            f"**{server_name}**",
+            discord.Color.green(),
+            [("Server ID", str(server_id), True), ("Members", str(member_count), True)],
         )
-        embed.add_field(name="Server ID", value=str(server_id), inline=True)
-        embed.add_field(name="Members", value=str(member_count), inline=True)
-        await self.send(server_id, embed)
 
     async def notify_moderation(
         self,
@@ -235,30 +240,24 @@ class AdminNotifier:
         reason: str | None = None,
         extra: str | None = None,
     ):
-        embed = discord.Embed(
-            title="Moderation",
-            description=f"**{action}**",
-            color=discord.Color.dark_red(),
+        fields = [
+            ("Target", f"<@{target_id}>", True),
+            ("By", f"<@{moderator_id}>" if moderator_id else None, True),
+            ("Reason", reason[:1024] if reason else None, False),
+            ("Details", extra[:1024] if extra else None, False),
+        ]
+        await self._notify(
+            server_id, "Moderation", f"**{action}**", discord.Color.dark_red(), fields
         )
-        embed.add_field(name="Target", value=f"<@{target_id}>", inline=True)
-        if moderator_id:
-            embed.add_field(name="By", value=f"<@{moderator_id}>", inline=True)
-        if reason:
-            embed.add_field(name="Reason", value=reason[:1024], inline=False)
-        if extra:
-            embed.add_field(name="Details", value=extra[:1024], inline=False)
-        await self.send(server_id, embed)
 
     async def notify_faq_submission(
         self, server_id: int, question: str, submitter_id: int, submission_id: str
     ):
-        text = question[:300] + "…" if len(question) > 300 else question
-        embed = discord.Embed(
-            title="FAQ Question Submitted",
-            description=text,
-            color=discord.Color.gold(),
+        await self._notify(
+            server_id,
+            "FAQ Question Submitted",
+            _truncate(question, 300),
+            discord.Color.gold(),
+            [("Submitter", f"<@{submitter_id}>", True), ("ID", f"`{submission_id[:8]}`", True)],
+            "Use /faq add to create an entry from this",
         )
-        embed.add_field(name="Submitter", value=f"<@{submitter_id}>", inline=True)
-        embed.add_field(name="ID", value=f"`{submission_id[:8]}`", inline=True)
-        embed.set_footer(text="Use /faq add to create an entry from this")
-        await self.send(server_id, embed)

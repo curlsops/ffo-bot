@@ -108,7 +108,7 @@ class TestQuoteSubmit:
     async def test_submit_empty_rejected(self, cog):
         i = _interaction()
         await cog.quote_group.submit_cmd.callback(cog.quote_group, i, "   ", None)
-        i.followup.send.assert_awaited_with("Quote cannot be empty.", ephemeral=True)
+        i.followup.send.assert_awaited_with("❌ Quote cannot be empty.", ephemeral=True)
         cog.bot.db_pool.acquire.assert_not_called()
 
     @pytest.mark.asyncio
@@ -132,7 +132,7 @@ class TestQuoteList:
         cog.bot.db_pool.acquire.return_value = _db_ctx(conn)
         i = _interaction()
         await cog.quote_group.list_cmd.callback(cog.quote_group, i)
-        i.followup.send.assert_awaited_with("No quotes in the book yet.", ephemeral=True)
+        i.followup.send.assert_awaited_with("❌ No quotes in the book yet.", ephemeral=True)
 
     @pytest.mark.asyncio
     async def test_list_shows_pending(self, cog):
@@ -171,7 +171,7 @@ class TestQuoteApprove:
     async def test_approve_invalid_id(self, cog):
         i = _interaction()
         await cog.quote_group.approve_cmd.callback(cog.quote_group, i, "not-a-uuid")
-        i.followup.send.assert_awaited_with("Invalid quote ID.", ephemeral=True)
+        i.followup.send.assert_awaited_with("❌ Invalid quote ID.", ephemeral=True)
 
     @pytest.mark.asyncio
     async def test_approve_not_found(self, cog):
@@ -181,7 +181,9 @@ class TestQuoteApprove:
         await cog.quote_group.approve_cmd.callback(
             cog.quote_group, i, "a1b2c3d4-0000-0000-0000-000000000001"
         )
-        i.followup.send.assert_awaited_with("Quote not found or already approved.", ephemeral=True)
+        i.followup.send.assert_awaited_with(
+            "❌ Quote not found or already approved.", ephemeral=True
+        )
 
 
 class TestQuoteDelete:
@@ -199,7 +201,7 @@ class TestQuoteDelete:
     async def test_delete_invalid_id(self, cog):
         i = _interaction()
         await cog.quote_group.delete_cmd.callback(cog.quote_group, i, "bad-id")
-        i.followup.send.assert_awaited_with("Invalid quote ID.", ephemeral=True)
+        i.followup.send.assert_awaited_with("❌ Invalid quote ID.", ephemeral=True)
 
 
 class TestQuoteSubmitVariants:
@@ -223,7 +225,7 @@ class TestQuoteRandom:
         cog.bot.db_pool.acquire.return_value = _db_ctx(conn)
         i = _interaction()
         await cog.quote_group.random_cmd.callback(cog.quote_group, i)
-        i.followup.send.assert_awaited_with("No quotes in the book yet.", ephemeral=True)
+        i.followup.send.assert_awaited_with("❌ No quotes in the book yet.", ephemeral=True)
 
     @pytest.mark.asyncio
     async def test_random_returns_quote(self, cog):
