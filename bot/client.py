@@ -4,7 +4,6 @@ import asyncio
 import logging
 import sys
 import time
-from typing import TYPE_CHECKING
 
 import discord
 from aiohttp import web
@@ -15,16 +14,12 @@ from bot.auth.permissions import PermissionChecker
 from bot.cache.memory import InMemoryCache
 from bot.processors.phrase_matcher import PhraseMatcher
 from bot.utils.health import HealthCheckServer
+from bot.utils.interaction import send_ephemeral
 from bot.utils.metrics import BotMetrics
 from bot.utils.notifier import AdminNotifier
 from bot.utils.rate_limiter import RateLimiter
 from config.settings import Settings
 from database.connection import DatabasePool
-
-if TYPE_CHECKING:
-    from bot.processors.media_downloader import MediaDownloader
-    from bot.processors.voice_transcriber import VoiceTranscriber
-    from bot.services.minecraft_rcon import MinecraftRCONClient
 
 logger = logging.getLogger(__name__)
 
@@ -54,10 +49,7 @@ class MetricsCommandTree(app_commands.CommandTree):
                             reason,
                             command_name,
                         )
-                    if interaction.response.is_done():
-                        await interaction.followup.send(reason, ephemeral=True)
-                    else:
-                        await interaction.response.send_message(reason, ephemeral=True)
+                    await send_ephemeral(interaction, reason)
                     interaction.command_failed = True
                     return
 
@@ -78,12 +70,8 @@ class MetricsCommandTree(app_commands.CommandTree):
 class FFOBot(commands.Bot):
     def __init__(self, settings: Settings):
         intents = discord.Intents.default()
-        intents.message_content = True
-        intents.guilds = True
-        intents.members = True
-        intents.reactions = True
-        intents.bans = True
-        intents.voice_states = True
+        for k in ("message_content", "guilds", "members", "reactions", "bans", "voice_states"):
+            setattr(intents, k, True)
         super().__init__(
             command_prefix="!",
             intents=intents,
@@ -92,16 +80,9 @@ class FFOBot(commands.Bot):
         )
 
         self.settings = settings
-        self.db_pool: DatabasePool | None = None
-        self.cache: InMemoryCache | None = None
-        self.metrics: BotMetrics | None = None
-        self.phrase_matcher: PhraseMatcher | None = None
-        self.media_downloader: MediaDownloader | None = None
-        self.voice_transcriber: VoiceTranscriber | None = None
-        self.permission_checker: PermissionChecker | None = None
-        self.rate_limiter: RateLimiter | None = None
-        self.notifier: AdminNotifier | None = None
-        self.minecraft_rcon: MinecraftRCONClient | None = None
+        self.db_pool = self.cache = self.metrics = self.phrase_matcher = None
+        self.media_downloader = self.voice_transcriber = self.permission_checker = None
+        self.rate_limiter = self.notifier = self.minecraft_rcon = None
         self.pool = None
         self._lavalink_node_created = False
         self._shutdown_event = asyncio.Event()
@@ -147,12 +128,11 @@ class FFOBot(commands.Bot):
             from bot.services.minecraft_rcon import MinecraftRCONClient
 
             self.minecraft_rcon = MinecraftRCONClient(self.settings)
+        self.pool = None
         if self.settings.feature_music and self.settings.lavalink_password:
             from mafic import NodePool
 
             self.pool = NodePool(self)
-        else:
-            self.pool = None
         self.tree.on_error = self._on_app_command_error
 
         await self._start_health_server()
@@ -175,14 +155,14 @@ class FFOBot(commands.Bot):
             "bot.tasks.giveaway_manager",
             "bot.tasks.status_rotator",
         ]
-        if self.settings.feature_quotebook:
-            extensions.append("bot.commands.quotebook")
-        if self.settings.feature_minecraft_whitelist:
-            extensions.append("bot.commands.whitelist")
-        if self.settings.feature_faq:
-            extensions.append("bot.commands.faq")
-        if self.settings.feature_music:
-            extensions.append("bot.commands.music")
+        for ext, enabled in [
+            ("bot.commands.quotebook", self.settings.feature_quotebook),
+            ("bot.commands.whitelist", self.settings.feature_minecraft_whitelist),
+            ("bot.commands.faq", self.settings.feature_faq),
+            ("bot.commands.music", self.settings.feature_music),
+        ]:
+            if enabled:
+                extensions.append(ext)
 
         for extension in extensions:
             try:
@@ -233,15 +213,12 @@ class FFOBot(commands.Bot):
                 logger.warning("Lavalink connection failed, music disabled: %s", e)
                 self.pool = None
 
-        for guild in self.guilds:
-            await self._register_server(guild)
-
         await self._connection.http.bulk_upsert_global_commands(self.application_id, [])
         for guild in self.guilds:
+            await self._register_server(guild)
             await self._connection.http.bulk_upsert_guild_commands(
                 self.application_id, guild.id, []
             )
-        for guild in self.guilds:
             self.tree.copy_global_to(guild=guild)
             await self.tree.sync(guild=guild)
         if self.guilds:
@@ -281,9 +258,8 @@ class FFOBot(commands.Bot):
             owner_ch = self.get_channel(self.settings.bot_owner_notify_channel_id)
             if (
                 owner_ch
-                and hasattr(owner_ch, "guild")
-                and owner_ch.guild
-                and owner_ch.guild.id == self.settings.bot_owner_server_id
+                and getattr(getattr(owner_ch, "guild", None), "id", None)
+                == self.settings.bot_owner_server_id
             ):
                 try:
                     embed = discord.Embed(
@@ -291,11 +267,8 @@ class FFOBot(commands.Bot):
                         description=guild.name,
                         color=discord.Color.green(),
                     )
-                    embed.add_field(name="Server ID", value=str(guild.id), inline=True)
-                    embed.add_field(
-                        name="Members",
-                        value=str(guild.member_count or 0),
-                        inline=True,
+                    embed.add_field(name="Server ID", value=str(guild.id), inline=True).add_field(
+                        name="Members", value=str(guild.member_count or 0), inline=True
                     )
                     await owner_ch.send(embed=embed)
                 except Exception as e:
@@ -373,7 +346,4 @@ class FFOBot(commands.Bot):
                 user_id=interaction.user.id,
                 channel_id=interaction.channel_id,
             )
-        if interaction.response.is_done():
-            await interaction.followup.send("An error occurred.", ephemeral=True)
-        else:
-            await interaction.response.send_message("An error occurred.", ephemeral=True)
+        await send_ephemeral(interaction, "An error occurred.")

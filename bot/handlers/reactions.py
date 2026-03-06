@@ -4,6 +4,7 @@ import discord
 from discord.ext import commands
 
 from bot.auth.permissions import PermissionContext
+from bot.utils.discord_helpers import get_or_fetch_channel
 from bot.utils.whitelist_cache import add_to_cache
 from config.constants import Role
 
@@ -69,9 +70,7 @@ class ReactionHandler(commands.Cog):
                 extra={"user_id": payload.user_id},
             )
             try:
-                channel = self.bot.get_channel(payload.channel_id) or await self.bot.fetch_channel(
-                    payload.channel_id
-                )
+                channel = await get_or_fetch_channel(self.bot, payload.channel_id)
                 if channel:
                     msg = await channel.fetch_message(payload.message_id)
                     await msg.remove_reaction(payload.emoji, discord.Object(id=payload.user_id))
@@ -112,9 +111,7 @@ class ReactionHandler(commands.Cog):
                     minecraft_uuid=str(minecraft_uuid) if minecraft_uuid else None,
                     cache=self.bot.cache,
                 )
-                channel = self.bot.get_channel(channel_id) or await self.bot.fetch_channel(
-                    channel_id
-                )
+                channel = await get_or_fetch_channel(self.bot, channel_id)
                 if channel:
                     await channel.send(f"✅ **{username}** added to whitelist. {resp}")
                 author = self.bot.get_user(author_id) or await self.bot.fetch_user(author_id)
@@ -132,14 +129,12 @@ class ReactionHandler(commands.Cog):
                 whitelist_added = True
             except Exception as e:
                 logger.warning("RCON whitelist add on approve failed: %s", e)
-                channel = self.bot.get_channel(channel_id) or await self.bot.fetch_channel(
-                    channel_id
-                )
+                channel = await get_or_fetch_channel(self.bot, channel_id)
                 if channel:
                     await channel.send(f"❌ Failed to add **{username}** to whitelist: {e}")
 
         try:
-            channel = self.bot.get_channel(channel_id) or await self.bot.fetch_channel(channel_id)
+            channel = await get_or_fetch_channel(self.bot, channel_id)
             if channel:
                 msg = await channel.fetch_message(payload.message_id)
                 await msg.clear_reactions()

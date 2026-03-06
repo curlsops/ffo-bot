@@ -3,16 +3,15 @@ import uuid
 from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 
+import discord
 import pytest
 
-from bot.commands.giveaway import (
+from bot.commands.giveaway import GiveawayCommands, GiveawayView, parse_duration
+from bot.views.giveaway import (
     AlreadyJoinedView,
     EntriesPaginatedView,
-    GiveawayCommands,
-    GiveawayView,
     _discord_timestamp,
     build_embed,
-    parse_duration,
 )
 
 
@@ -215,14 +214,18 @@ class TestBuildEmbed:
 
 class TestGiveawayCommands:
     @pytest.mark.asyncio
-    async def test_check_admin_success(self, cog):
-        assert await cog._check_admin(_interaction(), "test") is True
+    async def test_require_admin_success(self, cog):
+        from bot.auth.command_helpers import require_admin
+
+        assert await require_admin(_interaction(), "test", cog.bot) is True
 
     @pytest.mark.asyncio
-    async def test_check_admin_failure(self, cog):
+    async def test_require_admin_failure(self, cog):
+        from bot.auth.command_helpers import require_admin
+
         cog.bot.permission_checker.check_role = AsyncMock(return_value=False)
         i = _interaction()
-        assert await cog._check_admin(i, "test") is False
+        assert await require_admin(i, "test", cog.bot) is False
         i.followup.send.assert_called()
 
     @pytest.mark.asyncio
@@ -325,6 +328,7 @@ class TestGiveawayView:
             ([], None, 1),
             ([100], {"100": 5}, 6),
             ([100, 200], {"100": 5, "200": 3}, 9),
+            ([100], {"999": 5}, 1),
         ],
     )
     def test_calculate_entries(self, view, roles, bonus_roles, expected):
@@ -362,6 +366,19 @@ class TestGiveawayView:
         msg.edit.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_update_embed_edit_raises(self, view, mock_bot, caplog):
+        caplog.set_level(logging.DEBUG, logger="bot.views.giveaway")
+        mock_bot.db_pool = _db_ctx(
+            AsyncMock(
+                fetchval=AsyncMock(return_value=1),
+                fetchrow=AsyncMock(return_value=_giveaway()),
+            )
+        )
+        msg = MagicMock(edit=AsyncMock(side_effect=discord.HTTPException(MagicMock(), "")))
+        await view._update_embed(msg, view.giveaway_id)
+        assert "Update embed failed" in caplog.text
+
+    @pytest.mark.asyncio
     @pytest.mark.parametrize(
         "giveaway,expected",
         [
@@ -386,6 +403,67 @@ class TestGiveawayView:
         i.user.roles = [MagicMock(id=111)]
         await view.join_button(i)
         assert "blacklisted" in str(i.followup.send.call_args)
+
+    @pytest.mark.asyncio
+    async def test_join_button_required_role_missing(self, view, mock_bot):
+        mock_bot.db_pool = _db_ctx(
+            AsyncMock(fetchrow=AsyncMock(return_value=_active_giveaway(view, required_roles=[999])))
+        )
+        i = _interaction()
+        i.user.roles = []
+        await view.join_button(i)
+        assert "required" in str(i.followup.send.call_args).lower()
+
+    @pytest.mark.asyncio
+    async def test_join_button_defer_not_found_returns_early(self, view, mock_bot):
+        mock_bot.db_pool = _db_ctx(
+            AsyncMock(fetchrow=AsyncMock(return_value=_active_giveaway(view)))
+        )
+        i = _interaction()
+        i.response.defer = AsyncMock(side_effect=discord.NotFound(MagicMock(), ""))
+        await view.join_button(i)
+        i.followup.send.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_join_button_success_with_cache(self, view, mock_bot):
+        mock_bot.cache = MagicMock(delete=MagicMock())
+        mock_bot.db_pool = _db_ctx(
+            AsyncMock(
+                fetchrow=AsyncMock(return_value=_active_giveaway(view)),
+                execute=AsyncMock(),
+                fetchval=AsyncMock(return_value=1),
+            )
+        )
+        i = _interaction()
+        await view.join_button(i)
+        mock_bot.cache.delete.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_defer_ephemeral_not_found_returns_false(self, view):
+        i = _interaction()
+        i.response.defer = AsyncMock(side_effect=discord.NotFound(MagicMock(), ""))
+        result = await view._defer_ephemeral(i)
+        assert result is False
+
+    @pytest.mark.asyncio
+    async def test_defer_ephemeral_success_returns_true(self, view):
+        i = _interaction()
+        i.response.defer = AsyncMock()
+        result = await view._defer_ephemeral(i)
+        assert result is True
+
+    @pytest.mark.asyncio
+    async def test_entries_button_defer_not_found_returns_early(self, view, mock_bot):
+        mock_bot.db_pool = _db_ctx(
+            AsyncMock(
+                fetchrow=AsyncMock(return_value={"id": view.giveaway_id}),
+                fetch=AsyncMock(return_value=[{"user_id": 1, "entries": 1}]),
+            )
+        )
+        i = _interaction()
+        i.response.defer = AsyncMock(side_effect=discord.NotFound(MagicMock(), ""))
+        await view.entries_button(i)
+        i.followup.send.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_join_button_already_joined(self, view, mock_bot):
@@ -511,6 +589,36 @@ class TestAlreadyJoinedView:
         i.channel = MagicMock(fetch_message=AsyncMock(return_value=msg))
         await leave_view.leave_button.callback(i)
         msg.edit.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_leave_update_embed_no_giveaway(self, leave_view, mock_bot, caplog):
+        caplog.set_level(logging.WARNING, logger="bot.views.giveaway")
+        conn = AsyncMock(
+            execute=AsyncMock(return_value="DELETE 1"),
+            fetchval=AsyncMock(return_value=0),
+            fetchrow=AsyncMock(return_value=None),
+        )
+        mock_bot.db_pool = _db_ctx(conn)
+        msg = MagicMock(edit=AsyncMock())
+        i = _interaction()
+        i.channel = MagicMock(fetch_message=AsyncMock(return_value=msg))
+        await leave_view.leave_button.callback(i)
+        msg.edit.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_leave_update_embed_edit_raises(self, leave_view, mock_bot, caplog):
+        caplog.set_level(logging.WARNING, logger="bot.views.giveaway")
+        conn = AsyncMock(
+            execute=AsyncMock(return_value="DELETE 1"),
+            fetchval=AsyncMock(return_value=0),
+            fetchrow=AsyncMock(return_value=_giveaway()),
+        )
+        mock_bot.db_pool = _db_ctx(conn)
+        msg = MagicMock(edit=AsyncMock(side_effect=discord.HTTPException(MagicMock(), "")))
+        i = _interaction()
+        i.channel = MagicMock(fetch_message=AsyncMock(return_value=msg))
+        await leave_view.leave_button.callback(i)
+        assert "Could not update" in caplog.text
 
     @pytest.mark.asyncio
     async def test_leave_button_db_error(self, leave_view, mock_bot, caplog):
