@@ -1,5 +1,29 @@
 # Changelog
 
+## [1.7.0](https://github.com/curlsops/ffo-bot/compare/v1.6.0...v1.7.0) (2026-03-06)
+
+
+### Features
+
+* add FAQ submissions, moderation handler, notifier and rate limit ([a1e6995](https://github.com/curlsops/ffo-bot/commit/a1e6995dcb11d74ea2ded143dc5b836b736b609d))
+* add pagination to list commands, remove convert command ([9194a43](https://github.com/curlsops/ffo-bot/commit/9194a433f16b35ebd9cf487a65228ef1ae1f4a55))
+* add version to startup log ([2b7fe9c](https://github.com/curlsops/ffo-bot/commit/2b7fe9c0a73580c965b4afcc1b1cd8008098c15b))
+* **music:** add davey, fix Lavalink startup order ([371705a](https://github.com/curlsops/ffo-bot/commit/371705a74302872a53328d388bcedc9ab1d34de7))
+* **music:** add Lavalink music support via Mafic ([d354199](https://github.com/curlsops/ffo-bot/commit/d35419932ef06cef6cb021d91b6d6cf9bef5b6c1))
+* **music:** auto-leave when alone, handle PlayerNotConnected ([342c847](https://github.com/curlsops/ffo-bot/commit/342c847c0a7cb650faf80b1276c610c26005102b))
+* **music:** Spotify playlists, force-next, picker UX, direct URL play ([21a1ecc](https://github.com/curlsops/ffo-bot/commit/21a1ecc39c77ba90293e1c752de2ee28665f8b2e))
+* **music:** Spotify, Tidal, picker, admin commands, queue improvements ([104bf81](https://github.com/curlsops/ffo-bot/commit/104bf81fd83f5bc7cd1ee7a0174f16678d955b9d))
+* permissions user autocomplete, config repair for corrupted JSONB ([6405dc3](https://github.com/curlsops/ffo-bot/commit/6405dc3e4d35068400d02124fca3e67bc1dbad3f))
+
+
+### Bug Fixes
+
+* clear global and guild commands before syncing on startup ([771bb09](https://github.com/curlsops/ffo-bot/commit/771bb095137cecf3807a1f07da33fcd601082fe8))
+* **music,notifier:** voice timeout handling and embed field limit ([d0b6b4e](https://github.com/curlsops/ffo-bot/commit/d0b6b4e10388e332aeefdbe24f35d5925c5241b2))
+* **music:** use mafic fork with Lavalink 4.2 channelId support ([c4dce7c](https://github.com/curlsops/ffo-bot/commit/c4dce7cf35728615e0e9b7c49d0839fde87a1d02))
+* pass dict not json.dumps for JSONB params to avoid double encoding ([c59dbf4](https://github.com/curlsops/ffo-bot/commit/c59dbf454c41995f235223fb25ab38b10cecc45d))
+* **permissions:** upsert server row when setting role so list shows config ([379b08c](https://github.com/curlsops/ffo-bot/commit/379b08c7781357c59180c27460984fd68c3967b9))
+
 ## [1.6.0](https://github.com/curlsops/ffo-bot/compare/v1.5.5...v1.6.0) (2026-03-03)
 
 
