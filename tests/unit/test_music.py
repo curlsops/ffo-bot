@@ -1,6 +1,8 @@
-from unittest.mock import AsyncMock, MagicMock
+import asyncio
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from mafic.errors import PlayerNotConnected
 
 from bot.commands.music import (
     MusicCommands,
@@ -8,6 +10,7 @@ from bot.commands.music import (
     _clear_queue,
     _format_duration,
     _get_queue,
+    _other_members_in_channel,
     _play_next,
 )
 
@@ -150,12 +153,29 @@ class TestMusicPlay:
         assert "timed out" in i.followup.send.call_args[0][0].lower()
         assert i.followup.send.call_args[1]["ephemeral"] is True
 
+    @pytest.mark.asyncio
+    async def test_play_player_not_connected(self, cog):
+        channel = MagicMock(id=99)
+        player = MagicMock()
+        player.channel = channel
+        player.current = None
+        player.fetch_tracks = AsyncMock(return_value=[MagicMock()])
+        player.play = AsyncMock(side_effect=PlayerNotConnected)
+        i = _interaction(cog.bot, voice_channel=channel)
+        i.guild.voice_client = player
+        with patch("bot.commands.music.Player", MagicMock):
+            await cog.music_group.play.callback(cog.music_group, i, "never gonna give you up")
+        i.followup.send.assert_called_once()
+        assert "music connection failed" in i.followup.send.call_args[0][0].lower()
+        assert i.followup.send.call_args[1]["ephemeral"] is True
+
 
 class TestMusicLeave:
     @pytest.mark.asyncio
     async def test_leave_not_connected(self, cog):
         i = _interaction(cog.bot)
         i.guild.voice_client = None
+        cog.bot.voice_clients = []
         await cog.music_group.leave.callback(cog.music_group, i)
         i.followup.send.assert_called_once()
         assert "Not in" in i.followup.send.call_args[0][0]
@@ -170,6 +190,43 @@ class TestMusicQueue:
         await cog.music_group.queue_cmd.callback(cog.music_group, i)
         i.followup.send.assert_called_once()
         assert "empty" in i.followup.send.call_args[0][0].lower()
+
+
+class TestOtherMembersInChannel:
+    def test_excludes_bot(self):
+        ch = MagicMock()
+        ch.members = [MagicMock(id=1), MagicMock(id=2)]
+        assert _other_members_in_channel(ch, 1) == 1
+
+    def test_empty(self):
+        ch = MagicMock()
+        ch.members = []
+        assert _other_members_in_channel(ch, 99) == 0
+
+
+class TestVoiceStateUpdate:
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize("pool_none,user_none", [(True, False), (False, True)])
+    async def test_skips_when_no_pool_or_user(self, cog, pool_none, user_none):
+        cog.bot.pool = None if pool_none else MagicMock()
+        cog.bot.user = None if user_none else MagicMock()
+        await cog._on_voice_state_update(MagicMock(), MagicMock(), MagicMock())
+
+    @pytest.mark.asyncio
+    async def test_cancels_task_when_someone_joins(self, cog):
+        cog.bot.pool = MagicMock()
+        cog.bot.user = MagicMock(id=999)
+        channel = MagicMock(id=1)
+        channel.members = [MagicMock(id=1), MagicMock(id=999)]
+        channel.guild = MagicMock(id=1)
+        vc = MagicMock(channel=channel, guild=channel.guild)
+        cog.bot.voice_clients = [vc]
+        task = asyncio.create_task(asyncio.sleep(60))
+        cog.bot._music_leave_tasks = {1: task}
+        await cog._on_voice_state_update(
+            MagicMock(), MagicMock(channel=None), MagicMock(channel=channel)
+        )
+        assert 1 not in cog.bot._music_leave_tasks
 
 
 class TestMusicCogUnload:

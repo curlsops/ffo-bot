@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import asyncio
 import logging
 from collections import defaultdict
 from typing import TYPE_CHECKING
@@ -8,6 +9,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 from mafic import EndReason, Player, SearchType, Track, TrackEndEvent
+from mafic.errors import PlayerNotConnected
 
 if TYPE_CHECKING:
     from bot.client import FFOBot
@@ -16,6 +18,18 @@ logger = logging.getLogger(__name__)
 
 QUEUE_MAX_DISPLAY = 10
 MAX_QUERY_LEN = 200
+IDLE_LEAVE_SECONDS = 30
+
+
+def _get_voice_client(guild: discord.Guild, bot: "FFOBot"):
+    vc = guild.voice_client
+    if vc is None:
+        vc = discord.utils.get(bot.voice_clients, guild=guild)
+    return vc
+
+
+def _other_members_in_channel(channel: discord.VoiceChannel, bot_user_id: int) -> int:
+    return sum(1 for m in channel.members if m.id != bot_user_id)
 
 
 def _format_duration(ms: int) -> str:
@@ -46,7 +60,11 @@ async def _play_next(player: Player) -> bool:
     if not queue:
         return False
     track = queue.pop(0)
-    await player.play(track)
+    try:
+        await player.play(track)
+    except PlayerNotConnected:
+        queue.insert(0, track)
+        return False
     return True
 
 
@@ -104,7 +122,7 @@ class MusicGroup(app_commands.Group):
                 await channel.connect(cls=Player)
             except TimeoutError:
                 await interaction.followup.send(
-                    "Timed out connecting to voice. Try again or check network/firewall.",
+                    "Voice connection timed out. Try again.",
                     ephemeral=True,
                 )
                 return
@@ -141,7 +159,14 @@ class MusicGroup(app_commands.Group):
                     + (f" (+{count - 1} more)" if count > 1 else "")
                 )
         else:
-            await player.play(tracks[0])
+            try:
+                await player.play(tracks[0])
+            except PlayerNotConnected:
+                await interaction.followup.send(
+                    "Music connection failed. Try /music leave then /music join again.",
+                    ephemeral=True,
+                )
+                return
             if len(tracks) > 1:
                 queue.extend(tracks[1:])
             if playlist:
@@ -154,11 +179,13 @@ class MusicGroup(app_commands.Group):
     @app_commands.command(name="leave", description="Disconnect from voice")
     async def leave(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=False)
-        if not interaction.guild.voice_client:
+        vc = _get_voice_client(interaction.guild, interaction.client)
+        if not vc:
             await interaction.followup.send("Not in a voice channel.")
             return
         _clear_queue(interaction.client, interaction.guild_id)
-        await interaction.guild.voice_client.disconnect()
+        await _cancel_leave_task(_get_leave_tasks(interaction.client), interaction.guild_id)
+        await vc.disconnect()
         await interaction.followup.send("Left voice channel.")
 
     @app_commands.command(name="pause", description="Pause playback")
@@ -221,11 +248,63 @@ class MusicGroup(app_commands.Group):
         await interaction.followup.send("\n".join(lines), ephemeral=True)
 
 
+def _get_leave_tasks(bot: FFOBot) -> dict[int, asyncio.Task]:
+    if not hasattr(bot, "_music_leave_tasks"):
+        bot._music_leave_tasks = {}
+    return bot._music_leave_tasks
+
+
+async def _cancel_leave_task(tasks: dict[int, asyncio.Task], guild_id: int) -> None:
+    if guild_id not in tasks:
+        return
+    tasks[guild_id].cancel()
+    try:
+        await tasks[guild_id]
+    except asyncio.CancelledError:
+        pass
+    del tasks[guild_id]
+
+
 class MusicCommands(commands.Cog):
     def __init__(self, bot: FFOBot):
         self.bot = bot
         self.music_group = MusicGroup(self)
         self.bot.tree.add_command(self.music_group)
+
+    @commands.Cog.listener("on_voice_state_update")
+    async def _on_voice_state_update(
+        self, _member: discord.Member, before: discord.VoiceState, after: discord.VoiceState
+    ) -> None:
+        if not self.bot.pool or not self.bot.user:
+            return
+        tasks = _get_leave_tasks(self.bot)
+        for vc in self.bot.voice_clients:
+            if not vc.channel or not vc.guild:
+                continue
+            bot_channel = vc.channel
+            guild_id = vc.guild.id
+            affected = (before.channel and before.channel.id == bot_channel.id) or (
+                after.channel and after.channel.id == bot_channel.id
+            )
+            if not affected:
+                continue
+            others = _other_members_in_channel(bot_channel, self.bot.user.id)
+            if others > 0:
+                await _cancel_leave_task(tasks, guild_id)
+            else:
+
+                async def _leave_after_idle() -> None:
+                    await asyncio.sleep(IDLE_LEAVE_SECONDS)
+                    vc = _get_voice_client(bot_channel.guild, self.bot)
+                    if vc and vc.channel and vc.channel.id == bot_channel.id:
+                        if _other_members_in_channel(vc.channel, self.bot.user.id) == 0:
+                            _clear_queue(self.bot, guild_id)
+                            await vc.disconnect()
+                            logger.info("Left voice channel %s (idle)", vc.channel.name)
+                    tasks.pop(guild_id, None)
+
+                await _cancel_leave_task(tasks, guild_id)
+                tasks[guild_id] = asyncio.create_task(_leave_after_idle())
 
     @commands.Cog.listener("track_end")
     async def _on_track_end(self, event: TrackEndEvent) -> None:
