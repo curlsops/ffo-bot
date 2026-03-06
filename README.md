@@ -86,7 +86,7 @@ https://discord.com/api/oauth2/authorize?client_id=YOUR_CLIENT_ID&permissions=27
 
 ### Lavalink (optional, when FEATURE_MUSIC enabled)
 
-Run a [Lavalink](https://github.com/lavalink-devs/Lavalink) server. The bot uses [Mafic](https://github.com/mafic-org/mafic) to connect. Supports YouTube URLs and search; add LavaSrc for Spotify/Tidal.
+Run a [Lavalink](https://github.com/lavalink-devs/Lavalink) server. The bot uses [Mafic](https://github.com/ooliver1/mafic) to connect. Supports YouTube URLs and search; add LavaSrc for Spotify/Tidal.
 
 ### Minecraft RCON (optional)
 
