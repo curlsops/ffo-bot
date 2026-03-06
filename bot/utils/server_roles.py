@@ -37,7 +37,6 @@ def _extract_role_ids_from_config(cfg) -> dict[Role, int]:
 async def get_server_role_ids(
     db_pool, server_id: int, cache: "InMemoryCache | None" = None
 ) -> dict[Role, int]:
-    """Return configured Discord role IDs for each bot role. Empty dict if none."""
     cache_key = CACHE_KEY.format(server_id=server_id)
     if cache:
         cached = cache.get(cache_key)

@@ -58,7 +58,7 @@ class VoiceTranscriber:
                         logger.warning("Whisper API error %s: %s", resp.status, err[:200])
                         return None
                     text = (await resp.read()).decode("utf-8").strip()
-                    return text if text else None
+                    return text or None
         except Exception as e:
             logger.error("Transcription error: %s", e, exc_info=True)
             return None

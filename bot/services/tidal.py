@@ -82,7 +82,7 @@ async def tidal_playlist_to_search_queries(url: str) -> list[str] | None:
     except aiohttp.ClientError as e:
         logger.debug("Tidal playlist fetch failed for %s: %s", url, e)
         return None
-    return queries if queries else None
+    return queries or None
 
 
 async def tidal_url_to_search_query(url: str) -> str | None:

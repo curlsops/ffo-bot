@@ -5,13 +5,8 @@ from datetime import datetime, timezone
 import discord
 import pytest
 
-from bot.commands.giveaway import (
-    GIVEAWAY_DURATIONS,
-    TIME_UNITS,
-    _win_probability,
-    build_embed,
-    parse_duration,
-)
+from bot.commands.giveaway import GIVEAWAY_DURATIONS, TIME_UNITS, parse_duration
+from bot.views.giveaway import _win_probability, build_embed
 
 
 class TestParseDuration:
@@ -126,6 +121,12 @@ class TestBuildEmbed:
         assert "5 winners" in embed.footer.text
         assert "10 entries" in embed.footer.text
 
+    def test_ended_zero_winners_footer(self):
+        g = self._minimal_giveaway(winners_count=0)
+        g["ended_at"] = g["ends_at"]
+        embed = build_embed(g, 0, ended=True)
+        assert "0 entries" in embed.footer.text
+
     def test_uses_ended_at_when_present(self):
         ended = datetime(2025, 2, 28, 10, 0, 0, tzinfo=timezone.utc)
         g = self._minimal_giveaway(ends_at=ended, ended_at=ended)
@@ -152,6 +153,9 @@ class TestWinProbability:
 
     def test_zero_entries(self):
         assert _win_probability(0, 13, 10) == 0.0
+
+    def test_k_exceeds_pool_returns_one(self):
+        assert _win_probability(12, 13, 10) == 1.0
 
 
 class TestGiveawayDurations:

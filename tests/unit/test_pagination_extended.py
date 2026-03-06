@@ -5,6 +5,8 @@ import pytest
 from bot.utils.pagination import (
     DISCORD_LIMIT,
     PER_PAGE,
+    EmbedListPaginatedView,
+    EmbedPaginatedView,
     ListPaginatedView,
     truncate_for_discord,
 )
@@ -76,3 +78,89 @@ class TestListPaginatedViewExtended:
         interaction.response.edit_message = AsyncMock()
         await view._next_callback(interaction)
         interaction.response.edit_message.assert_not_awaited()
+
+
+class TestEmbedPaginatedView:
+    def test_format_page_with_footer_template(self):
+        view = EmbedPaginatedView(["p1", "p2"], title="T", footer_template="Page {page}/{total}")
+        embed = view._format_page()
+        assert embed.title == "T"
+        assert embed.description == "p1"
+        assert "Page 1/2" in embed.footer.text
+
+    def test_format_page_with_static_footer(self):
+        view = EmbedPaginatedView(["x"], title="X", footer="Static footer")
+        embed = view._format_page()
+        assert embed.footer.text == "Static footer"
+
+    @pytest.mark.asyncio
+    async def test_prev_callback_advances(self):
+        view = EmbedPaginatedView(["a", "b"], title="T")
+        view.page = 1
+        i = MagicMock()
+        i.response.edit_message = AsyncMock()
+        await view._prev_callback(i)
+        assert view.page == 0
+        i.response.edit_message.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_next_callback_advances(self):
+        view = EmbedPaginatedView(["a", "b"], title="T")
+        i = MagicMock()
+        i.response.edit_message = AsyncMock()
+        await view._next_callback(i)
+        assert view.page == 1
+        i.response.edit_message.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_prev_at_zero_no_op(self):
+        view = EmbedPaginatedView(["a"], title="T")
+        i = MagicMock()
+        i.response.edit_message = AsyncMock()
+        await view._prev_callback(i)
+        i.response.edit_message.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_next_at_max_no_op(self):
+        view = EmbedPaginatedView(["a"], title="T")
+        i = MagicMock()
+        i.response.edit_message = AsyncMock()
+        await view._next_callback(i)
+        i.response.edit_message.assert_not_awaited()
+
+
+class TestEmbedListPaginatedView:
+    def test_format_page(self):
+        view = EmbedListPaginatedView([1, 2, 3], lambda r: f"• {r}", title="List")
+        embed = view._format_page()
+        assert embed.title == "List"
+        assert "• 1" in embed.description and "• 2" in embed.description
+
+    @pytest.mark.asyncio
+    async def test_prev_next_callbacks(self):
+        view = EmbedListPaginatedView(list(range(15)), lambda r: str(r), title="X", per_page=5)
+        i = MagicMock()
+        i.response.edit_message = AsyncMock()
+        await view._next_callback(i)
+        assert view.page == 1
+        await view._prev_callback(i)
+        assert view.page == 0
+
+    @pytest.mark.asyncio
+    async def test_prev_at_zero_no_op(self):
+        view = EmbedListPaginatedView([1, 2], lambda r: str(r), title="X")
+        i = MagicMock()
+        i.response.edit_message = AsyncMock()
+        await view._prev_callback(i)
+        assert view.page == 0
+        i.response.edit_message.assert_not_awaited()
+
+    @pytest.mark.asyncio
+    async def test_next_at_max_no_op(self):
+        view = EmbedListPaginatedView([1, 2], lambda r: str(r), title="X")
+        view.page = 1
+        i = MagicMock()
+        i.response.edit_message = AsyncMock()
+        await view._next_callback(i)
+        assert view.page == 1
+        i.response.edit_message.assert_not_awaited()

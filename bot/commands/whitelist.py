@@ -4,7 +4,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from bot.auth.permissions import PermissionContext
+from bot.auth.command_helpers import require_admin, require_mod, require_rcon
 from bot.services.minecraft_rcon import MinecraftRCONError, parse_whitelist_list_response
 from bot.services.mojang import get_profile, get_profiles_batch
 from bot.utils.pagination import ListPaginatedView
@@ -15,7 +15,6 @@ from bot.utils.whitelist_cache import (
     sync_from_rcon,
 )
 from bot.utils.whitelist_channel import get_whitelist_channel_id, set_whitelist_channel
-from config.constants import Role
 
 logger = logging.getLogger(__name__)
 
@@ -72,7 +71,7 @@ class WhitelistGroup(app_commands.Group):
         channel: discord.TextChannel | None = None,
     ):
         await interaction.response.defer(ephemeral=True)
-        if not interaction.guild_id or not await self.cog._check_admin(interaction):
+        if not await require_admin(interaction, "whitelist channel", self.cog.bot):
             return
 
         await self.cog.bot._register_server(interaction.guild)
@@ -110,14 +109,9 @@ class WhitelistGroup(app_commands.Group):
     @app_commands.autocomplete(username=_whitelist_username_autocomplete)
     async def add_cmd(self, interaction: discord.Interaction, username: str):
         await interaction.response.defer(ephemeral=True)
-        if not await self.cog._check_mod(interaction):
+        if not await require_mod(interaction, "whitelist add", self.cog.bot):
             return
-
-        if not self.cog.bot.minecraft_rcon:
-            await interaction.followup.send(
-                "Minecraft whitelist is not configured for this server.",
-                ephemeral=True,
-            )
+        if not await require_rcon(interaction, self.cog.bot):
             return
 
         valid = _validate_username(username)
@@ -155,14 +149,9 @@ class WhitelistGroup(app_commands.Group):
     @app_commands.autocomplete(username=_whitelist_username_autocomplete)
     async def remove_cmd(self, interaction: discord.Interaction, username: str):
         await interaction.response.defer(ephemeral=True)
-        if not await self.cog._check_mod(interaction):
+        if not await require_mod(interaction, "whitelist remove", self.cog.bot):
             return
-
-        if not self.cog.bot.minecraft_rcon:
-            await interaction.followup.send(
-                "Minecraft whitelist is not configured for this server.",
-                ephemeral=True,
-            )
+        if not await require_rcon(interaction, self.cog.bot):
             return
 
         valid = _validate_username(username)
@@ -191,13 +180,9 @@ class WhitelistGroup(app_commands.Group):
     )
     async def sync_cmd(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        if not await self.cog._check_mod(interaction):
+        if not await require_mod(interaction, "whitelist sync", self.cog.bot):
             return
-        if not self.cog.bot.minecraft_rcon:
-            await interaction.followup.send(
-                "Minecraft whitelist is not configured.",
-                ephemeral=True,
-            )
+        if not await require_rcon(interaction, self.cog.bot):
             return
         success = await sync_from_rcon(
             self.cog.bot.db_pool,
@@ -225,14 +210,9 @@ class WhitelistGroup(app_commands.Group):
     @app_commands.command(name="list", description="List whitelisted players (mod+)")
     async def list_cmd(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        if not await self.cog._check_mod(interaction):
+        if not await require_mod(interaction, "whitelist list", self.cog.bot):
             return
-
-        if not self.cog.bot.minecraft_rcon:
-            await interaction.followup.send(
-                "Minecraft whitelist is not configured for this server.",
-                ephemeral=True,
-            )
+        if not await require_rcon(interaction, self.cog.bot):
             return
 
         try:
@@ -263,28 +243,6 @@ class WhitelistCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.whitelist_group = WhitelistGroup(self)
-
-    async def _check_admin(self, interaction: discord.Interaction) -> bool:
-        ctx = PermissionContext(
-            server_id=interaction.guild_id or 0,
-            user_id=interaction.user.id,
-            command_name="whitelist",
-        )
-        if not await self.bot.permission_checker.check_role(ctx, Role.ADMIN):
-            await interaction.followup.send("Admin required.", ephemeral=True)
-            return False
-        return True
-
-    async def _check_mod(self, interaction: discord.Interaction) -> bool:
-        ctx = PermissionContext(
-            server_id=interaction.guild_id or 0,
-            user_id=interaction.user.id,
-            command_name="whitelist",
-        )
-        if not await self.bot.permission_checker.check_role(ctx, Role.MODERATOR):
-            await interaction.followup.send("Moderator or higher required.", ephemeral=True)
-            return False
-        return True
 
     async def cog_load(self):
         self.bot.tree.add_command(self.whitelist_group)

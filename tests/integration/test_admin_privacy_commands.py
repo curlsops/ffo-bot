@@ -129,16 +129,20 @@ class TestVersion:
         assert "Admin required" in i.followup.send.call_args[0][0]
 
 
-class TestCheckAdmin:
+class TestRequireAdmin:
     @pytest.mark.asyncio
     async def test_success(self):
-        assert await AdminCommands(_admin_bot())._check_admin(_i(), "cmd") is True
+        from bot.auth.command_helpers import require_admin
+
+        assert await require_admin(_i(), "cmd", _admin_bot()) is True
 
     @pytest.mark.asyncio
     async def test_failure(self):
+        from bot.auth.command_helpers import require_admin
+
         bot = _admin_bot(admin=False)
         i = _i()
-        assert await AdminCommands(bot)._check_admin(i, "cmd") is False
+        assert await require_admin(i, "cmd", bot) is False
         i.followup.send.assert_awaited()
 
 

@@ -2,7 +2,12 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
-from bot.utils.pagination import PER_PAGE, ListPaginatedView, truncate_for_discord
+from bot.utils.pagination import (
+    PER_PAGE,
+    ListPaginatedView,
+    paginate_by_char_limit,
+    truncate_for_discord,
+)
 
 
 def _fmt(x):
@@ -84,3 +89,26 @@ class TestListPaginatedView:
         result = truncate_for_discord(long_content)
         assert len(result) <= 2000
         assert result.endswith("...(truncated)")
+
+
+class TestPaginateByCharLimit:
+    def test_empty_returns_empty(self):
+        assert paginate_by_char_limit([], 100) == []
+
+    def test_single_block(self):
+        assert paginate_by_char_limit(["abc"], 10) == ["abc"]
+
+    def test_splits_when_over_limit(self):
+        blocks = ["a" * 5, "b" * 5, "c" * 5]
+        pages = paginate_by_char_limit(blocks, 8)
+        assert len(pages) == 3
+        assert pages[0] == "aaaaa"
+        assert pages[1] == "bbbbb"
+        assert pages[2] == "ccccc"
+
+    def test_packs_blocks_until_limit(self):
+        blocks = ["a" * 3, "b" * 3, "c" * 3]
+        pages = paginate_by_char_limit(blocks, 8)
+        assert len(pages) == 2
+        assert pages[0] == "aaabbb"
+        assert pages[1] == "ccc"

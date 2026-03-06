@@ -29,8 +29,10 @@ from bot.services.spotify import spotify_playlist_to_search_queries, spotify_url
 from bot.services.tidal import tidal_playlist_to_search_queries, tidal_url_to_search_query
 from bot.tasks.giveaway_manager import GiveawayManager
 from bot.tasks.status_rotator import StatusRotator
-from bot.utils.db import TRANSIENT_DB_ERRORS
+from bot.utils.db import TRANSIENT_DB_ERRORS, cached_or_fallback
+from bot.utils.discord_helpers import get_or_fetch_channel
 from bot.utils.health import HealthCheckServer
+from bot.utils.interaction import send_ephemeral
 from bot.utils.metrics import BotMetrics
 from bot.utils.notifier import AdminNotifier
 from bot.utils.rate_limiter import RateLimiter

@@ -4,8 +4,9 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from bot.auth.permissions import PermissionContext
-from config.constants import Role
+from bot.auth.command_helpers import require_admin, send_error
+from bot.utils.autocomplete import cached_autocomplete
+from bot.utils.pagination import EmbedPaginatedView, paginate_by_char_limit
 
 logger = logging.getLogger(__name__)
 
@@ -36,122 +37,41 @@ def _build_faq_blocks(rows: list) -> list[str]:
     return blocks
 
 
-def _paginate_by_char_limit(blocks: list[str], limit: int) -> list[str]:
-    pages = []
-    current = []
-    current_len = 0
-    for block in blocks:
-        block_len = len(block)
-        if current_len + block_len > limit and current:
-            pages.append("".join(current))
-            current = []
-            current_len = 0
-        current.append(block)
-        current_len += block_len
-    if current:
-        pages.append("".join(current))
-    return pages
+FAQ_LIST_FOOTER = "Page {page}/{total} • Use /faq list topic:<name> for single topic"
 
 
-class FAQListView(discord.ui.View):
-    def __init__(self, pages: list[str], timeout: float = 120):
-        super().__init__(timeout=timeout)
-        self.pages = pages
-        self.page = 0
-        self._max_page = max(0, len(pages) - 1)
-
-        prev_btn = discord.ui.Button(
-            label="◀",
-            style=discord.ButtonStyle.secondary,
-            custom_id="faq:prev",
-            row=0,
+async def _fetch_faq_topics(pool, guild_id: int):
+    async with pool.acquire() as conn:
+        return await conn.fetch(
+            """
+            SELECT topic FROM faq_entries
+            WHERE server_id = $1
+            ORDER BY sort_order, topic
+            """,
+            guild_id,
         )
-        prev_btn.callback = self._prev_callback
-        self.add_item(prev_btn)
 
-        self.page_btn = discord.ui.Button(
-            label="1/1",
-            style=discord.ButtonStyle.success,
-            custom_id="faq:page",
-            disabled=True,
-            row=0,
-        )
-        self.add_item(self.page_btn)
 
-        next_btn = discord.ui.Button(
-            label="▶",
-            style=discord.ButtonStyle.secondary,
-            custom_id="faq:next",
-            row=0,
-        )
-        next_btn.callback = self._next_callback
-        self.add_item(next_btn)
-        self._update_buttons()
-
-    def _update_buttons(self):
-        self.page_btn.label = f"{self.page + 1}/{self._max_page + 1}"
-        for child in self.children:
-            if child.custom_id == "faq:prev":
-                child.disabled = self.page <= 0
-            elif child.custom_id == "faq:next":
-                child.disabled = self.page >= self._max_page
-
-    def _format_page(self) -> discord.Embed:
-        embed = discord.Embed(
-            title="FAQ",
-            description=self.pages[self.page][:4096],
-            color=discord.Color.blue(),
-        )
-        embed.set_footer(
-            text=f"Page {self.page + 1}/{len(self.pages)} • Use /faq list topic:<name> for single topic"
-        )
-        return embed
-
-    async def _prev_callback(self, interaction: discord.Interaction):
-        if self.page <= 0:
-            return
-        self.page -= 1
-        self._update_buttons()
-        await interaction.response.edit_message(embed=self._format_page(), view=self)
-
-    async def _next_callback(self, interaction: discord.Interaction):
-        if self.page >= self._max_page:
-            return
-        self.page += 1
-        self._update_buttons()
-        await interaction.response.edit_message(embed=self._format_page(), view=self)
+def _faq_topics_to_choices(rows: list[dict], current: str) -> list[app_commands.Choice[str]]:
+    return [
+        app_commands.Choice(name=r["topic"], value=r["topic"])
+        for r in rows
+        if not current or current.lower() in r["topic"].lower()
+    ]
 
 
 async def _faq_topic_autocomplete(
     interaction: discord.Interaction, current: str
 ) -> list[app_commands.Choice[str]]:
-    if not interaction.guild_id:
-        return []
-    try:
-        bot = interaction.client
-        cache_key = CACHE_FAQ_TOPICS.format(server_id=interaction.guild_id)
-        rows = bot.cache.get(cache_key) if bot.cache else None
-        if rows is None:
-            async with bot.db_pool.acquire() as conn:
-                rows = await conn.fetch(
-                    """
-                    SELECT topic FROM faq_entries
-                    WHERE server_id = $1
-                    ORDER BY sort_order, topic
-                    """,
-                    interaction.guild_id,
-                )
-            rows = [dict(r) for r in rows]
-            if bot.cache:
-                bot.cache.set(cache_key, rows, ttl=300)
-        choices = [
-            app_commands.Choice(name=r["topic"], value=r["topic"])
-            for r in rows
-            if not current or current.lower() in r["topic"].lower()
-        ]
-        return choices[:25]
-    except Exception:
-        return []
+    return await cached_autocomplete(
+        interaction,
+        current,
+        CACHE_FAQ_TOPICS,
+        _fetch_faq_topics,
+        _faq_topics_to_choices,
+        ttl=300,
+        log_prefix="FAQ topic",
+    )
 
 
 @app_commands.guild_only()
@@ -227,8 +147,8 @@ class FAQGroup(app_commands.Group):
                     )
                     return
                 blocks = _build_faq_blocks(rows)
-                pages = _paginate_by_char_limit(blocks, FAQ_CHAR_LIMIT_PER_PAGE)
-                view = FAQListView(pages)
+                pages = paginate_by_char_limit(blocks, FAQ_CHAR_LIMIT_PER_PAGE)
+                view = EmbedPaginatedView(pages, title="FAQ", footer_template=FAQ_LIST_FOOTER)
                 await interaction.followup.send(
                     embed=view._format_page(),
                     view=view,
@@ -236,7 +156,7 @@ class FAQGroup(app_commands.Group):
                 )
         except Exception as e:
             logger.error("faq list error: %s", e, exc_info=True)
-            await interaction.followup.send("Error fetching FAQ.", ephemeral=True)
+            await send_error(interaction, "Error fetching FAQ.")
 
     @app_commands.command(
         name="submit",
@@ -252,17 +172,11 @@ class FAQGroup(app_commands.Group):
         if not interaction.guild_id:
             return
         if not self.cog.bot.settings.feature_faq_submissions:
-            await interaction.followup.send(
-                "FAQ submissions are disabled.",
-                ephemeral=True,
-            )
+            await send_error(interaction, "FAQ submissions are disabled.")
             return
         q = question.strip()[:MAX_QUESTION_LEN]
         if not q:
-            await interaction.followup.send(
-                "Question cannot be empty.",
-                ephemeral=True,
-            )
+            await send_error(interaction, "Question cannot be empty.")
             return
         try:
             row = None
@@ -290,7 +204,7 @@ class FAQGroup(app_commands.Group):
             )
         except Exception as e:
             logger.error("faq submit error: %s", e, exc_info=True)
-            await interaction.followup.send("Error submitting question.", ephemeral=True)
+            await send_error(interaction, "Error submitting question.")
 
     @app_commands.command(name="add", description="Add a FAQ entry (Admin)")
     @app_commands.default_permissions(administrator=True)
@@ -308,7 +222,7 @@ class FAQGroup(app_commands.Group):
         answer: str,
     ):
         await interaction.response.defer(ephemeral=True)
-        if not interaction.guild_id or not await self.cog._check_admin(interaction, "faq add"):
+        if not await require_admin(interaction, "faq add", self.cog.bot):
             return
 
         topic = topic.strip().lower()[:MAX_TOPIC_LEN]
@@ -357,7 +271,7 @@ class FAQGroup(app_commands.Group):
             await interaction.followup.send(f"FAQ **{topic}** added/updated.", ephemeral=True)
         except Exception as e:
             logger.error("faq add error: %s", e, exc_info=True)
-            await interaction.followup.send("Error adding FAQ.", ephemeral=True)
+            await send_error(interaction, "Error adding FAQ.")
 
     @app_commands.command(name="edit", description="Edit a FAQ entry (Admin)")
     @app_commands.default_permissions(administrator=True)
@@ -375,12 +289,12 @@ class FAQGroup(app_commands.Group):
         answer: str | None = None,
     ):
         await interaction.response.defer(ephemeral=True)
-        if not interaction.guild_id or not await self.cog._check_admin(interaction, "faq edit"):
+        if not await require_admin(interaction, "faq edit", self.cog.bot):
             return
 
         topic = topic.strip().lower()[:MAX_TOPIC_LEN]
         if not topic:
-            await interaction.followup.send("Topic is required.", ephemeral=True)
+            await send_error(interaction, "Topic is required.")
             return
 
         if not question and not answer:
@@ -425,7 +339,7 @@ class FAQGroup(app_commands.Group):
             await interaction.followup.send(f"FAQ **{topic}** updated.", ephemeral=True)
         except Exception as e:
             logger.error("faq edit error: %s", e, exc_info=True)
-            await interaction.followup.send("Error editing FAQ.", ephemeral=True)
+            await send_error(interaction, "Error editing FAQ.")
 
     @app_commands.command(
         name="submissions",
@@ -434,9 +348,7 @@ class FAQGroup(app_commands.Group):
     @app_commands.default_permissions(administrator=True)
     async def submissions_cmd(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
-        if not interaction.guild_id or not await self.cog._check_admin(
-            interaction, "faq submissions"
-        ):
+        if not await require_admin(interaction, "faq submissions", self.cog.bot):
             return
         try:
             async with self.cog.bot.db_pool.acquire() as conn:
@@ -481,12 +393,12 @@ class FAQGroup(app_commands.Group):
         topic: str,
     ):
         await interaction.response.defer(ephemeral=True)
-        if not interaction.guild_id or not await self.cog._check_admin(interaction, "faq delete"):
+        if not await require_admin(interaction, "faq delete", self.cog.bot):
             return
 
         topic = topic.strip().lower()[:MAX_TOPIC_LEN]
         if not topic:
-            await interaction.followup.send("Topic is required.", ephemeral=True)
+            await send_error(interaction, "Topic is required.")
             return
 
         try:
@@ -497,7 +409,7 @@ class FAQGroup(app_commands.Group):
                     topic,
                 )
             if "DELETE 0" in result:
-                await interaction.followup.send(f"No FAQ entry for **{topic}**.", ephemeral=True)
+                await send_error(interaction, f"No FAQ entry for **{topic}**.")
                 return
             _invalidate_faq_cache(self.cog.bot.cache, interaction.guild_id, topic)
             if self.cog.bot.notifier:
@@ -507,24 +419,13 @@ class FAQGroup(app_commands.Group):
             await interaction.followup.send(f"FAQ **{topic}** deleted.", ephemeral=True)
         except Exception as e:
             logger.error("faq delete error: %s", e, exc_info=True)
-            await interaction.followup.send("Error deleting FAQ.", ephemeral=True)
+            await send_error(interaction, "Error deleting FAQ.")
 
 
 class FAQCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.faq_group = FAQGroup(self)
-
-    async def _check_admin(self, interaction: discord.Interaction, cmd: str) -> bool:
-        ctx = PermissionContext(
-            server_id=interaction.guild_id or 0,
-            user_id=interaction.user.id,
-            command_name=cmd,
-        )
-        if not await self.bot.permission_checker.check_role(ctx, Role.ADMIN):
-            await interaction.followup.send("Admin required.", ephemeral=True)
-            return False
-        return True
 
     async def cog_load(self):
         self.bot.tree.add_command(self.faq_group)
