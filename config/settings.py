@@ -85,6 +85,14 @@ class Settings(BaseSettings):
     lavalink_host: Optional[str] = Field(default="127.0.0.1", description="Lavalink server host")
     lavalink_port: int = Field(default=2333, description="Lavalink server port")
     lavalink_password: Optional[str] = Field(default=None, description="Lavalink server password")
+    spotify_client_id: Optional[str] = Field(
+        default=None,
+        description="Spotify app client ID for playlist support (from developer dashboard)",
+    )
+    spotify_client_secret: Optional[str] = Field(
+        default=None,
+        description="Spotify app client secret for playlist support",
+    )
 
     # Minecraft RCON (when feature_minecraft_whitelist is enabled)
     # Host: K8s service DNS (e.g. minecraft.discord.svc.cluster.local) or external IP/hostname

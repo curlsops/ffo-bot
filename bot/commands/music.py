@@ -12,7 +12,10 @@ from mafic import EndReason, Player, SearchType, Track, TrackEndEvent
 from mafic.errors import PlayerNotConnected
 
 from bot.auth.permissions import PermissionContext
-from bot.services.spotify import spotify_url_to_search_query
+from bot.services.spotify import (
+    spotify_playlist_to_search_queries,
+    spotify_url_to_search_query,
+)
 from bot.services.tidal import tidal_playlist_to_search_queries, tidal_url_to_search_query
 from config.constants import Constants, Role
 
@@ -24,7 +27,8 @@ logger = logging.getLogger(__name__)
 QUEUE_PAGE_SIZE = 5
 MAX_QUERY_LEN = 200
 IDLE_LEAVE_SECONDS = 30
-TRACK_PICKER_MAX = 10
+TRACK_PICKER_MAX = 5
+TRACK_PICKER_LABEL_MAX = 50
 EMBED_COLOR = 0x9B59B6
 CONNECTION_FAILED_MSG = "Music connection failed. Try /music leave then /music join again."
 
@@ -84,11 +88,22 @@ def _music_embed(title: str, description: str) -> discord.Embed:
     )
 
 
+async def _fetch_playlist_tracks(player: Player, queries: list[str]) -> list[Track]:
+    tracks: list[Track] = []
+    for sq in queries:
+        result = await player.fetch_tracks(sq, search_type=SearchType.YOUTUBE)
+        if result and isinstance(result, list) and result:
+            tracks.append(result[0])
+        elif result and not isinstance(result, list) and result.tracks:
+            tracks.append(result.tracks[0])
+    return tracks
+
+
 def _track_label(track: Track, i: int) -> str:
     author = getattr(track, "author", None) or ""
     parts = [author, track.title] if author else [track.title]
     label = " – ".join(p for p in parts if p)
-    return (f"{i}. {label}" if label else f"{i}. {track.title}")[:80]
+    return (f"{i}. {label}" if label else f"{i}. {track.title}")[:TRACK_PICKER_LABEL_MAX]
 
 
 def _time_until_track(
@@ -265,10 +280,8 @@ class TrackPickerView(discord.ui.View):
                     ephemeral=True,
                 )
                 return
-            for child in self.children:
-                child.disabled = True
             embed = _music_embed("🎵 Playing", f"▶️ **{track.title}**")
-            await interaction.response.edit_message(embed=embed, view=self)
+            await interaction.response.edit_message(embed=embed, view=None)
 
         return cb
 
@@ -309,9 +322,10 @@ class MusicGroup(app_commands.Group):
 
     @app_commands.command(name="play", description="Play a track (URL or search query)")
     @app_commands.describe(
-        query="YouTube URL (incl. playlists), Tidal URL, Spotify URL, or search query"
+        query="YouTube URL (incl. playlists), Tidal URL, Spotify URL (track/playlist), or search query",
+        force_next="Play next in queue (mod+ only)",
     )
-    async def play(self, interaction: discord.Interaction, query: str):
+    async def play(self, interaction: discord.Interaction, query: str, force_next: bool = False):
         await interaction.response.defer(ephemeral=False)
         query = query.strip()[:MAX_QUERY_LEN]
         if not query:
@@ -345,22 +359,18 @@ class MusicGroup(app_commands.Group):
         search_type = None if is_url else SearchType.YOUTUBE
         tracks = None
         playlist = False
+        from_resolved_url = False
         if is_url and "tidal.com" in query.lower():
             playlist_queries = await tidal_playlist_to_search_queries(query)
             if playlist_queries:
-                tracks = []
-                for sq in playlist_queries:
-                    result = await player.fetch_tracks(sq, search_type=SearchType.YOUTUBE)
-                    if result and isinstance(result, list) and result:
-                        tracks.append(result[0])
-                    elif result and not isinstance(result, list) and result.tracks:
-                        tracks.append(result.tracks[0])
+                tracks = await _fetch_playlist_tracks(player, playlist_queries)
                 playlist = True
             else:
                 search_query = await tidal_url_to_search_query(query)
                 if search_query:
                     query = search_query
                     search_type = SearchType.YOUTUBE
+                    from_resolved_url = True
                 else:
                     await interaction.followup.send(
                         "Could not resolve Tidal link. Try searching by song name.",
@@ -368,16 +378,25 @@ class MusicGroup(app_commands.Group):
                     )
                     return
         elif is_url and "spotify.com" in query.lower():
-            search_query = await spotify_url_to_search_query(query)
-            if search_query:
-                query = search_query
-                search_type = SearchType.YOUTUBE
+            settings = getattr(bot, "settings", None)
+            cid = getattr(settings, "spotify_client_id", None) if settings else None
+            csec = getattr(settings, "spotify_client_secret", None) if settings else None
+            playlist_queries = await spotify_playlist_to_search_queries(query, cid, csec)
+            if playlist_queries:
+                tracks = await _fetch_playlist_tracks(player, playlist_queries)
+                playlist = True
             else:
-                await interaction.followup.send(
-                    "Could not resolve Spotify link. Try searching by song name.",
-                    ephemeral=True,
-                )
-                return
+                search_query = await spotify_url_to_search_query(query)
+                if search_query:
+                    query = search_query
+                    search_type = SearchType.YOUTUBE
+                    from_resolved_url = True
+                else:
+                    await interaction.followup.send(
+                        "Could not resolve Spotify link. Try searching by song name.",
+                        ephemeral=True,
+                    )
+                    return
         if tracks is None:
             result = await player.fetch_tracks(query, search_type=search_type)
             if result is None:
@@ -391,8 +410,20 @@ class MusicGroup(app_commands.Group):
         if not tracks:
             await interaction.followup.send("No tracks found.", ephemeral=True)
             return
+        if force_next:
+            ctx = PermissionContext(
+                server_id=interaction.guild_id or 0,
+                user_id=interaction.user.id,
+                command_name="music play",
+            )
+            if not await bot.permission_checker.check_role(ctx, Role.MODERATOR):
+                await interaction.followup.send(
+                    "Moderator or higher required for force play next.",
+                    ephemeral=True,
+                )
+                return
         queue = _get_queue(bot, interaction.guild_id)
-        if not playlist and len(tracks) > 1:
+        if not playlist and len(tracks) > 1 and not from_resolved_url:
             lines = [
                 f"**{i + 1}.** {getattr(t, 'author', '') or ''} – {t.title}"
                 for i, t in enumerate(tracks[:TRACK_PICKER_MAX])
@@ -406,9 +437,13 @@ class MusicGroup(app_commands.Group):
             )
             return
         if player.current:
-            start_pos = len(queue) + 1
-            queue.extend(tracks)
             count = len(tracks)
+            if force_next:
+                queue[:0] = tracks
+                start_pos = 1
+            else:
+                start_pos = len(queue) + 1
+                queue.extend(tracks)
             if playlist:
                 pos_range = (
                     f"#{start_pos}–#{start_pos + count - 1}" if count > 1 else f"#{start_pos}"
@@ -420,6 +455,8 @@ class MusicGroup(app_commands.Group):
                 if count > 1:
                     desc += f" (+{count - 1} more at #{start_pos + 1}–#{start_pos + count - 1})"
                 desc += "."
+            if force_next:
+                desc += " (playing next)"
             embed = _music_embed("📥 Queued", desc)
             if player.paused:
                 await interaction.followup.send(embed=embed, view=_ResumeView(player))

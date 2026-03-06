@@ -4,7 +4,9 @@ import aiohttp
 import pytest
 
 from bot.services.spotify import (
+    SPOTIFY_PLAYLIST_PATTERN,
     SPOTIFY_TRACK_PATTERN,
+    spotify_playlist_to_search_queries,
     spotify_url_to_search_query,
 )
 
@@ -137,3 +139,134 @@ class TestSpotifyUrlToSearchQuery:
 
             result = await spotify_url_to_search_query(SPOTIFY_TRACK_URL)
             assert result is None
+
+
+class TestSpotifyPlaylistPattern:
+    def test_matches_playlist_url(self):
+        url = "https://open.spotify.com/playlist/5bCeKZhm0Vrk4cOydmil2N?si=04bf39def50c41bc"
+        m = SPOTIFY_PLAYLIST_PATTERN.search(url)
+        assert m is not None
+        assert m.group(1) == "5bCeKZhm0Vrk4cOydmil2N"
+
+
+class TestSpotifyPlaylistToSearchQueries:
+    @pytest.mark.asyncio
+    async def test_no_credentials_returns_none(self):
+        result = await spotify_playlist_to_search_queries(
+            "https://open.spotify.com/playlist/abc123", None, None
+        )
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_non_playlist_url_returns_none(self):
+        result = await spotify_playlist_to_search_queries(
+            "https://open.spotify.com/track/abc", "cid", "secret"
+        )
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_token_failure_returns_none(self):
+        with patch("bot.services.spotify.aiohttp.ClientSession") as mock_cls:
+            mock_session = MagicMock()
+            mock_session.post = MagicMock(
+                return_value=MagicMock(
+                    __aenter__=AsyncMock(
+                        return_value=MagicMock(status=401, json=AsyncMock(return_value={}))
+                    ),
+                    __aexit__=AsyncMock(return_value=None),
+                )
+            )
+            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
+
+            result = await spotify_playlist_to_search_queries(
+                "https://open.spotify.com/playlist/abc123", "cid", "secret"
+            )
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_success_returns_search_queries(self):
+        token_resp = MagicMock(status=200, json=AsyncMock(return_value={"access_token": "tok"}))
+        playlist_resp = MagicMock(
+            status=200,
+            json=AsyncMock(
+                return_value={
+                    "items": [
+                        {
+                            "track": {
+                                "name": "Slave Knight Gael",
+                                "artists": [{"name": "Yuka Kitamura"}],
+                                "is_local": False,
+                            }
+                        },
+                        {
+                            "track": {
+                                "name": "Soul of Cinder",
+                                "artists": [{"name": "Yuka Kitamura"}],
+                                "is_local": False,
+                            }
+                        },
+                    ]
+                },
+            ),
+        )
+        post_ctx = MagicMock(
+            __aenter__=AsyncMock(return_value=token_resp), __aexit__=AsyncMock(return_value=None)
+        )
+        get_ctx = MagicMock(
+            __aenter__=AsyncMock(return_value=playlist_resp), __aexit__=AsyncMock(return_value=None)
+        )
+        with patch("bot.services.spotify.aiohttp.ClientSession") as mock_cls:
+            mock_session = MagicMock()
+            mock_session.post = MagicMock(return_value=post_ctx)
+            mock_session.get = MagicMock(return_value=get_ctx)
+            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
+
+            result = await spotify_playlist_to_search_queries(
+                "https://open.spotify.com/playlist/5bCeKZhm0Vrk4cOydmil2N",
+                "cid",
+                "secret",
+            )
+        assert result == [
+            "Yuka Kitamura - Slave Knight Gael",
+            "Yuka Kitamura - Soul of Cinder",
+        ]
+
+    @pytest.mark.asyncio
+    async def test_local_track_skipped(self):
+        token_resp = MagicMock(status=200, json=AsyncMock(return_value={"access_token": "tok"}))
+        playlist_resp = MagicMock(
+            status=200,
+            json=AsyncMock(
+                return_value={
+                    "items": [
+                        {"track": {"name": "Local", "artists": [], "is_local": True}},
+                        {
+                            "track": {
+                                "name": "Remote",
+                                "artists": [{"name": "Artist"}],
+                                "is_local": False,
+                            }
+                        },
+                    ]
+                },
+            ),
+        )
+        post_ctx = MagicMock(
+            __aenter__=AsyncMock(return_value=token_resp), __aexit__=AsyncMock(return_value=None)
+        )
+        get_ctx = MagicMock(
+            __aenter__=AsyncMock(return_value=playlist_resp), __aexit__=AsyncMock(return_value=None)
+        )
+        with patch("bot.services.spotify.aiohttp.ClientSession") as mock_cls:
+            mock_session = MagicMock()
+            mock_session.post = MagicMock(return_value=post_ctx)
+            mock_session.get = MagicMock(return_value=get_ctx)
+            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
+
+            result = await spotify_playlist_to_search_queries(
+                "https://open.spotify.com/playlist/abc", "cid", "secret"
+            )
+        assert result == ["Artist - Remote"]

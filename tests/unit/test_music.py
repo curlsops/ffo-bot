@@ -281,6 +281,29 @@ class TestMusicPlay:
         assert embed is not None and "Playing" in embed.title
 
     @pytest.mark.asyncio
+    async def test_play_spotify_url_plays_first_result_no_picker(self, cog):
+        spotify_url = "https://open.spotify.com/track/74m8PoL6GZulfVzeYS6W0C"
+        search_query = "Yuka Kitamura - Slave Knight Gael"
+        channel = MagicMock(id=99)
+        track1 = MagicMock(title="Slave Knight Gael")
+        track2 = MagicMock(title="Slave Knight Gael [Extended]")
+        player = MagicMock()
+        player.channel = channel
+        player.current = None
+        player.fetch_tracks = AsyncMock(return_value=[track1, track2])
+        player.play = AsyncMock()
+        i = _interaction(cog.bot, voice_channel=channel)
+        i.guild.voice_client = player
+        with patch(
+            "bot.commands.music.spotify_url_to_search_query", AsyncMock(return_value=search_query)
+        ):
+            with patch("bot.commands.music.Player", MagicMock):
+                await cog.music_group.play.callback(cog.music_group, i, spotify_url)
+        player.play.assert_called_once_with(track1)
+        i.followup.send.assert_called_once()
+        assert i.followup.send.call_args[1].get("view") is None
+
+    @pytest.mark.asyncio
     async def test_play_spotify_url_unresolvable(self, cog):
         spotify_url = "https://open.spotify.com/track/4iV5W9uYEdYUVa79Axb7Rh"
         channel = MagicMock(id=99)
@@ -294,6 +317,69 @@ class TestMusicPlay:
                 await cog.music_group.play.callback(cog.music_group, i, spotify_url)
         i.followup.send.assert_called_once()
         assert "Could not resolve Spotify" in i.followup.send.call_args[0][0]
+
+    @pytest.mark.asyncio
+    async def test_play_spotify_playlist_queues_tracks(self, cog):
+        spotify_playlist_url = "https://open.spotify.com/playlist/5bCeKZhm0Vrk4cOydmil2N"
+        channel = MagicMock(id=99)
+        track1 = MagicMock(title="Slave Knight Gael")
+        track2 = MagicMock(title="Soul of Cinder")
+        player = MagicMock()
+        player.channel = channel
+        player.current = None
+        player.fetch_tracks = AsyncMock(side_effect=[[track1], [track2]])
+        player.play = AsyncMock()
+        i = _interaction(cog.bot, voice_channel=channel)
+        i.guild.voice_client = player
+        with patch(
+            "bot.commands.music.spotify_playlist_to_search_queries",
+            AsyncMock(
+                return_value=["Yuka Kitamura - Slave Knight Gael", "Yuka Kitamura - Soul of Cinder"]
+            ),
+        ):
+            with patch("bot.commands.music.Player", MagicMock):
+                await cog.music_group.play.callback(cog.music_group, i, spotify_playlist_url)
+        assert player.fetch_tracks.call_count == 2
+        i.followup.send.assert_called_once()
+        embed = i.followup.send.call_args[1].get("embed")
+        assert embed is not None and (
+            "playlist" in (embed.description or "").lower()
+            or "queued" in (embed.description or "").lower()
+        )
+
+    @pytest.mark.asyncio
+    async def test_play_force_next_mod_inserts_at_front(self, cog):
+        channel = MagicMock(id=99)
+        track = MagicMock(title="Force Play Song")
+        player = MagicMock()
+        player.channel = channel
+        player.current = MagicMock(title="Now Playing")
+        player.fetch_tracks = AsyncMock(return_value=[track])
+        player.play = AsyncMock()
+        cog.bot._music_queues = {1: [MagicMock(title="Existing")]}
+        i = _interaction(cog.bot, voice_channel=channel)
+        i.guild.voice_client = player
+        with patch("bot.commands.music.Player", MagicMock):
+            await cog.music_group.play.callback(cog.music_group, i, "search query", force_next=True)
+        queue = cog.bot._music_queues[1]
+        assert queue[0].title == "Force Play Song"
+        assert (
+            "playing next" in (i.followup.send.call_args[1].get("embed").description or "").lower()
+        )
+
+    @pytest.mark.asyncio
+    async def test_play_force_next_non_mod_denied(self, cog):
+        cog.bot.permission_checker.check_role = AsyncMock(return_value=False)
+        channel = MagicMock(id=99)
+        track = MagicMock(title="Song")
+        player = MagicMock(channel=channel)
+        player.fetch_tracks = AsyncMock(return_value=[track])
+        i = _interaction(cog.bot, voice_channel=channel)
+        i.guild.voice_client = player
+        with patch("bot.commands.music.Player", MagicMock):
+            await cog.music_group.play.callback(cog.music_group, i, "search query", force_next=True)
+        i.followup.send.assert_called_once()
+        assert "Moderator" in i.followup.send.call_args[0][0]
 
     @pytest.mark.asyncio
     async def test_play_queued_while_paused_includes_resume_button(self, cog):
