@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 import asyncio
+import importlib.metadata
 import logging
+import os
 import signal
 import sys
 
@@ -40,7 +42,11 @@ async def main():
         sys.exit(1)
 
     setup_logging(log_level=settings.log_level, log_format=settings.log_format)
-    logger.info(f"Starting (env={settings.environment})")
+    try:
+        version = os.environ.get("FFO_BOT_VERSION") or importlib.metadata.version("ffo-bot")
+    except importlib.metadata.PackageNotFoundError:
+        version = "unknown"
+    logger.info("Starting v%s (env=%s)", version, settings.environment)
 
     bot = FFOBot(settings)
     GracefulShutdown(bot).setup_signals()
