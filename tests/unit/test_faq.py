@@ -9,6 +9,7 @@ from bot.commands.faq import FAQCommands
 def mock_bot():
     bot = MagicMock()
     bot.cache = None
+    bot.notifier = None
     bot.permission_checker.check_role = AsyncMock(return_value=True)
     bot.db_pool.acquire = MagicMock()
     return bot
@@ -105,7 +106,9 @@ class TestFaqAdd:
         conn = AsyncMock(fetchval=AsyncMock(return_value=0), execute=AsyncMock())
         cog.bot.db_pool.acquire.return_value = _db_ctx(conn)
         i = _interaction()
-        await cog.faq_group.add_cmd.callback(cog.faq_group, i, "rules", "What are the rules?", "Be nice.")
+        await cog.faq_group.add_cmd.callback(
+            cog.faq_group, i, "rules", "What are the rules?", "Be nice."
+        )
         conn.execute.assert_awaited_once()
         assert "added/updated" in str(i.followup.send.call_args[0][0])
 
@@ -130,9 +133,7 @@ class TestFaqEdit:
     @pytest.mark.asyncio
     async def test_edit_success(self, cog):
         conn = AsyncMock(
-            fetchrow=AsyncMock(
-                return_value={"question": "Old Q", "answer": "Old A"}
-            ),
+            fetchrow=AsyncMock(return_value={"question": "Old Q", "answer": "Old A"}),
             execute=AsyncMock(),
         )
         cog.bot.db_pool.acquire.return_value = _db_ctx(conn)
@@ -189,9 +190,7 @@ class TestFaqAutocomplete:
 
         bot = MagicMock()
         bot.cache = None
-        conn = AsyncMock(
-            fetch=AsyncMock(return_value=[{"topic": "rules"}, {"topic": "whitelist"}])
-        )
+        conn = AsyncMock(fetch=AsyncMock(return_value=[{"topic": "rules"}, {"topic": "whitelist"}]))
         ctx = MagicMock()
         ctx.__aenter__ = AsyncMock(return_value=conn)
         ctx.__aexit__ = AsyncMock(return_value=False)

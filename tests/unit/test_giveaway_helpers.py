@@ -8,6 +8,7 @@ import pytest
 from bot.commands.giveaway import (
     GIVEAWAY_DURATIONS,
     TIME_UNITS,
+    _win_probability,
     build_embed,
     parse_duration,
 )
@@ -137,6 +138,20 @@ class TestBuildEmbed:
         g["ended_at"] = g["ends_at"]
         embed = build_embed(g, entry_count, ended=True)
         assert str(entry_count) in embed.footer.text
+
+
+class TestWinProbability:
+    def test_single_winner(self):
+        assert abs(_win_probability(1, 13, 1) - 1 / 13) < 0.001
+
+    def test_ten_winners_from_thirteen(self):
+        assert abs(_win_probability(1, 13, 10) - 10 / 13) < 0.001
+
+    def test_all_entries_win(self):
+        assert _win_probability(5, 5, 1) == 1.0
+
+    def test_zero_entries(self):
+        assert _win_probability(0, 13, 10) == 0.0
 
 
 class TestGiveawayDurations:

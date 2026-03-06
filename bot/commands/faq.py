@@ -238,6 +238,60 @@ class FAQGroup(app_commands.Group):
             logger.error("faq list error: %s", e, exc_info=True)
             await interaction.followup.send("Error fetching FAQ.", ephemeral=True)
 
+    @app_commands.command(
+        name="submit",
+        description="Submit a question you'd like answered in the FAQ",
+    )
+    @app_commands.describe(question="Your question (max 200 chars)")
+    async def submit_cmd(
+        self,
+        interaction: discord.Interaction,
+        question: str,
+    ):
+        await interaction.response.defer(ephemeral=True)
+        if not interaction.guild_id:
+            return
+        if not self.cog.bot.settings.feature_faq_submissions:
+            await interaction.followup.send(
+                "FAQ submissions are disabled.",
+                ephemeral=True,
+            )
+            return
+        q = question.strip()[:MAX_QUESTION_LEN]
+        if not q:
+            await interaction.followup.send(
+                "Question cannot be empty.",
+                ephemeral=True,
+            )
+            return
+        try:
+            row = None
+            async with self.cog.bot.db_pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    """
+                    INSERT INTO faq_submissions (server_id, question, submitter_id)
+                    VALUES ($1, $2, $3)
+                    RETURNING id
+                    """,
+                    interaction.guild_id,
+                    q,
+                    interaction.user.id,
+                )
+            if row and self.cog.bot.notifier:
+                await self.cog.bot.notifier.notify_faq_submission(
+                    interaction.guild_id,
+                    q,
+                    interaction.user.id,
+                    str(row["id"]),
+                )
+            await interaction.followup.send(
+                "Question submitted! Admins will review it and may add it to the FAQ.",
+                ephemeral=True,
+            )
+        except Exception as e:
+            logger.error("faq submit error: %s", e, exc_info=True)
+            await interaction.followup.send("Error submitting question.", ephemeral=True)
+
     @app_commands.command(name="add", description="Add a FAQ entry (Admin)")
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(
@@ -296,6 +350,10 @@ class FAQGroup(app_commands.Group):
                     answer,
                 )
             _invalidate_faq_cache(self.cog.bot.cache, interaction.guild_id, topic)
+            if self.cog.bot.notifier:
+                await self.cog.bot.notifier.notify_faq_changed(
+                    interaction.guild_id, "Added/Updated", topic, interaction.user.id
+                )
             await interaction.followup.send(f"FAQ **{topic}** added/updated.", ephemeral=True)
         except Exception as e:
             logger.error("faq add error: %s", e, exc_info=True)
@@ -360,10 +418,58 @@ class FAQGroup(app_commands.Group):
                     topic,
                 )
             _invalidate_faq_cache(self.cog.bot.cache, interaction.guild_id, topic)
+            if self.cog.bot.notifier:
+                await self.cog.bot.notifier.notify_faq_changed(
+                    interaction.guild_id, "Edited", topic, interaction.user.id
+                )
             await interaction.followup.send(f"FAQ **{topic}** updated.", ephemeral=True)
         except Exception as e:
             logger.error("faq edit error: %s", e, exc_info=True)
             await interaction.followup.send("Error editing FAQ.", ephemeral=True)
+
+    @app_commands.command(
+        name="submissions",
+        description="List pending FAQ question submissions (Admin)",
+    )
+    @app_commands.default_permissions(administrator=True)
+    async def submissions_cmd(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        if not interaction.guild_id or not await self.cog._check_admin(
+            interaction, "faq submissions"
+        ):
+            return
+        try:
+            async with self.cog.bot.db_pool.acquire() as conn:
+                rows = await conn.fetch(
+                    """
+                    SELECT id, question, submitter_id, created_at
+                    FROM faq_submissions
+                    WHERE server_id = $1
+                    ORDER BY created_at DESC
+                    LIMIT 25
+                    """,
+                    interaction.guild_id,
+                )
+            if not rows:
+                await interaction.followup.send(
+                    "No pending FAQ submissions.",
+                    ephemeral=True,
+                )
+                return
+            lines = []
+            for r in rows:
+                short = (r["question"][:60] + "…") if len(r["question"]) > 60 else r["question"]
+                lines.append(f"`{str(r['id'])[:8]}` <@{r['submitter_id']}>: {short}")
+            await interaction.followup.send(
+                "**Pending FAQ submissions:**\n" + "\n".join(lines),
+                ephemeral=True,
+            )
+        except Exception as e:
+            logger.error("faq submissions error: %s", e, exc_info=True)
+            await interaction.followup.send(
+                "Error fetching submissions.",
+                ephemeral=True,
+            )
 
     @app_commands.command(name="delete", description="Delete a FAQ entry (Admin)")
     @app_commands.default_permissions(administrator=True)
@@ -394,6 +500,10 @@ class FAQGroup(app_commands.Group):
                 await interaction.followup.send(f"No FAQ entry for **{topic}**.", ephemeral=True)
                 return
             _invalidate_faq_cache(self.cog.bot.cache, interaction.guild_id, topic)
+            if self.cog.bot.notifier:
+                await self.cog.bot.notifier.notify_faq_changed(
+                    interaction.guild_id, "Deleted", topic, interaction.user.id
+                )
             await interaction.followup.send(f"FAQ **{topic}** deleted.", ephemeral=True)
         except Exception as e:
             logger.error("faq delete error: %s", e, exc_info=True)

@@ -2,7 +2,6 @@ import os
 
 import httpx
 import pytest
-
 from testcontainers.core.container import DockerContainer
 from testcontainers.core.image import DockerImage
 from testcontainers.core.wait_strategies import HttpWaitStrategy

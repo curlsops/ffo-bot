@@ -26,7 +26,9 @@ async def _pool(fetch=None, fetchrow=None):
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize("fetch", [[], [{"id": "1", "quote_text": "Hi", "attribution": "Me", "approved": True}]])
+@pytest.mark.parametrize(
+    "fetch", [[], [{"id": "1", "quote_text": "Hi", "attribution": "Me", "approved": True}]]
+)
 async def test_quotebook_list(fetch, mock_bot):
     mock_bot.db_pool.acquire = lambda: _pool(fetch=fetch)
     mock_bot.cache = None

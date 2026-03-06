@@ -72,16 +72,9 @@ class ReactBotGroup(app_commands.Group):
     )
     async def add_cmd(self, interaction: discord.Interaction, phrase: str, emoji: str):
         await interaction.response.defer(ephemeral=True)
+        if not await self.cog._check_admin(interaction, "reactbot add"):
+            return
         try:
-            allowed, reason = await self.cog.bot.rate_limiter.check_rate_limit(
-                interaction.user.id, interaction.guild_id
-            )
-            if not allowed:
-                await interaction.followup.send(reason, ephemeral=True)
-                return
-            if not await self.cog._check_admin(interaction, "reactbot add"):
-                return
-
             phrase = InputValidator.validate_phrase_pattern(phrase)
             emoji = InputValidator.validate_emoji(emoji)
             await self.cog.bot.phrase_matcher.validate_pattern(phrase)

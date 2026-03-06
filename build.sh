@@ -81,4 +81,3 @@ echo "  1. Copy .env.example to .env and configure"
 echo "  2. Start PostgreSQL: docker-compose up -d postgres"
 echo "  3. Run migrations: alembic upgrade head"
 echo "  4. Start bot: python main.py"
-

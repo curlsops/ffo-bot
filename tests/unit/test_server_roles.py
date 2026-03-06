@@ -103,9 +103,7 @@ async def test_get_server_role_ids_cache_hit():
 async def test_get_server_role_ids_cache_miss_fetches_from_db():
     cache = MagicMock()
     cache.get.return_value = None
-    pool, _ = _make_pool(
-        fetchrow_result={"config": {"admin_role_id": 111}}
-    )
+    pool, _ = _make_pool(fetchrow_result={"config": {"admin_role_id": 111}})
     result = await get_server_role_ids(pool, 123, cache=cache)
     assert result == {Role.ADMIN: 111}
 
@@ -119,9 +117,7 @@ async def test_get_server_role_ids_config_not_dict():
 
 @pytest.mark.asyncio
 async def test_get_server_role_ids_repairs_corrupted_list_config():
-    pool, _ = _make_pool(
-        fetchrow_result={"config": [{}, '{"admin_role_id": 456}']}
-    )
+    pool, _ = _make_pool(fetchrow_result={"config": [{}, '{"admin_role_id": 456}']})
     result = await get_server_role_ids(pool, 123)
     assert result == {Role.ADMIN: 456}
 
@@ -137,9 +133,7 @@ async def test_get_server_role_ids_invalid_role_id_skipped():
 
 @pytest.mark.asyncio
 async def test_get_server_role_ids_invalid_role_id_type_error_skipped():
-    pool, _ = _make_pool(
-        fetchrow_result={"config": {"admin_role_id": {"nested": "dict"}}}
-    )
+    pool, _ = _make_pool(fetchrow_result={"config": {"admin_role_id": {"nested": "dict"}}})
     result = await get_server_role_ids(pool, 123)
     assert result == {}
 

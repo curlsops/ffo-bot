@@ -121,3 +121,143 @@ class AdminNotifier:
         tb = tb[-1021:] + "..." if len(tb) > 1024 else tb
         embed.add_field(name="Traceback", value=f"```\n{tb}\n```", inline=False)
         await self.send(server_id, embed)
+
+    async def notify_quotebook_submitted(
+        self, server_id: int, quote_text: str, submitter_id: int, quote_id: str
+    ):
+        text = quote_text[:200] + "…" if len(quote_text) > 200 else quote_text
+        embed = discord.Embed(
+            title="Quote Submitted",
+            description=text,
+            color=discord.Color.gold(),
+        )
+        embed.add_field(name="Submitter", value=f"<@{submitter_id}>", inline=True)
+        embed.add_field(name="Quote ID", value=f"`{quote_id[:8]}`", inline=True)
+        embed.set_footer(text="Use /quote approve to approve")
+        await self.send(server_id, embed)
+
+    async def notify_permission_changed(
+        self,
+        server_id: int,
+        action: str,
+        role: str,
+        target_id: int | None,
+        changed_by_id: int,
+        discord_role: int | None = None,
+    ):
+        embed = discord.Embed(
+            title="Permission Changed",
+            description=f"**{action}** {role}",
+            color=discord.Color.blue(),
+        )
+        if target_id:
+            embed.add_field(name="Target", value=f"<@{target_id}>", inline=True)
+        embed.add_field(name="By", value=f"<@{changed_by_id}>", inline=True)
+        if discord_role:
+            embed.add_field(name="Role", value=f"<@&{discord_role}>", inline=True)
+        elif action == "Set role":
+            embed.add_field(name="Role", value="Cleared", inline=True)
+        await self.send(server_id, embed)
+
+    async def notify_reaction_role_setup(
+        self,
+        server_id: int,
+        action: str,
+        emoji: str,
+        role_id: int,
+        message_id: int,
+        channel_id: int,
+        created_by_id: int,
+    ):
+        embed = discord.Embed(
+            title="Reaction Role",
+            description=f"**{action}**: {emoji} → <@&{role_id}>",
+            color=discord.Color.purple(),
+        )
+        embed.add_field(
+            name="Message",
+            value=f"[Jump](https://discord.com/channels/{server_id}/{channel_id}/{message_id})",
+            inline=True,
+        )
+        embed.add_field(name="By", value=f"<@{created_by_id}>", inline=True)
+        await self.send(server_id, embed)
+
+    async def notify_faq_changed(self, server_id: int, action: str, topic: str, changed_by_id: int):
+        embed = discord.Embed(
+            title="FAQ Changed",
+            description=f"**{action}**: {topic}",
+            color=discord.Color.green(),
+        )
+        embed.add_field(name="By", value=f"<@{changed_by_id}>", inline=True)
+        await self.send(server_id, embed)
+
+    async def notify_notify_channel_changed(
+        self, server_id: int, channel_id: int | None, changed_by_id: int
+    ):
+        desc = f"Notifications set to <#{channel_id}>" if channel_id else "Notifications disabled"
+        embed = discord.Embed(
+            title="Notify Channel Changed",
+            description=desc,
+            color=discord.Color.blue(),
+        )
+        embed.add_field(name="By", value=f"<@{changed_by_id}>", inline=True)
+        await self.send(server_id, embed)
+
+    async def notify_rate_limit_hit(
+        self, server_id: int, user_id: int, reason: str, command_name: str
+    ):
+        embed = discord.Embed(
+            title="Rate Limit Hit",
+            description=reason[:256],
+            color=discord.Color.orange(),
+        )
+        embed.add_field(name="User", value=f"<@{user_id}>", inline=True)
+        embed.add_field(name="Command", value=command_name, inline=True)
+        await self.send(server_id, embed)
+
+    async def notify_bot_added(self, server_id: int, server_name: str, member_count: int):
+        embed = discord.Embed(
+            title="Bot Added to Server",
+            description=f"**{server_name}**",
+            color=discord.Color.green(),
+        )
+        embed.add_field(name="Server ID", value=str(server_id), inline=True)
+        embed.add_field(name="Members", value=str(member_count), inline=True)
+        await self.send(server_id, embed)
+
+    async def notify_moderation(
+        self,
+        server_id: int,
+        action: str,
+        target_id: int,
+        moderator_id: int | None,
+        reason: str | None = None,
+        extra: str | None = None,
+    ):
+        embed = discord.Embed(
+            title="Moderation",
+            description=f"**{action}**",
+            color=discord.Color.dark_red(),
+        )
+        embed.add_field(name="Target", value=f"<@{target_id}>", inline=True)
+        if moderator_id:
+            embed.add_field(name="By", value=f"<@{moderator_id}>", inline=True)
+        if reason:
+            embed.add_field(name="Reason", value=reason[:1024], inline=False)
+        if extra:
+            embed.add_field(name="Details", value=extra[:1024], inline=False)
+        await self.send(server_id, embed)
+
+    async def notify_faq_submission(
+        self, server_id: int, question: str, submitter_id: int, submission_id: str
+    ):
+        text = question[:300] + "…" if len(question) > 300 else question
+        embed = discord.Embed(
+            title="FAQ Question Submitted",
+            description=text,
+            color=discord.Color.gold(),
+        )
+        embed.add_field(name="Submitter", value=f"<@{submitter_id}>", inline=True)
+        embed.add_field(name="ID", value=f"`{submission_id[:8]}`", inline=True)
+        embed.set_footer(text="Use /faq add to create an entry from this")
+        await self.send(server_id, embed)

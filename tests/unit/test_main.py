@@ -22,8 +22,7 @@ class TestGracefulShutdown:
         gs = GracefulShutdown(bot)
         await gs._shutdown(MagicMock(name="SIGTERM"))
         assert any(
-            "close failed" in r.message or "Shutdown error" in r.message
-            for r in caplog.records
+            "close failed" in r.message or "Shutdown error" in r.message for r in caplog.records
         )
 
     @pytest.mark.asyncio

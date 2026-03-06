@@ -35,11 +35,10 @@ async def test_database_pool_create(database_url):
 @pytest.mark.asyncio
 async def test_set_server_role_then_get_roundtrip(database_url):
     """Verify set_server_role persists and get_server_role_ids reads it back."""
-    from database.connection import DatabasePool
-
     from bot.cache.memory import InMemoryCache
     from bot.utils.server_roles import get_server_role_ids, set_server_role
     from config.constants import Role
+    from database.connection import DatabasePool
 
     pool = await DatabasePool.create(database_url, min_size=1, max_size=2)
     cache = InMemoryCache(max_size=100, default_ttl=60)

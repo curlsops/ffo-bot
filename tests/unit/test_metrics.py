@@ -111,17 +111,11 @@ class TestGenerateMetricsResponse:
 
 class TestBotMetricsLabels:
     def test_commands_executed_labels(self, metrics):
-        metrics.commands_executed.labels(
-            command_name="faq", server_id="1", status="success"
-        ).inc()
+        metrics.commands_executed.labels(command_name="faq", server_id="1", status="success").inc()
         metrics.commands_executed.labels(
             command_name="permissions", server_id="1", status="error"
         ).inc()
 
     def test_media_downloads_labels(self, metrics):
-        metrics.media_downloads.labels(
-            server_id="1", file_type="video", status="success"
-        ).inc()
-        metrics.media_downloads.labels(
-            server_id="1", file_type="gif", status="error"
-        ).inc()
+        metrics.media_downloads.labels(server_id="1", file_type="video", status="success").inc()
+        metrics.media_downloads.labels(server_id="1", file_type="gif", status="error").inc()

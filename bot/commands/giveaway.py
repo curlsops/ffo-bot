@@ -143,10 +143,31 @@ def build_embed(giveaway, entry_count: int, ended: bool = False) -> discord.Embe
 PER_PAGE = 10
 
 
+def _win_probability(user_entries: int, total_entries: int, winners_count: int) -> float:
+    if total_entries <= 0 or user_entries <= 0:
+        return 0.0
+    if user_entries >= total_entries:
+        return 1.0
+    k = min(winners_count, total_entries)
+    if k > total_entries - user_entries:
+        return 1.0
+    p_not_win = 1.0
+    for i in range(k):
+        p_not_win *= (total_entries - user_entries - i) / (total_entries - i)
+    return 1.0 - p_not_win
+
+
 class EntriesPaginatedView(discord.ui.View):
-    def __init__(self, rows: list, user_id: int | None = None, timeout: float = 60):
+    def __init__(
+        self,
+        rows: list,
+        winners_count: int = 1,
+        user_id: int | None = None,
+        timeout: float = 60,
+    ):
         super().__init__(timeout=timeout)
         self.rows = rows
+        self.winners_count = winners_count
         self.user_id = user_id
         self.page = 0
         self.total_entries = sum(r["entries"] for r in rows)
@@ -222,11 +243,11 @@ class EntriesPaginatedView(discord.ui.View):
     async def _my_entry_callback(self, interaction: discord.Interaction):
         entries = self._user_entry["entries"]
         total = self.total_entries
-        pct = (entries / total * 100) if total > 0 else 0
+        pct = _win_probability(entries, total, self.winners_count) * 100 if total > 0 else 0
         pct_str = f"{pct:.2f}".rstrip("0").rstrip(".") if pct < 100 else "100"
         lines = [
             f"✓ You had **{entries}** {'entry' if entries == 1 else 'entries'} for this giveaway!",
-            f"ℹ️ There are a total of **{total}** entries in this giveaway (including bonuses).",
+            f"ℹ️ There are a total of **{total}** entries in this giveaway.",
             f"🎁 Your chances of winning: **{pct_str}%**",
         ]
         await interaction.response.send_message("\n".join(lines), ephemeral=True)
@@ -364,7 +385,12 @@ class GiveawayView(discord.ui.View):
             if not rows:
                 await interaction.followup.send("No entries yet.", ephemeral=True)
                 return
-            view = EntriesPaginatedView(rows, user_id=interaction.user.id, timeout=60)
+            view = EntriesPaginatedView(
+                rows,
+                winners_count=giveaway.get("winners_count", 1),
+                user_id=interaction.user.id,
+                timeout=60,
+            )
             view._update_buttons()
             await interaction.followup.send(view._format_page(), ephemeral=True, view=view)
         except Exception as e:

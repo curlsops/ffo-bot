@@ -53,9 +53,7 @@ async def test_get_notify_channel_id_repairs_corrupted_config():
     bot = MagicMock()
     bot.cache = None
     conn = MagicMock()
-    conn.fetchrow = AsyncMock(
-        return_value={"config": [{}, '{"notify_channel_id": 999}']}
-    )
+    conn.fetchrow = AsyncMock(return_value={"config": [{}, '{"notify_channel_id": 999}']})
     ctx = MagicMock()
     ctx.__aenter__ = AsyncMock(return_value=conn)
     ctx.__aexit__ = AsyncMock(return_value=None)

@@ -58,14 +58,17 @@ class TestValidateUsername:
 class TestSetWhitelistChannel:
     @pytest.mark.asyncio
     async def test_set_channel_success(self):
-        with patch(
-            "bot.commands.whitelist.get_whitelist_channel_id",
-            new_callable=AsyncMock,
-            return_value=None,
-        ), patch(
-            "bot.commands.whitelist.set_whitelist_channel",
-            new_callable=AsyncMock,
-            return_value=True,
+        with (
+            patch(
+                "bot.commands.whitelist.get_whitelist_channel_id",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch(
+                "bot.commands.whitelist.set_whitelist_channel",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
         ):
             bot = make_bot()
             bot.db_pool, _ = make_db_pool()
@@ -108,8 +111,13 @@ class TestWhitelistList:
 class TestWhitelistAdd:
     @pytest.mark.asyncio
     async def test_add_success(self):
-        with patch("bot.commands.whitelist.get_profile", new_callable=AsyncMock, return_value=("uuid", "Steve")), patch(
-            "bot.commands.whitelist.add_to_cache", new_callable=AsyncMock
+        with (
+            patch(
+                "bot.commands.whitelist.get_profile",
+                new_callable=AsyncMock,
+                return_value=("uuid", "Steve"),
+            ),
+            patch("bot.commands.whitelist.add_to_cache", new_callable=AsyncMock),
         ):
             bot = make_bot()
             bot.db_pool, _ = make_db_pool()
@@ -174,14 +182,17 @@ class TestWhitelistRemove:
 class TestWhitelistSync:
     @pytest.mark.asyncio
     async def test_sync_success(self):
-        with patch(
-            "bot.commands.whitelist.sync_from_rcon",
-            new_callable=AsyncMock,
-            return_value=True,
-        ), patch(
-            "bot.commands.whitelist.get_cached_usernames",
-            new_callable=AsyncMock,
-            return_value=["Steve", "Alex"],
+        with (
+            patch(
+                "bot.commands.whitelist.sync_from_rcon",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+            patch(
+                "bot.commands.whitelist.get_cached_usernames",
+                new_callable=AsyncMock,
+                return_value=["Steve", "Alex"],
+            ),
         ):
             bot = make_bot()
             bot.db_pool, _ = make_db_pool()

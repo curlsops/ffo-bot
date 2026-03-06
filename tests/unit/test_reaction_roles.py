@@ -69,9 +69,7 @@ class TestReactionRoleCommands:
         role = MagicMock(id=456, mention="<@&456>")
         i = _interaction()
         group = cog.reactionrole_group
-        await group.add_cmd.callback(
-            group, i, "https://discord.com/channels/1/2/123", "👍", role
-        )
+        await group.add_cmd.callback(group, i, "https://discord.com/channels/1/2/123", "👍", role)
         msg.add_reaction.assert_awaited_with("👍")
         i.followup.send.assert_called()
 

@@ -59,6 +59,20 @@ class AdminGroup(app_commands.Group):
                 await interaction.followup.send("Notifications are already disabled.")
             return
 
+        if not new_channel_id and current_id:
+            notify_ch = await self.cog.bot.notifier.get_notify_channel(interaction.guild_id)
+            if notify_ch:
+                embed = discord.Embed(
+                    title="Notify Channel Changed",
+                    description="Notifications disabled.",
+                    color=discord.Color.blue(),
+                )
+                embed.add_field(name="By", value=f"<@{interaction.user.id}>", inline=True)
+                try:
+                    await notify_ch.send(embed=embed)
+                except Exception:
+                    pass
+
         success = await self.cog.bot.notifier.set_notify_channel(
             interaction.guild_id,
             new_channel_id,
@@ -67,6 +81,10 @@ class AdminGroup(app_commands.Group):
             await interaction.followup.send("Failed to update notification channel.")
             return
 
+        if new_channel_id:
+            await self.cog.bot.notifier.notify_notify_channel_changed(
+                interaction.guild_id, new_channel_id, interaction.user.id
+            )
         if channel:
             await interaction.followup.send(f"Notifications will be sent to {channel.mention}")
         else:

@@ -4,12 +4,12 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from bot.services.minecraft_rcon import (
-    MinecraftRCONClient,
-    MinecraftRCONError,
     RCON_PACKET_COMMAND,
     RCON_PACKET_LOGIN,
-    _recv_rcon_packet,
+    MinecraftRCONClient,
+    MinecraftRCONError,
     _rcon_command,
+    _recv_rcon_packet,
     _send_rcon_packet,
     parse_whitelist_list_response,
 )

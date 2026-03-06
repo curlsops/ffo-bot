@@ -75,6 +75,11 @@ https://discord.com/api/oauth2/authorize?client_id=YOUR_CLIENT_ID&permissions=27
 | `FEATURE_MINECRAFT_WHITELIST` | false | Enable MC whitelist commands |
 | `FEATURE_MEDIA_DOWNLOAD` | false | Archive media links |
 | `FEATURE_VOICE_TRANSCRIPTION` | false | Transcribe voice messages |
+| `FEATURE_FAQ_SUBMISSIONS` | true | Allow users to submit FAQ questions |
+| `FEATURE_NOTIFY_MODERATION` | true | Notify on kicks, bans, nickname changes |
+| `FEATURE_NOTIFY_RATE_LIMIT` | false | Notify when users hit rate limit |
+| `BOT_OWNER_SERVER_ID` | — | Server ID for owner notifications |
+| `BOT_OWNER_NOTIFY_CHANNEL_ID` | — | Channel for bot-added-to-server alerts |
 
 ### Minecraft RCON (optional)
 

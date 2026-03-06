@@ -25,7 +25,9 @@ def _admin_bot(admin=True, notifier_success=True, current_notify_channel_id=None
     bot._register_server = AsyncMock()
     bot.notifier = MagicMock()
     bot.notifier.get_notify_channel_id = AsyncMock(return_value=current_notify_channel_id)
+    bot.notifier.get_notify_channel = AsyncMock(return_value=MagicMock(send=AsyncMock()))
     bot.notifier.set_notify_channel = AsyncMock(return_value=notifier_success)
+    bot.notifier.notify_notify_channel_changed = AsyncMock()
     return bot
 
 

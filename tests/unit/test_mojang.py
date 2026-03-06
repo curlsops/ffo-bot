@@ -1,6 +1,6 @@
-import aiohttp
 from unittest.mock import AsyncMock, MagicMock, patch
 
+import aiohttp
 import pytest
 
 from bot.services.mojang import (

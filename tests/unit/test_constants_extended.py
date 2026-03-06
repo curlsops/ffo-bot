@@ -39,7 +39,9 @@ class TestAuditActionExtended:
 
 
 class TestConstantsExtended:
-    @pytest.mark.parametrize("attr", ["MAX_PHRASE_LENGTH", "MAX_COMMAND_NAME_LENGTH", "MAX_NOTES_LENGTH"])
+    @pytest.mark.parametrize(
+        "attr", ["MAX_PHRASE_LENGTH", "MAX_COMMAND_NAME_LENGTH", "MAX_NOTES_LENGTH"]
+    )
     def test_length_constants(self, attr):
         val = getattr(Constants, attr)
         assert val > 0

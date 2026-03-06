@@ -23,7 +23,12 @@ def _make_db_pool(conn):
 
 
 def _pattern(phrase_id="1", pattern=r"hello", emoji="👋", server_id=123):
-    return PhrasePattern(phrase_id=phrase_id, pattern=re.compile(pattern, re.IGNORECASE), emoji=emoji, server_id=server_id)
+    return PhrasePattern(
+        phrase_id=phrase_id,
+        pattern=re.compile(pattern, re.IGNORECASE),
+        emoji=emoji,
+        server_id=server_id,
+    )
 
 
 class TestPhrasePattern:
@@ -43,15 +48,18 @@ class TestNormalization:
     def test_normalize_message_empty(self, mock_db_pool, mock_cache):
         assert PhraseMatcher(mock_db_pool, mock_cache)._normalize_message("") == ""
 
-    @pytest.mark.parametrize("inp,expected", [
-        ("Hello World!", "hello world!"),
-        ("Hello, World! How are you?", "hello, world! how are you?"),
-        ("Hello @user #channel $money", "hello @user #channel $money"),
-        ("Test 123 Message", "test 123 message"),
-        ("UPPERCASE MESSAGE", "uppercase message"),
-        (":3", ":3"),
-        ("UwU :3 OwO", "uwu :3 owo"),
-    ])
+    @pytest.mark.parametrize(
+        "inp,expected",
+        [
+            ("Hello World!", "hello world!"),
+            ("Hello, World! How are you?", "hello, world! how are you?"),
+            ("Hello @user #channel $money", "hello @user #channel $money"),
+            ("Test 123 Message", "test 123 message"),
+            ("UPPERCASE MESSAGE", "uppercase message"),
+            (":3", ":3"),
+            ("UwU :3 OwO", "uwu :3 owo"),
+        ],
+    )
     def test_normalize_message(self, mock_db_pool, mock_cache, inp, expected):
         assert PhraseMatcher(mock_db_pool, mock_cache)._normalize_message(inp) == expected
 
@@ -78,20 +86,28 @@ class TestPatternLoading:
 
     @pytest.mark.asyncio
     async def test_from_database(self, mock_cache):
-        conn = AsyncMock(fetch=AsyncMock(return_value=[
-            {"id": 1, "phrase": "hello", "emoji": "👋"},
-            {"id": 2, "phrase": "world", "emoji": "🌍"},
-        ]))
+        conn = AsyncMock(
+            fetch=AsyncMock(
+                return_value=[
+                    {"id": 1, "phrase": "hello", "emoji": "👋"},
+                    {"id": 2, "phrase": "world", "emoji": "🌍"},
+                ]
+            )
+        )
         matcher = PhraseMatcher(_make_db_pool(conn), mock_cache)
         await matcher.load_patterns(456)
         assert len(matcher._patterns_by_server[456]) == 2
 
     @pytest.mark.asyncio
     async def test_skips_invalid_regex(self, mock_cache):
-        conn = AsyncMock(fetch=AsyncMock(return_value=[
-            {"id": 1, "phrase": "hello", "emoji": "👋"},
-            {"id": 2, "phrase": "[invalid(regex", "emoji": "❌"},
-        ]))
+        conn = AsyncMock(
+            fetch=AsyncMock(
+                return_value=[
+                    {"id": 1, "phrase": "hello", "emoji": "👋"},
+                    {"id": 2, "phrase": "[invalid(regex", "emoji": "❌"},
+                ]
+            )
+        )
         matcher = PhraseMatcher(_make_db_pool(conn), mock_cache)
         await matcher.load_patterns(789)
         assert len(matcher._patterns_by_server[789]) == 1
@@ -108,7 +124,9 @@ class TestPatternLoading:
     @pytest.mark.asyncio
     async def test_db_unavailable_keeps_existing(self, mock_cache, caplog):
         caplog.set_level(logging.WARNING, logger="bot.processors.phrase_matcher")
-        conn = AsyncMock(fetch=AsyncMock(side_effect=asyncpg.CannotConnectNowError("shutting down")))
+        conn = AsyncMock(
+            fetch=AsyncMock(side_effect=asyncpg.CannotConnectNowError("shutting down"))
+        )
         matcher = PhraseMatcher(_make_db_pool(conn), mock_cache)
         matcher._patterns_by_server[888] = [_pattern(server_id=888)]
         await matcher.load_patterns(888)
@@ -139,7 +157,10 @@ class TestPatternMatching:
     @pytest.mark.asyncio
     async def test_multiple_matches(self, mock_db_pool, mock_cache):
         matcher = PhraseMatcher(mock_db_pool, mock_cache)
-        matcher._patterns_by_server[123] = [_pattern(), _pattern(phrase_id="2", pattern=r"world", emoji="🌍")]
+        matcher._patterns_by_server[123] = [
+            _pattern(),
+            _pattern(phrase_id="2", pattern=r"world", emoji="🌍"),
+        ]
         assert len(await matcher.match_phrases("Hello World!", 123)) == 2
 
     @pytest.mark.asyncio

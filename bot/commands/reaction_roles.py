@@ -112,6 +112,16 @@ class ReactionRoleGroup(app_commands.Group):
             _invalidate_reaction_role_cache(
                 self.cog.bot.cache, interaction.guild_id, message_id, str(emoji)
             )
+            if self.cog.bot.notifier:
+                await self.cog.bot.notifier.notify_reaction_role_setup(
+                    interaction.guild_id,
+                    "Added",
+                    str(emoji),
+                    role.id,
+                    message_id,
+                    channel_id,
+                    interaction.user.id,
+                )
             await interaction.followup.send(
                 f"Reaction role added: {emoji} → {role.mention}",
                 ephemeral=True,
@@ -148,7 +158,19 @@ class ReactionRoleGroup(app_commands.Group):
 
             channel_id, message_id = parsed
 
+            role_id = None
             async with self.cog.bot.db_pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    """
+                    SELECT role_id FROM reaction_roles
+                    WHERE server_id = $1 AND message_id = $2 AND emoji = $3 AND is_active = true
+                    """,
+                    interaction.guild_id,
+                    message_id,
+                    str(emoji),
+                )
+                if row:
+                    role_id = row["role_id"]
                 result = await conn.execute(
                     """
                     UPDATE reaction_roles SET is_active = false, updated_at = NOW()
@@ -169,6 +191,16 @@ class ReactionRoleGroup(app_commands.Group):
             _invalidate_reaction_role_cache(
                 self.cog.bot.cache, interaction.guild_id, message_id, str(emoji)
             )
+            if self.cog.bot.notifier and role_id:
+                await self.cog.bot.notifier.notify_reaction_role_setup(
+                    interaction.guild_id,
+                    "Removed",
+                    str(emoji),
+                    role_id,
+                    message_id,
+                    channel_id,
+                    interaction.user.id,
+                )
             channel = self.cog.bot.get_channel(channel_id)
             if channel:
                 try:

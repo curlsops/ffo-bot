@@ -14,7 +14,9 @@ def test_no_on_conflict_with_partial_unique():
     bad = [
         str(p.relative_to(_ROOT))
         for p in _ROOT.rglob("*.py")
-        if "venv" not in str(p) and "migrations" not in str(p) and "tests/" not in str(p)
+        if "venv" not in str(p)
+        and "migrations" not in str(p)
+        and "tests/" not in str(p)
         and pattern.search(p.read_text())
     ]
     assert not bad, f"ON CONFLICT ... WHERE in {bad}. Use SELECT-then-INSERT/UPDATE."

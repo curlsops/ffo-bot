@@ -10,9 +10,9 @@ from bot.commands.giveaway import (
     EntriesPaginatedView,
     GiveawayCommands,
     GiveawayView,
+    _discord_timestamp,
     build_embed,
     parse_duration,
-    _discord_timestamp,
 )
 
 
@@ -259,7 +259,9 @@ class TestGiveawayCommands:
         cog.bot.db_pool = _db_ctx(AsyncMock())
         cog.bot.notifier = MagicMock(notify_giveaway_created=AsyncMock())
         i = _interaction()
-        await cog.giveaway_group.start_cmd.callback(cog.giveaway_group, i, "1h", 1, "Prize", ping=True)
+        await cog.giveaway_group.start_cmd.callback(
+            cog.giveaway_group, i, "1h", 1, "Prize", ping=True
+        )
         call = i.followup.send.call_args
         assert call.kwargs.get("content") == "@everyone"
 

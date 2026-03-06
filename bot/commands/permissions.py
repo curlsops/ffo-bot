@@ -284,6 +284,14 @@ class PermissionsGroup(app_commands.Group):
                     interaction.user.id,
                 )
             self.cog.bot.permission_checker.invalidate_user_cache(interaction.guild_id, user_id)
+            if self.cog.bot.notifier:
+                await self.cog.bot.notifier.notify_permission_changed(
+                    interaction.guild_id,
+                    "Granted",
+                    role,
+                    user_id,
+                    interaction.user.id,
+                )
             await interaction.followup.send(
                 f"✅ Granted {role} to {target.mention}", ephemeral=True
             )
@@ -326,6 +334,14 @@ class PermissionsGroup(app_commands.Group):
                 )
                 return
             self.cog.bot.permission_checker.invalidate_user_cache(interaction.guild_id, user_id)
+            if self.cog.bot.notifier:
+                await self.cog.bot.notifier.notify_permission_changed(
+                    interaction.guild_id,
+                    "Revoked",
+                    role,
+                    user_id,
+                    interaction.user.id,
+                )
             await interaction.followup.send(
                 f"✅ Revoked {role} from {target.mention}", ephemeral=True
             )
@@ -364,6 +380,15 @@ class PermissionsGroup(app_commands.Group):
         if not success:
             await interaction.followup.send("❌ Failed to update.", ephemeral=True)
             return
+        if self.cog.bot.notifier:
+            await self.cog.bot.notifier.notify_permission_changed(
+                interaction.guild_id,
+                "Set role",
+                level,
+                discord_role.id if discord_role else None,
+                interaction.user.id,
+                discord_role=discord_role.id if discord_role else None,
+            )
         label = level.replace("_", " ").title()
         if discord_role:
             await interaction.followup.send(

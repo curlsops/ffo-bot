@@ -180,18 +180,25 @@ class QuoteGroup(app_commands.Group):
         attr = attribution.strip()[:255] if attribution else None
 
         try:
+            quote_id = None
             async with self.cog.bot.db_pool.acquire() as conn:
-                await conn.execute(
+                row = await conn.fetchrow(
                     """
                     INSERT INTO quotebook (server_id, quote_text, submitter_id, attribution, approved)
                     VALUES ($1, $2, $3, $4, false)
+                    RETURNING id
                     """,
                     interaction.guild_id,
                     text,
                     interaction.user.id,
                     attr,
                 )
+                quote_id = str(row["id"])
             _invalidate_quotebook_cache(self.cog.bot.cache, interaction.guild_id)
+            if self.cog.bot.notifier and quote_id:
+                await self.cog.bot.notifier.notify_quotebook_submitted(
+                    interaction.guild_id, text, interaction.user.id, quote_id
+                )
             await interaction.followup.send(
                 "Quote submitted! An admin will review it.",
                 ephemeral=True,

@@ -80,22 +80,28 @@ class TestParseQuotes:
 class TestQuoteSubmit:
     @pytest.mark.asyncio
     async def test_submit_success(self, cog):
-        conn = AsyncMock(execute=AsyncMock())
+        conn = AsyncMock(
+            fetchrow=AsyncMock(return_value={"id": "abc12345-0000-0000-0000-000000000000"})
+        )
         cog.bot.db_pool.acquire.return_value = _db_ctx(conn)
+        cog.bot.notifier = None
         i = _interaction()
         await cog.quote_group.submit_cmd.callback(cog.quote_group, i, "Hello world", None)
-        conn.execute.assert_awaited_once()
+        conn.fetchrow.assert_awaited_once()
         i.followup.send.assert_awaited_with(
             "Quote submitted! An admin will review it.", ephemeral=True
         )
 
     @pytest.mark.asyncio
     async def test_submit_with_attribution(self, cog):
-        conn = AsyncMock(execute=AsyncMock())
+        conn = AsyncMock(
+            fetchrow=AsyncMock(return_value={"id": "abc12345-0000-0000-0000-000000000000"})
+        )
         cog.bot.db_pool.acquire.return_value = _db_ctx(conn)
+        cog.bot.notifier = None
         i = _interaction()
         await cog.quote_group.submit_cmd.callback(cog.quote_group, i, "Quote text", "— Einstein")
-        call = conn.execute.call_args
+        call = conn.fetchrow.call_args
         assert "Einstein" in str(call)
 
     @pytest.mark.asyncio
@@ -107,12 +113,15 @@ class TestQuoteSubmit:
 
     @pytest.mark.asyncio
     async def test_submit_truncates_long_text(self, cog):
-        conn = AsyncMock(execute=AsyncMock())
+        conn = AsyncMock(
+            fetchrow=AsyncMock(return_value={"id": "abc12345-0000-0000-0000-000000000000"})
+        )
         cog.bot.db_pool.acquire.return_value = _db_ctx(conn)
+        cog.bot.notifier = None
         i = _interaction()
         long_text = "A" * 600
         await cog.quote_group.submit_cmd.callback(cog.quote_group, i, long_text, None)
-        call = conn.execute.call_args
+        call = conn.fetchrow.call_args
         assert len(call[0][2]) <= 500
 
 
@@ -153,7 +162,9 @@ class TestQuoteApprove:
         conn = AsyncMock(execute=AsyncMock(return_value="UPDATE 1"))
         cog.bot.db_pool.acquire.return_value = _db_ctx(conn)
         i = _interaction()
-        await cog.quote_group.approve_cmd.callback(cog.quote_group, i, "a1b2c3d4-0000-0000-0000-000000000001")
+        await cog.quote_group.approve_cmd.callback(
+            cog.quote_group, i, "a1b2c3d4-0000-0000-0000-000000000001"
+        )
         i.followup.send.assert_awaited_with("Quote approved!", ephemeral=True)
 
     @pytest.mark.asyncio
@@ -167,7 +178,9 @@ class TestQuoteApprove:
         conn = AsyncMock(execute=AsyncMock(return_value="UPDATE 0"))
         cog.bot.db_pool.acquire.return_value = _db_ctx(conn)
         i = _interaction()
-        await cog.quote_group.approve_cmd.callback(cog.quote_group, i, "a1b2c3d4-0000-0000-0000-000000000001")
+        await cog.quote_group.approve_cmd.callback(
+            cog.quote_group, i, "a1b2c3d4-0000-0000-0000-000000000001"
+        )
         i.followup.send.assert_awaited_with("Quote not found or already approved.", ephemeral=True)
 
 
@@ -177,7 +190,9 @@ class TestQuoteDelete:
         conn = AsyncMock(execute=AsyncMock())
         cog.bot.db_pool.acquire.return_value = _db_ctx(conn)
         i = _interaction()
-        await cog.quote_group.delete_cmd.callback(cog.quote_group, i, "a1b2c3d4-0000-0000-0000-000000000001")
+        await cog.quote_group.delete_cmd.callback(
+            cog.quote_group, i, "a1b2c3d4-0000-0000-0000-000000000001"
+        )
         i.followup.send.assert_awaited_with("Quote deleted.", ephemeral=True)
 
     @pytest.mark.asyncio
@@ -191,11 +206,14 @@ class TestQuoteSubmitVariants:
     @pytest.mark.parametrize("text", ["Short", "A" * 100, "Unicode: 日本語"])
     @pytest.mark.asyncio
     async def test_submit_various_text(self, cog, text):
-        conn = AsyncMock(execute=AsyncMock())
+        conn = AsyncMock(
+            fetchrow=AsyncMock(return_value={"id": "abc12345-0000-0000-0000-000000000000"})
+        )
         cog.bot.db_pool.acquire.return_value = _db_ctx(conn)
+        cog.bot.notifier = None
         i = _interaction()
         await cog.quote_group.submit_cmd.callback(cog.quote_group, i, text, None)
-        conn.execute.assert_awaited_once()
+        conn.fetchrow.assert_awaited_once()
 
 
 class TestQuoteRandom:

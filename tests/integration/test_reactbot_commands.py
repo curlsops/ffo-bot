@@ -57,16 +57,19 @@ async def test_reactbot_add_success():
 
 @pytest.mark.asyncio
 async def test_reactbot_add_rate_limited():
+    # Rate limit is now enforced globally in MetricsCommandTree, not in the callback.
+    # When calling the callback directly, rate limit is bypassed.
+    # This test verifies the callback works when rate limit would pass.
     bot = make_bot()
-    bot.rate_limiter.check_rate_limit = AsyncMock(return_value=(False, "slow down"))
+    bot.rate_limiter.check_rate_limit = AsyncMock(return_value=(True, ""))
     db_pool, conn = make_db_pool()
     bot.db_pool = db_pool
     commands = ReactBotCommands(bot)
     interaction = make_interaction()
     group = commands.reactbot_group
     await group.add_cmd.callback(group, interaction, phrase=r"hello", emoji="👋")
-    conn.execute.assert_not_awaited()
-    interaction.followup.send.assert_awaited_with("slow down", ephemeral=True)
+    conn.execute.assert_awaited()
+    interaction.followup.send.assert_awaited()
 
 
 @pytest.mark.asyncio
