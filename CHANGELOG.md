@@ -1,5 +1,22 @@
 # Changelog
 
+## [2.0.0](https://github.com/curlsops/ffo-bot/compare/v1.7.0...v2.0.0) (2026-03-07)
+
+
+### ⚠ BREAKING CHANGES
+
+* **deps:** Update docker/setup-buildx-action action ( v3 ➔ v4 )
+* **deps:** Update docker/metadata-action action ( v5 ➔ v6 )
+* **deps:** Update docker/login-action action ( v3 ➔ v4 )
+* **deps:** Update docker/build-push-action action ( v6 ➔ v7 )
+
+### Features
+
+* **deps:** Update docker/build-push-action action ( v6 ➔ v7 ) ([501ee49](https://github.com/curlsops/ffo-bot/commit/501ee49f24c7fd2fda5d47c28ac5fde8e31b0bba))
+* **deps:** Update docker/login-action action ( v3 ➔ v4 ) ([98b1da4](https://github.com/curlsops/ffo-bot/commit/98b1da4537fdc8244401c79ce44ce4dc821aefee))
+* **deps:** Update docker/metadata-action action ( v5 ➔ v6 ) ([d6dfb4b](https://github.com/curlsops/ffo-bot/commit/d6dfb4bd127284dfee9ad6646529876c1457423f))
+* **deps:** Update docker/setup-buildx-action action ( v3 ➔ v4 ) ([72390a1](https://github.com/curlsops/ffo-bot/commit/72390a1d4535fefc0b2f828c7cde6f403f3c254e))
+
 ## [1.7.0](https://github.com/curlsops/ffo-bot/compare/v1.6.0...v1.7.0) (2026-03-06)
 
 
