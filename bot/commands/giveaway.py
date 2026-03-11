@@ -312,8 +312,7 @@ class GiveawayGroup(app_commands.Group):
                     "All entrants were winners. No one left to reroll.",
                 )
                 return
-            pool = non_winners + [e for e in entries if e["user_id"] in winners_to_remove]
-            new_winners = self.cog._select_winners(pool, reroll_count)
+            new_winners = self.cog._select_winners(non_winners, reroll_count)
             final_winners = (old_winner_ids - winners_to_remove) | set(new_winners)
 
             async with self.cog.bot.db_pool.acquire() as conn:
