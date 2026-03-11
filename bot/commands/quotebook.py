@@ -12,6 +12,7 @@ from bot.utils.autocomplete import cached_autocomplete
 from bot.utils.discord_helpers import get_or_fetch_channel
 from bot.utils.pagination import ListPaginatedView
 from bot.utils.quotebook_channel import get_quotebook_channel_id, set_quotebook_channel
+from config.constants import Constants
 
 logger = logging.getLogger(__name__)
 
@@ -135,7 +136,7 @@ async def _quote_id_autocomplete(
         CACHE_QUOTE_AUTOCOMPLETE,
         _fetch_quote_ids,
         _quote_ids_to_choices,
-        ttl=60,
+        ttl=Constants.CACHE_TTL,
         log_prefix="Quote ID",
     )
 
@@ -149,7 +150,7 @@ async def _quote_id_approve_autocomplete(
         CACHE_QUOTE_APPROVE_AUTOCOMPLETE,
         _fetch_quote_approve_ids,
         _quote_approve_to_choices,
-        ttl=60,
+        ttl=Constants.CACHE_TTL,
         log_prefix="Quote approve",
     )
 
@@ -447,7 +448,7 @@ class QuoteGroup(app_commands.Group):
                     )
                 rows = [dict(r) for r in rows]
                 if self.cog.bot.cache:
-                    self.cog.bot.cache.set(cache_key, rows, ttl=60)
+                    self.cog.bot.cache.set(cache_key, rows, ttl=Constants.CACHE_TTL)
 
             if not rows:
                 await send_error(interaction, "No quotes in the book yet.")

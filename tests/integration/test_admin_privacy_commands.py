@@ -47,7 +47,8 @@ class TestAdminPing:
     @pytest.mark.asyncio
     async def test_sends_latency(self):
         bot = MagicMock(latency=0.123)
-        await AdminCommands(bot).ping.callback(AdminCommands(bot), _i())
+        cog = AdminCommands(bot)
+        await cog.ping.callback(cog, _i())
 
     @pytest.mark.asyncio
     async def test_ping_latency_zero(self):
@@ -148,21 +149,13 @@ class TestRequireAdmin:
 
 class TestPrivacy:
     @pytest.mark.asyncio
-    async def test_optout(self):
+    @pytest.mark.parametrize("cmd", ["optout", "optin"])
+    async def test_optout_optin(self, cmd):
         bot = MagicMock()
         bot.db_pool.acquire = _pool
         i = _i()
         cog = PrivacyCommands(bot)
-        await cog.privacy_group.optout.callback(cog.privacy_group, i)
-        i.followup.send.assert_awaited()
-
-    @pytest.mark.asyncio
-    async def test_optin(self):
-        bot = MagicMock()
-        bot.db_pool.acquire = _pool
-        i = _i()
-        cog = PrivacyCommands(bot)
-        await cog.privacy_group.optin.callback(cog.privacy_group, i)
+        await getattr(cog.privacy_group, cmd).callback(cog.privacy_group, i)
         i.followup.send.assert_awaited()
 
     @pytest.mark.asyncio

@@ -7,7 +7,7 @@ import pytest
 from bot.utils.server_roles import set_server_role
 from config.constants import Role
 
-_BOT = Path(__file__).parents[2] / "bot" / "commands"
+_BOT = Path(__file__).resolve().parents[2] / "bot" / "commands"
 
 
 def test_permissions_add_uses_select_then_insert():
@@ -22,16 +22,19 @@ def test_reaction_roles_add_uses_select_then_insert():
     assert "fetchval" in text or "SELECT" in text
 
 
-@pytest.mark.asyncio
-async def test_set_server_role_upserts_when_server_missing():
-    conn = MagicMock()
-    conn.execute = AsyncMock()
-
+def _pool(conn):
     @asynccontextmanager
     async def acquire():
         yield conn
 
-    pool = MagicMock(acquire=acquire)
+    return MagicMock(acquire=acquire)
+
+
+@pytest.mark.asyncio
+async def test_set_server_role_upserts_when_server_missing():
+    conn = MagicMock()
+    conn.execute = AsyncMock()
+    pool = _pool(conn)
     assert await set_server_role(pool, 123, Role.MODERATOR, 999, server_name="Test") is True
     call_str = str(conn.execute.call_args)
     assert "INSERT" in call_str and "ON CONFLICT" in call_str

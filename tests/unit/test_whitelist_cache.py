@@ -73,7 +73,7 @@ async def test_get_cached_usernames_cache_miss_sets_cache():
     cache.get.return_value = None
     result = await get_cached_usernames(pool, 123, cache=cache)
     assert result == ["Alice"]
-    cache.set.assert_called_once_with("whitelist_usernames:123", ["Alice"], ttl=300)
+    cache.set.assert_called_once_with("whitelist_usernames:123", ["Alice"], ttl=86400)
 
 
 @pytest.mark.asyncio
@@ -163,7 +163,7 @@ async def test_sync_from_rcon_success():
 
     result = await sync_from_rcon(pool, 123, rcon)
     assert result is True
-    assert conn.execute.call_count >= 2  # DELETE + 2 INSERTs
+    assert conn.execute.call_count >= 2
 
 
 @pytest.mark.asyncio
@@ -187,7 +187,7 @@ async def test_sync_from_rcon_empty_list():
 
     result = await sync_from_rcon(pool, 123, rcon)
     assert result is True
-    conn.execute.assert_called_once()  # DELETE only
+    conn.execute.assert_called_once()
 
 
 @pytest.mark.asyncio
@@ -228,7 +228,6 @@ async def test_sync_from_rcon_with_fetch_uuid():
 
     result = await sync_from_rcon(pool, 123, rcon, fetch_uuid=fetch_uuid)
     assert result is True
-    # DELETE + 1 INSERT with UUID
     assert conn.execute.call_count >= 2
     insert_calls = [c for c in conn.execute.call_args_list if "INSERT" in str(c)]
     assert any("069a79f4-44e9-4726-a5be-fca90e38aaf5" in str(c) for c in insert_calls)

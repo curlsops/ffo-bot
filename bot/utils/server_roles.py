@@ -4,7 +4,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from bot.utils.config_repair import repair_servers_config
-from config.constants import Role
+from config.constants import Constants, Role
 
 if TYPE_CHECKING:
     from bot.cache.memory import InMemoryCache
@@ -12,7 +12,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 CACHE_KEY = "server_roles:{server_id}"
-CACHE_TTL = 300
 
 ROLE_KEYS = {
     Role.SUPER_ADMIN: "super_admin_role_id",
@@ -49,7 +48,7 @@ async def get_server_role_ids(
         repaired = repair_servers_config(cfg) if cfg is not None else None
         result = _extract_role_ids_from_config(repaired) if repaired else {}
         if cache:
-            cache.set(cache_key, result, ttl=CACHE_TTL)
+            cache.set(cache_key, result, ttl=Constants.CACHE_TTL)
         return result
     except Exception as e:
         logger.warning("Failed to get server role config: %s", e)

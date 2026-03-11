@@ -7,18 +7,23 @@ from bot.processors.phrase_matcher import PhraseMatcher
 from bot.utils.regex_validator import RegexValidationError
 
 
-@pytest.mark.asyncio
-async def test_phrase_matcher_simple_match(mock_cache):
-    mock_conn = AsyncMock()
-    mock_conn.fetch.return_value = [{"id": "uuid-1", "phrase": r"hello", "emoji": "👋"}]
+def _pool(fetch):
+    conn = AsyncMock()
+    conn.fetch.return_value = fetch
 
     @asynccontextmanager
     async def acquire():
-        yield mock_conn
+        yield conn
 
-    mock_db_pool = MagicMock()
-    mock_db_pool.acquire = acquire
-    matcher = PhraseMatcher(mock_db_pool, mock_cache)
+    pool = MagicMock()
+    pool.acquire = acquire
+    return pool
+
+
+@pytest.mark.asyncio
+async def test_phrase_matcher_simple_match(mock_cache):
+    pool = _pool([{"id": "uuid-1", "phrase": r"hello", "emoji": "👋"}])
+    matcher = PhraseMatcher(pool, mock_cache)
     await matcher.load_patterns(123456789)
     matches = await matcher.match_phrases("Hello world!", 123456789)
     assert len(matches) == 1
@@ -27,16 +32,8 @@ async def test_phrase_matcher_simple_match(mock_cache):
 
 @pytest.mark.asyncio
 async def test_phrase_matcher_case_insensitive(mock_cache):
-    mock_conn = AsyncMock()
-    mock_conn.fetch.return_value = [{"id": "uuid-1", "phrase": r"test", "emoji": "✅"}]
-
-    @asynccontextmanager
-    async def acquire():
-        yield mock_conn
-
-    mock_db_pool = MagicMock()
-    mock_db_pool.acquire = acquire
-    matcher = PhraseMatcher(mock_db_pool, mock_cache)
+    pool = _pool([{"id": "uuid-1", "phrase": r"test", "emoji": "✅"}])
+    matcher = PhraseMatcher(pool, mock_cache)
     await matcher.load_patterns(123456789)
 
     for message in ["TEST", "Test", "test", "TeSt"]:

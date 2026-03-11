@@ -1,11 +1,62 @@
 import importlib.metadata
+import logging
 import os
 
 import discord
 from discord import app_commands
 from discord.ext import commands
 
-from bot.auth.command_helpers import require_admin, send_error
+from bot.auth.command_helpers import require_admin, require_super_admin, send_error
+
+logger = logging.getLogger(__name__)
+
+
+class RegisterCommandsView(discord.ui.View):
+    def __init__(self, bot: commands.Bot, guild_id: int):
+        super().__init__(timeout=120)
+        self.bot = bot
+        self.guild_id = guild_id
+
+    @discord.ui.button(label="Register (this server)", style=discord.ButtonStyle.primary, row=0)
+    async def register_guild(self, i: discord.Interaction, _: discord.ui.Button):
+        if i.guild_id != self.guild_id:
+            await i.response.send_message("Use in the same server.", ephemeral=True)
+            return
+        await i.response.defer(ephemeral=True)
+        try:
+            self.bot.tree.copy_global_to(guild=i.guild)
+            synced = await self.bot.tree.sync(guild=i.guild)
+            await i.followup.send(
+                f"Registered {len(synced)} commands for this server.", ephemeral=True
+            )
+        except Exception as e:
+            logger.exception("Command registration failed: %s", e)
+            await i.followup.send(f"Failed: {e}", ephemeral=True)
+
+    @discord.ui.button(label="Register (global)", style=discord.ButtonStyle.secondary, row=0)
+    async def register_global(self, i: discord.Interaction, _: discord.ui.Button):
+        await i.response.defer(ephemeral=True)
+        try:
+            synced = await self.bot.tree.sync()
+            await i.followup.send(
+                f"Registered {len(synced)} commands globally (may take up to 1h).", ephemeral=True
+            )
+        except Exception as e:
+            logger.exception("Global command registration failed: %s", e)
+            await i.followup.send(f"Failed: {e}", ephemeral=True)
+
+    @discord.ui.button(label="Clear (this server)", style=discord.ButtonStyle.danger, row=1)
+    async def clear_guild(self, i: discord.Interaction, _: discord.ui.Button):
+        if i.guild_id != self.guild_id:
+            await i.response.send_message("Use in the same server.", ephemeral=True)
+            return
+        await i.response.defer(ephemeral=True)
+        try:
+            await self.bot.tree.clear_commands(guild=i.guild)
+            await i.followup.send("Cleared guild commands.", ephemeral=True)
+        except Exception as e:
+            logger.exception("Command clear failed: %s", e)
+            await i.followup.send(f"Failed: {e}", ephemeral=True)
 
 
 @app_commands.guild_only()
@@ -88,6 +139,23 @@ class AdminGroup(app_commands.Group):
             await interaction.followup.send(f"Notifications will be sent to {channel.mention}")
         else:
             await interaction.followup.send("Notifications disabled.")
+
+    @app_commands.command(
+        name="register_commands",
+        description="Post buttons to register or clear slash commands (Super Admin only)",
+    )
+    async def register_commands(self, interaction: discord.Interaction):
+        await interaction.response.defer(ephemeral=True)
+        if not await require_super_admin(interaction, "admin register_commands", self.cog.bot):
+            return
+        if not interaction.guild_id:
+            await send_error(interaction, "Server only.")
+            return
+        await interaction.followup.send(
+            "Register or clear slash commands:",
+            view=RegisterCommandsView(self.cog.bot, interaction.guild_id),
+            ephemeral=True,
+        )
 
 
 class AdminCommands(commands.Cog):

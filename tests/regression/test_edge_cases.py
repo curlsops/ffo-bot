@@ -33,10 +33,10 @@ class TestConfigEdgeCases:
     @pytest.mark.parametrize("row", [None, {"config": None}, {"config": {}}])
     async def test_channel_getters_handle_missing(self, row):
         pool = _make_pool(row)
-        w = await get_whitelist_channel_id(pool, 1)
-        q = await get_quotebook_channel_id(pool, 1)
-        assert w is None or isinstance(w, int)
-        assert q is None or isinstance(q, int)
+        whitelist_id = await get_whitelist_channel_id(pool, 1)
+        quotebook_id = await get_quotebook_channel_id(pool, 1)
+        assert whitelist_id is None or isinstance(whitelist_id, int)
+        assert quotebook_id is None or isinstance(quotebook_id, int)
 
 
 class TestValidationEdgeCases:

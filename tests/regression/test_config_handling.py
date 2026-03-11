@@ -52,11 +52,7 @@ async def test_get_quotebook_channel_id_repairs_corrupted_config():
 async def test_get_notify_channel_id_repairs_corrupted_config():
     bot = MagicMock()
     bot.cache = None
-    conn = MagicMock()
-    conn.fetchrow = AsyncMock(return_value={"config": [{}, '{"notify_channel_id": 999}']})
-    ctx = MagicMock()
-    ctx.__aenter__ = AsyncMock(return_value=conn)
-    ctx.__aexit__ = AsyncMock(return_value=None)
-    bot.db_pool = MagicMock(acquire=MagicMock(return_value=ctx))
+    row = {"config": [{}, '{"notify_channel_id": 999}']}
+    bot.db_pool = _make_pool(row)
     result = await AdminNotifier(bot).get_notify_channel_id(123)
     assert result == 999

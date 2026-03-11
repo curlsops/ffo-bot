@@ -5,6 +5,7 @@ from dataclasses import dataclass
 
 from bot.utils.db import TRANSIENT_DB_ERRORS
 from bot.utils.regex_validator import RegexValidationError, RegexValidator
+from config.constants import Constants
 
 logger = logging.getLogger(__name__)
 
@@ -62,7 +63,7 @@ class PhraseMatcher:
                 logger.error("Invalid regex %s: %s", row["phrase"], e)
 
         self._patterns_by_server[server_id] = patterns
-        self.cache.set(cache_key, patterns, ttl=300)
+        self.cache.set(cache_key, patterns, ttl=Constants.PHRASE_PATTERN_CACHE_TTL)
 
     async def match_phrases(self, message_content: str, server_id: int) -> list[tuple[str, str]]:
         if server_id not in self._patterns_by_server:

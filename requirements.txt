@@ -20,11 +20,14 @@ python-json-logger>=4.0.0,<4.1.0
 
 # Configuration
 python-dotenv>=1.0.0,<2.0.0
-pydantic>=2.5.3,<3.0.0
-pydantic-settings>=2.1.0,<3.0.0
+pydantic>=2.12.5,<3.0.0
+pydantic-settings>=2.13.1,<3.0.0
 
 # Minecraft RCON (optional, for whitelist feature)
 mcrcon>=0.7.0,<0.8.0
+
+# Anonymous post (optional, when feature_anonymous_post enabled)
+spacy>=3.7.0,<4.0.0
 
 # Music (optional, when feature_music enabled)
 # Using fork with channelId support for Lavalink 4.2+ DAVE/E2EE

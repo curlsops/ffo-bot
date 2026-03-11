@@ -13,6 +13,7 @@ def mock_settings():
     s.db_pool_min_size = 1
     s.db_pool_max_size = 5
     s.cache_max_size = 100
+    s.cache_max_memory_mb = 0.0
     s.cache_default_ttl = 60
     s.feature_media_download = False
     s.feature_quotebook = False
@@ -21,6 +22,8 @@ def mock_settings():
     s.feature_faq = False
     s.feature_music = False
     s.health_check_port = 8080
+    s.interactions_endpoint_enabled = False
+    s.feature_anonymous_post = False
     s.rate_limit_user_capacity = 10
     s.rate_limit_server_capacity = 100
     s.shutdown_timeout_seconds = 5
@@ -53,14 +56,14 @@ class TestMetricsCommandTree:
         tree = bot.tree
         mock_cmd = MagicMock(qualified_name="test")
 
-        interaction = MagicMock()
-        interaction.data = {"type": 1, "name": "test", "options": []}
-        interaction.guild_id = 12345
-        interaction.command_failed = False
+        i = MagicMock()
+        i.data = {"type": 1, "name": "test", "options": []}
+        i.guild_id = 12345
+        i.command_failed = False
 
         with patch.object(tree, "_get_app_command_options", return_value=(mock_cmd, [])):
             with patch("bot.client.app_commands.CommandTree._call", new_callable=AsyncMock):
-                await tree._call(interaction)
+                await tree._call(i)
 
         bot.metrics.commands_executed.labels.assert_called_once_with(
             command_name="test", server_id="12345", status="success"
@@ -75,14 +78,14 @@ class TestMetricsCommandTree:
         tree = bot.tree
         mock_cmd = MagicMock(qualified_name="failing_cmd")
 
-        interaction = MagicMock()
-        interaction.data = {"type": 1, "name": "failing_cmd", "options": []}
-        interaction.guild_id = 999
-        interaction.command_failed = True
+        i = MagicMock()
+        i.data = {"type": 1, "name": "failing_cmd", "options": []}
+        i.guild_id = 999
+        i.command_failed = True
 
         with patch.object(tree, "_get_app_command_options", return_value=(mock_cmd, [])):
             with patch("bot.client.app_commands.CommandTree._call", new_callable=AsyncMock):
-                await tree._call(interaction)
+                await tree._call(i)
 
         bot.metrics.commands_executed.labels.assert_called_once_with(
             command_name="failing_cmd", server_id="999", status="error"
@@ -94,14 +97,14 @@ class TestMetricsCommandTree:
         tree = bot.tree
 
         mock_cmd = MagicMock(qualified_name="faq_list")
-        interaction = MagicMock()
-        interaction.data = {"type": 1, "options": []}
-        interaction.guild_id = 1
-        interaction.command_failed = False
+        i = MagicMock()
+        i.data = {"type": 1, "options": []}
+        i.guild_id = 1
+        i.command_failed = False
 
         with patch.object(tree, "_get_app_command_options", return_value=(mock_cmd, [])):
             with patch("bot.client.app_commands.CommandTree._call", new_callable=AsyncMock):
-                await tree._call(interaction)
+                await tree._call(i)
 
         bot.metrics.commands_executed.labels.assert_called_once_with(
             command_name="faq_list", server_id="1", status="success"
@@ -113,13 +116,13 @@ class TestMetricsCommandTree:
         bot.metrics = MagicMock()
         tree = bot.tree
 
-        interaction = MagicMock()
-        interaction.data = {"type": 2, "name": "Copy ID"}
-        interaction.guild_id = 1
-        interaction.command_failed = False
+        i = MagicMock()
+        i.data = {"type": 2, "name": "Copy ID"}
+        i.guild_id = 1
+        i.command_failed = False
 
         with patch("bot.client.app_commands.CommandTree._call", new_callable=AsyncMock):
-            await tree._call(interaction)
+            await tree._call(i)
 
         bot.metrics.commands_executed.labels.assert_called_once_with(
             command_name="Copy ID", server_id="1", status="success"
@@ -130,12 +133,12 @@ class TestMetricsCommandTree:
         bot.metrics = None
         tree = bot.tree
 
-        interaction = MagicMock()
-        interaction.data = {"type": 2, "name": "Copy ID"}
-        interaction.guild_id = None
+        i = MagicMock()
+        i.data = {"type": 2, "name": "Copy ID"}
+        i.guild_id = None
 
         with patch("bot.client.app_commands.CommandTree._call", new_callable=AsyncMock):
-            await tree._call(interaction)
+            await tree._call(i)
 
     @pytest.mark.asyncio
     async def test_call_rate_limited_returns_early(self, bot):
@@ -145,13 +148,13 @@ class TestMetricsCommandTree:
         bot.settings.feature_notify_rate_limit = False
         tree = bot.tree
 
-        interaction = MagicMock()
-        interaction.data = {"type": 1, "name": "test", "options": []}
-        interaction.guild_id = 123
-        interaction.user = MagicMock(id=456)
-        interaction.response.is_done.return_value = False
-        interaction.response.send_message = AsyncMock()
-        interaction.followup.send = AsyncMock()
+        i = MagicMock()
+        i.data = {"type": 1, "name": "test", "options": []}
+        i.guild_id = 123
+        i.user = MagicMock(id=456)
+        i.response.is_done.return_value = False
+        i.response.send_message = AsyncMock()
+        i.followup.send = AsyncMock()
 
         with patch.object(
             tree, "_get_app_command_options", return_value=(MagicMock(qualified_name="test"), [])
@@ -159,11 +162,11 @@ class TestMetricsCommandTree:
             with patch(
                 "bot.client.app_commands.CommandTree._call", new_callable=AsyncMock
             ) as mock_super:
-                await tree._call(interaction)
+                await tree._call(i)
 
         mock_super.assert_not_called()
-        interaction.response.send_message.assert_awaited_once_with("Rate limited", ephemeral=True)
-        assert interaction.command_failed is True
+        i.response.send_message.assert_awaited_once_with("Rate limited", ephemeral=True)
+        assert i.command_failed is True
 
     @pytest.mark.asyncio
     async def test_call_rate_limited_with_notify_uses_followup_when_done(self, bot):
@@ -174,21 +177,21 @@ class TestMetricsCommandTree:
         bot.notifier = MagicMock(notify_rate_limit_hit=AsyncMock())
         tree = bot.tree
 
-        interaction = MagicMock()
-        interaction.data = {"type": 1, "name": "cmd", "options": []}
-        interaction.guild_id = 1
-        interaction.user = MagicMock(id=2)
-        interaction.response.is_done.return_value = True
-        interaction.followup.send = AsyncMock()
+        i = MagicMock()
+        i.data = {"type": 1, "name": "cmd", "options": []}
+        i.guild_id = 1
+        i.user = MagicMock(id=2)
+        i.response.is_done.return_value = True
+        i.followup.send = AsyncMock()
 
         with patch.object(
             tree, "_get_app_command_options", return_value=(MagicMock(qualified_name="cmd"), [])
         ):
             with patch("bot.client.app_commands.CommandTree._call", new_callable=AsyncMock):
-                await tree._call(interaction)
+                await tree._call(i)
 
         bot.notifier.notify_rate_limit_hit.assert_awaited_once_with(1, 2, "Slow down", "cmd")
-        interaction.followup.send.assert_awaited_once_with("Slow down", ephemeral=True)
+        i.followup.send.assert_awaited_once_with("Slow down", ephemeral=True)
 
 
 class TestFFOBotInit:
@@ -443,6 +446,20 @@ class TestFFOBotPersistentViews:
                 assert mock_add.call_count == 2  # CloseGiveawayThreadView + GiveawayView
                 giveaways_calls = [c for c in mock_add.call_args_list if len(c.kwargs) > 0]
                 assert giveaways_calls[0].kwargs["message_id"] == mid
+
+    @pytest.mark.asyncio
+    async def test_register_persistent_views_anonymous_post(self, bot):
+        bot.settings.feature_anonymous_post = True
+        bot.settings.feature_giveaways = False
+        conn = MagicMock()
+        conn.fetch = AsyncMock(return_value=[{"channel_id": 1, "message_id": 99}])
+        bot.db_pool = make_db_ctx(conn)
+        with patch("bot.commands.anonymous.AnonymousPostButtonView"):
+            with patch.object(bot, "add_view") as mock_add:
+                await bot._register_persistent_views()
+                mock_add.assert_called_once()
+                call = mock_add.call_args_list[0]
+                assert call.kwargs.get("message_id") == 99
 
     @pytest.mark.asyncio
     async def test_register_persistent_views_disabled(self, bot):
@@ -851,7 +868,9 @@ class TestFFOBotHealthServer:
 
             await bot._start_health_server()
 
-            mock_cls.assert_called_once_with(bot, port=mock_settings.health_check_port)
+            mock_cls.assert_called_once_with(
+                bot, port=mock_settings.health_check_port, public_key=None
+            )
             mock_server.start.assert_called_once()
             assert bot._health_server == mock_server.runner
 

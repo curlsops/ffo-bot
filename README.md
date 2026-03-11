@@ -59,7 +59,14 @@ https://discord.com/api/oauth2/authorize?client_id=YOUR_CLIENT_ID&permissions=27
 | 📁 Media | Optional archival (disabled by default) |
 | 🎵 Music | Lavalink playback: `/music join`, `play`, `leave`, `pause`, `resume`, `skip`, `queue` |
 | 🔐 Permissions | Super admin, admin, moderator roles |
+| 🙈 Anonymous Post | Button + modal for anonymous messages; anonymizes names |
 | 📊 Metrics | `/metrics` on port 8080 (Prometheus) |
+| ❓ Help | `/help` lists all slash commands |
+| 🔄 Command registration | `/admin register_commands` – buttons to register/clear commands |
+| ⏱️ Per-command cooldowns | `with_cooldown(rate, per)` decorator |
+| 📥 Collector | `wait_for_message`, `wait_for_reaction` utilities |
+| ✏️ Edit tracking | Updates bot response when user edits prefix command |
+| 🌐 Interactions endpoint | Optional HTTP POST `/interactions` for Discord Endpoint URL |
 
 ---
 
@@ -79,6 +86,8 @@ https://discord.com/api/oauth2/authorize?client_id=YOUR_CLIENT_ID&permissions=27
 | `FEATURE_FAQ_SUBMISSIONS` | true | Allow users to submit FAQ questions |
 | `FEATURE_NOTIFY_MODERATION` | true | Notify on kicks, bans, nickname changes |
 | `FEATURE_NOTIFY_RATE_LIMIT` | false | Notify when users hit rate limit |
+| `FEATURE_ANONYMOUS_POST` | false | Enable anonymous post button with modal and anonymization (uses spaCy NER when available) |
+| `INTERACTIONS_ENDPOINT_ENABLED` | false | Enable POST /interactions for Discord Interactions Endpoint URL (PING only) |
 | `FEATURE_MUSIC` | false | Enable Lavalink music commands |
 | `LAVALINK_HOST` | 127.0.0.1 | Lavalink server host |
 | `LAVALINK_PORT` | 2333 | Lavalink server port |
@@ -86,7 +95,7 @@ https://discord.com/api/oauth2/authorize?client_id=YOUR_CLIENT_ID&permissions=27
 
 ### Lavalink (optional, when FEATURE_MUSIC enabled)
 
-Run a [Lavalink](https://github.com/lavalink-devs/Lavalink) server. The bot uses [Mafic](https://github.com/ooliver1/mafic) to connect. Supports YouTube URLs and search; add LavaSrc for Spotify/Tidal.
+Run a [Lavalink](https://github.com/lavalink-devs/Lavalink) server. The bot uses [Mafic](https://github.com/ooliver1/mafic) to connect. Supports YouTube URLs and search; add LavaSrc for Spotify/Tidal. Music play accepts Tidal track, playlist, and mix URLs.
 
 ### Minecraft RCON (optional)
 

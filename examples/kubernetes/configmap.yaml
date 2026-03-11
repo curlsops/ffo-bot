@@ -20,7 +20,7 @@ data:
 
   # Cache settings
   CACHE_MAX_SIZE: "10000"
-  CACHE_DEFAULT_TTL: "300"
+  CACHE_DEFAULT_TTL: "86400"
 
   # Database pool
   DB_POOL_MIN_SIZE: "2"

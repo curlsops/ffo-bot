@@ -4,6 +4,8 @@ from collections.abc import Awaitable, Callable
 import discord
 from discord import app_commands
 
+from config.constants import Constants
+
 logger = logging.getLogger(__name__)
 
 MAX_CHOICES = 25
@@ -15,7 +17,7 @@ async def cached_autocomplete(
     cache_key_template: str,
     fetch_rows: Callable[[object, int], Awaitable[list]],
     to_choices: Callable[[list[dict], str], list[app_commands.Choice[str]]],
-    ttl: int = 300,
+    ttl: int = Constants.CACHE_TTL,
     log_prefix: str = "Autocomplete",
 ) -> list[app_commands.Choice[str]]:
     if not interaction.guild_id:

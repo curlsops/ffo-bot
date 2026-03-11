@@ -69,7 +69,7 @@ class TestSettingsDefaults:
                 assert settings.db_pool_min_size == 5
                 assert settings.db_pool_max_size == 20
                 assert settings.cache_max_size == 10000
-                assert settings.cache_default_ttl == 300
+                assert settings.cache_default_ttl == 86400
                 assert settings.rate_limit_user_capacity == 10
                 assert settings.rate_limit_server_capacity == 100
                 assert settings.log_level == "INFO"

@@ -99,8 +99,15 @@ class FFOBot(commands.Bot):
             acquire_timeout=self.settings.db_acquire_timeout,
             metrics=self.metrics,
         )
+        max_memory_bytes = (
+            int(self.settings.cache_max_memory_mb * 1024 * 1024)
+            if self.settings.cache_max_memory_mb > 0
+            else 0
+        )
         self.cache = InMemoryCache(
-            max_size=self.settings.cache_max_size, default_ttl=self.settings.cache_default_ttl
+            max_size=self.settings.cache_max_size,
+            default_ttl=self.settings.cache_default_ttl,
+            max_memory_bytes=max_memory_bytes,
         )
 
         self.phrase_matcher = PhraseMatcher(self.db_pool, self.cache)
@@ -124,6 +131,9 @@ class FFOBot(commands.Bot):
             server_capacity=self.settings.rate_limit_server_capacity,
         )
         self.notifier = AdminNotifier(self)
+        from bot.utils.edit_tracker import EditTracker
+
+        self.edit_tracker = EditTracker()
         if self.settings.feature_minecraft_whitelist:
             from bot.services.minecraft_rcon import MinecraftRCONClient
 
@@ -142,9 +152,11 @@ class FFOBot(commands.Bot):
 
     async def _load_extensions(self):
         extensions = [
+            "bot.commands.help_cmd",
             "bot.handlers.messages",
             "bot.handlers.reactions",
             "bot.handlers.moderation",
+            "bot.handlers.edit_tracking",
             "bot.commands.admin",
             "bot.commands.permissions",
             "bot.commands.reactbot",
@@ -160,6 +172,7 @@ class FFOBot(commands.Bot):
             ("bot.commands.whitelist", self.settings.feature_minecraft_whitelist),
             ("bot.commands.faq", self.settings.feature_faq),
             ("bot.commands.music", self.settings.feature_music),
+            ("bot.commands.anonymous", self.settings.feature_anonymous_post),
         ]:
             if enabled:
                 extensions.append(ext)
@@ -171,11 +184,30 @@ class FFOBot(commands.Bot):
                 logger.error("Failed to load extension %s: %s", extension, e, exc_info=True)
 
     async def _start_health_server(self):
-        health_server = HealthCheckServer(self, port=self.settings.health_check_port)
+        public_key = (
+            self.settings.discord_public_key
+            if self.settings.interactions_endpoint_enabled
+            else None
+        )
+        health_server = HealthCheckServer(
+            self, port=self.settings.health_check_port, public_key=public_key
+        )
         await health_server.start()
         self._health_server = health_server.runner
 
     async def _register_persistent_views(self):
+        if self.settings.feature_anonymous_post:
+            from bot.commands.anonymous import AnonymousPostButtonView
+
+            async with self.db_pool.acquire() as conn:
+                rows = await conn.fetch(
+                    "SELECT channel_id, message_id FROM anonymous_post_channels"
+                )
+                for row in rows:
+                    self.add_view(
+                        AnonymousPostButtonView(row["channel_id"], self),
+                        message_id=row["message_id"],
+                    )
         if self.settings.feature_giveaways:
             from bot.commands.giveaway import GiveawayView
             from bot.tasks.giveaway_manager import CloseGiveawayThreadView

@@ -21,6 +21,11 @@ TIDAL_PLAYLIST_PATTERN = re.compile(
     r"(?:browse/)?playlist/([\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12})",
     re.IGNORECASE,
 )
+TIDAL_MIX_PATTERN = re.compile(
+    r"https?://(?:www\.)?(?:tidal\.com|listen\.tidal\.com)/"
+    r"(?:browse/)?mix/([\da-f]{8}-[\da-f]{4}-[\da-f]{4}-[\da-f]{4}-[\da-f]{12})",
+    re.IGNORECASE,
+)
 OG_TITLE_PATTERN = re.compile(
     r'<meta[^>]+property=["\']og:title["\'][^>]+content=["\']([^"\']+)["\']',
     re.IGNORECASE,
@@ -49,44 +54,65 @@ def _track_to_search_query(item: dict) -> str | None:
     return html.unescape(title.strip())[:200]
 
 
+async def _fetch_tracks_from_api(session: aiohttp.ClientSession, path: str) -> list[str] | None:
+    queries: list[str] = []
+    offset = 0
+    try:
+        while len(queries) < TIDAL_PLAYLIST_MAX_TRACKS:
+            api_url = (
+                f"{TIDAL_API_BASE}/{path}"
+                f"?countryCode=US&limit={TIDAL_PLAYLIST_PAGE_SIZE}&offset={offset}"
+            )
+            async with session.get(api_url, headers=TIDAL_API_HEADERS) as resp:
+                if resp.status != 200:
+                    return None
+                data = await resp.json()
+            items = data.get("items") or []
+            if not items:
+                break
+            for item in items:
+                q = _track_to_search_query(item)
+                if q:
+                    queries.append(q)
+                if len(queries) >= TIDAL_PLAYLIST_MAX_TRACKS:
+                    break
+            if len(items) < TIDAL_PLAYLIST_PAGE_SIZE:
+                break
+            offset += TIDAL_PLAYLIST_PAGE_SIZE
+    except aiohttp.ClientError as e:
+        logger.debug("Tidal fetch failed for %s: %s", path, e)
+        return None
+    return queries or None
+
+
 async def tidal_playlist_to_search_queries(url: str) -> list[str] | None:
     m = TIDAL_PLAYLIST_PATTERN.search(url)
     if not m:
         return None
     uuid = m.group(1)
-    queries: list[str] = []
-    offset = 0
     try:
         async with aiohttp.ClientSession(timeout=TIMEOUT) as session:
-            while len(queries) < TIDAL_PLAYLIST_MAX_TRACKS:
-                api_url = (
-                    f"{TIDAL_API_BASE}/playlists/{uuid}/tracks"
-                    f"?countryCode=US&limit={TIDAL_PLAYLIST_PAGE_SIZE}&offset={offset}"
-                )
-                async with session.get(api_url, headers=TIDAL_API_HEADERS) as resp:
-                    if resp.status != 200:
-                        return None
-                    data = await resp.json()
-                items = data.get("items") or []
-                if not items:
-                    break
-                for item in items:
-                    q = _track_to_search_query(item)
-                    if q:
-                        queries.append(q)
-                    if len(queries) >= TIDAL_PLAYLIST_MAX_TRACKS:
-                        break
-                if len(items) < TIDAL_PLAYLIST_PAGE_SIZE:
-                    break
-                offset += TIDAL_PLAYLIST_PAGE_SIZE
+            return await _fetch_tracks_from_api(session, f"playlists/{uuid}/tracks")
     except aiohttp.ClientError as e:
         logger.debug("Tidal playlist fetch failed for %s: %s", url, e)
         return None
-    return queries or None
+
+
+async def tidal_mix_to_search_queries(url: str) -> list[str] | None:
+    m = TIDAL_MIX_PATTERN.search(url)
+    if not m:
+        return None
+    uuid = m.group(1)
+    try:
+        async with aiohttp.ClientSession(timeout=TIMEOUT) as session:
+            return await _fetch_tracks_from_api(session, f"mixes/{uuid}/tracks")
+    except aiohttp.ClientError as e:
+        logger.debug("Tidal mix fetch failed for %s: %s", url, e)
+        return None
 
 
 async def tidal_url_to_search_query(url: str) -> str | None:
-    if TIDAL_PLAYLIST_PATTERN.search(url):
+    if TIDAL_PLAYLIST_PATTERN.search(url) or TIDAL_MIX_PATTERN.search(url):
         return None
     if not TIDAL_TRACK_PATTERN.search(url):
         return None

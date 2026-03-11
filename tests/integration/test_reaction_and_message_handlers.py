@@ -238,21 +238,21 @@ async def test_message_handler_processes_phrase_match():
     bot.media_downloader = None
 
     handler = MessageHandler(bot)
-    message = MagicMock()
-    message.author.bot = False
-    message.author.id = 42
-    message.id = 100
-    message.content = "test message"
-    message.guild.id = 1
-    message.channel.id = 2
-    message.attachments = []
-    message.add_reaction = AsyncMock()
+    msg = MagicMock()
+    msg.author.bot = False
+    msg.author.id = 42
+    msg.id = 100
+    msg.content = "test message"
+    msg.guild.id = 1
+    msg.channel.id = 2
+    msg.attachments = []
+    msg.add_reaction = AsyncMock()
 
-    await handler.on_message(message)
+    await handler.on_message(msg)
 
     metrics.messages_processed.labels.assert_called_once()
     metrics.phrase_matches.labels.assert_called_once()
-    message.add_reaction.assert_awaited()
+    msg.add_reaction.assert_awaited()
     assert conn.execute.await_count == 2
 
 
@@ -443,17 +443,17 @@ async def test_message_handler_phrase_match_log_failure_still_reacts(caplog):
     bot.media_downloader = None
     bot.voice_transcriber = None
     handler = MessageHandler(bot)
-    message = MagicMock()
-    message.author.bot = False
-    message.author.id = 42
-    message.id = 100
-    message.content = "test"
-    message.guild.id = 1
-    message.channel.id = 2
-    message.attachments = []
-    message.add_reaction = AsyncMock()
-    await handler.on_message(message)
-    message.add_reaction.assert_awaited_once()
+    msg = MagicMock()
+    msg.author.bot = False
+    msg.author.id = 42
+    msg.id = 100
+    msg.content = "test"
+    msg.guild.id = 1
+    msg.channel.id = 2
+    msg.attachments = []
+    msg.add_reaction = AsyncMock()
+    await handler.on_message(msg)
+    msg.add_reaction.assert_awaited_once()
     assert "Failed to log phrase match" in caplog.text
 
 
@@ -470,14 +470,14 @@ async def test_message_handler_phrase_match_http_exception_logged(caplog):
     bot.media_downloader = None
     bot.voice_transcriber = None
     handler = MessageHandler(bot)
-    message = MagicMock()
-    message.author.bot = False
-    message.author.id = 42
-    message.id = 100
-    message.content = "test"
-    message.guild.id = 1
-    message.channel.id = 2
-    message.attachments = []
-    message.add_reaction = AsyncMock(side_effect=discord.HTTPException(MagicMock(), ""))
-    await handler.on_message(message)
+    msg = MagicMock()
+    msg.author.bot = False
+    msg.author.id = 42
+    msg.id = 100
+    msg.content = "test"
+    msg.guild.id = 1
+    msg.channel.id = 2
+    msg.attachments = []
+    msg.add_reaction = AsyncMock(side_effect=discord.HTTPException(MagicMock(), ""))
+    await handler.on_message(msg)
     assert "Failed to add reaction" in caplog.text or "HTTPException" in caplog.text

@@ -7,49 +7,38 @@ from bot.auth.permissions import PermissionChecker, PermissionContext
 from config.constants import Role
 
 
-@pytest.mark.asyncio
-async def test_permission_check_super_admin(mock_cache):
-    mock_conn = AsyncMock()
-    mock_conn.fetchval.return_value = "super_admin"
+def _pool(fetchval):
+    conn = AsyncMock()
+    conn.fetchval.return_value = fetchval
 
     @asynccontextmanager
     async def acquire():
-        yield mock_conn
+        yield conn
 
-    mock_db_pool = MagicMock()
-    mock_db_pool.acquire = acquire
-    checker = PermissionChecker(mock_db_pool, mock_cache)
+    pool = MagicMock()
+    pool.acquire = acquire
+    return pool
+
+
+@pytest.mark.asyncio
+async def test_permission_check_super_admin(mock_cache):
+    pool = _pool("super_admin")
+    checker = PermissionChecker(pool, mock_cache)
     ctx = PermissionContext(server_id=123456789, user_id=987654321)
     assert await checker.check_role(ctx, Role.ADMIN) is True
 
 
 @pytest.mark.asyncio
 async def test_permission_check_insufficient(mock_cache):
-    mock_conn = AsyncMock()
-    mock_conn.fetchval.return_value = "moderator"
-
-    @asynccontextmanager
-    async def acquire():
-        yield mock_conn
-
-    mock_db_pool = MagicMock()
-    mock_db_pool.acquire = acquire
-    checker = PermissionChecker(mock_db_pool, mock_cache)
+    pool = _pool("moderator")
+    checker = PermissionChecker(pool, mock_cache)
     ctx = PermissionContext(server_id=123456789, user_id=987654321)
     assert await checker.check_role(ctx, Role.ADMIN) is False
 
 
 @pytest.mark.asyncio
 async def test_command_permission_allowed(mock_cache):
-    mock_conn = AsyncMock()
-    mock_conn.fetchval.return_value = "super_admin"
-
-    @asynccontextmanager
-    async def acquire():
-        yield mock_conn
-
-    mock_db_pool = MagicMock()
-    mock_db_pool.acquire = acquire
-    checker = PermissionChecker(mock_db_pool, mock_cache)
+    pool = _pool("super_admin")
+    checker = PermissionChecker(pool, mock_cache)
     ctx = PermissionContext(server_id=123456789, user_id=987654321, command_name="reactbot add")
     assert await checker.check_command_permission(ctx) is True

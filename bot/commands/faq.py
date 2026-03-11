@@ -7,6 +7,7 @@ from discord.ext import commands
 from bot.auth.command_helpers import require_admin, send_error
 from bot.utils.autocomplete import cached_autocomplete
 from bot.utils.pagination import EmbedPaginatedView, paginate_by_char_limit
+from config.constants import Constants
 
 logger = logging.getLogger(__name__)
 
@@ -69,7 +70,7 @@ async def _faq_topic_autocomplete(
         CACHE_FAQ_TOPICS,
         _fetch_faq_topics,
         _faq_topics_to_choices,
-        ttl=300,
+        ttl=Constants.CACHE_TTL,
         log_prefix="FAQ topic",
     )
 
@@ -110,7 +111,7 @@ class FAQGroup(app_commands.Group):
                             topic_key,
                         )
                     if row and self.cog.bot.cache:
-                        self.cog.bot.cache.set(cache_key, dict(row), ttl=300)
+                        self.cog.bot.cache.set(cache_key, dict(row), ttl=Constants.CACHE_TTL)
                 if not row:
                     await interaction.followup.send(
                         f"No FAQ entry for **{topic}**. Use `/faq list` with no topic to list.",
@@ -139,7 +140,7 @@ class FAQGroup(app_commands.Group):
                         )
                     rows = [dict(r) for r in rows]
                     if self.cog.bot.cache:
-                        self.cog.bot.cache.set(cache_key, rows, ttl=300)
+                        self.cog.bot.cache.set(cache_key, rows, ttl=Constants.CACHE_TTL)
                 if not rows:
                     await interaction.followup.send(
                         "No FAQ entries yet. Admins can add them with `/faq add`.",

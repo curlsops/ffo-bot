@@ -4,13 +4,13 @@ from config.constants import AuditAction, Constants, FileType, Role
 
 
 class TestRoleRegression:
-    @pytest.mark.parametrize("r", list(Role))
-    def test_each_role_has_hierarchy(self, r):
-        assert 1 <= r.hierarchy <= 3
+    @pytest.mark.parametrize("role", list(Role))
+    def test_each_role_has_hierarchy(self, role):
+        assert 1 <= role.hierarchy <= 3
 
-    @pytest.mark.parametrize("r", list(Role))
-    def test_role_value_snake_case(self, r):
-        assert "_" in r.value or r.value.islower()
+    @pytest.mark.parametrize("role", list(Role))
+    def test_role_value_snake_case(self, role):
+        assert "_" in role.value or role.value.islower()
 
 
 class TestConstantsRegression:

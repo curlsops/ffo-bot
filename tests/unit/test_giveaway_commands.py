@@ -1,7 +1,7 @@
 import logging
 import uuid
 from datetime import datetime, timedelta, timezone
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
 import pytest
@@ -437,6 +437,20 @@ class TestGiveawayView:
         i = _interaction()
         await view.join_button(i)
         mock_bot.cache.delete.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_join_button_success_without_cache(self, view, mock_bot):
+        mock_bot.cache = None
+        mock_bot.db_pool = _db_ctx(
+            AsyncMock(
+                fetchrow=AsyncMock(return_value=_active_giveaway(view)),
+                execute=AsyncMock(),
+                fetchval=AsyncMock(return_value=1),
+            )
+        )
+        i = _interaction()
+        await view.join_button(i)
+        assert "joined" in str(i.followup.send.call_args)
 
     @pytest.mark.asyncio
     async def test_defer_ephemeral_not_found_returns_false(self, view):
@@ -924,6 +938,42 @@ class TestGreroll:
         assert "Rerolled" in str(i.followup.send.call_args)
         executemany_args = conn.executemany.call_args[0][1]
         assert len(executemany_args) == 3
+
+    @pytest.mark.asyncio
+    async def test_greroll_excludes_previous_winners(self, cog):
+        giveaway = {
+            "id": 1,
+            "is_active": False,
+            "message_id": 123,
+            "channel_id": 2,
+            "prize": "Prize",
+            "winners_count": 2,
+            "ended_at": datetime.now(timezone.utc),
+        }
+        entries = [
+            {"user_id": 1, "entries": 1},
+            {"user_id": 2, "entries": 1},
+            {"user_id": 3, "entries": 1},
+        ]
+        old_winners = [{"user_id": 1}, {"user_id": 2}]
+        conn = AsyncMock(
+            fetchrow=AsyncMock(return_value=giveaway),
+            fetch=AsyncMock(side_effect=[entries, old_winners]),
+            execute=AsyncMock(),
+            executemany=AsyncMock(),
+        )
+        cog.bot.db_pool = _db_ctx(conn)
+        cog.bot.get_channel = MagicMock(return_value=None)
+        with patch.object(cog, "_select_winners", wraps=cog._select_winners) as mock_select:
+            i = _interaction()
+            await cog.giveaway_group.reroll_cmd.callback(
+                cog.giveaway_group, i, "123456789012345678"
+            )
+            pool, count = mock_select.call_args[0]
+            pool_user_ids = {e["user_id"] for e in pool}
+            assert 1 not in pool_user_ids
+            assert 2 not in pool_user_ids
+            assert pool_user_ids == {3}
 
     @pytest.mark.asyncio
     async def test_greroll_count_exceeds_winners(self, cog):

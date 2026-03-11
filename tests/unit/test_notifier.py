@@ -83,7 +83,7 @@ class TestGetNotifyChannelId:
         bot.db_pool.acquire.return_value = _db_ctx(conn)
         result = await notifier.get_notify_channel_id(999)
         assert result == 789
-        bot.cache.set.assert_called_once_with("notify_channel:999", 789, ttl=300)
+        bot.cache.set.assert_called_once_with("notify_channel:999", 789, ttl=86400)
 
     @pytest.mark.asyncio
     async def test_cache_miss_none_sets_sentinel(self, notifier, bot):
@@ -93,7 +93,7 @@ class TestGetNotifyChannelId:
         bot.db_pool.acquire.return_value = _db_ctx(conn)
         result = await notifier.get_notify_channel_id(999)
         assert result is None
-        bot.cache.set.assert_called_once_with("notify_channel:999", -1, ttl=300)
+        bot.cache.set.assert_called_once_with("notify_channel:999", -1, ttl=86400)
 
 
 class TestGetNotifyChannel:

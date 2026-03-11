@@ -160,7 +160,6 @@ class TestPollCommands:
 
 
 class TestPollLongFormat:
-    """Tests for auto long-format when options > 10."""
 
     @pytest.mark.asyncio
     async def test_poll_auto_long_when_11_options(self, cog):

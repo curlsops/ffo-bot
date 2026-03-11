@@ -11,6 +11,7 @@ from discord.ext import commands
 from bot.auth.command_helpers import require_admin, send_error
 from bot.utils.autocomplete import cached_autocomplete
 from bot.views.giveaway import GIVEAWAY_COLUMNS, GiveawayView, build_embed
+from config.constants import Constants
 
 logger = logging.getLogger(__name__)
 
@@ -95,7 +96,7 @@ async def _giveaway_message_id_autocomplete(
         CACHE_GIVEAWAY_MESSAGE_ID,
         _fetch_giveaway_message_ids,
         _giveaway_message_ids_to_choices,
-        ttl=60,
+        ttl=Constants.CACHE_TTL,
         log_prefix="Giveaway message",
     )
 
@@ -311,8 +312,7 @@ class GiveawayGroup(app_commands.Group):
                     "All entrants were winners. No one left to reroll.",
                 )
                 return
-            pool = non_winners + [e for e in entries if e["user_id"] in winners_to_remove]
-            new_winners = self.cog._select_winners(pool, reroll_count)
+            new_winners = self.cog._select_winners(non_winners, reroll_count)
             final_winners = (old_winner_ids - winners_to_remove) | set(new_winners)
 
             async with self.cog.bot.db_pool.acquire() as conn:

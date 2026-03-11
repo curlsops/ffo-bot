@@ -1,5 +1,3 @@
-"""Tests for giveaway parse_duration and build_embed."""
-
 from datetime import datetime, timezone
 
 import discord

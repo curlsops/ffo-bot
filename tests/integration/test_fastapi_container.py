@@ -1,4 +1,4 @@
-import os
+from pathlib import Path
 
 import httpx
 import pytest
@@ -22,29 +22,23 @@ class FastAPIContainer(DockerContainer):
 
 @pytest.fixture(scope="session")
 def fastapi_container():
-    fixture_path = os.path.join(
-        os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
-        "fixtures",
-        "fastapi_app",
-    )
-    with DockerImage(path=fixture_path, tag="ffobot-fastapi-test:latest", clean_up=False) as image:
+    fixture_path = Path(__file__).resolve().parent.parent / "fixtures" / "fastapi_app"
+    with DockerImage(
+        path=str(fixture_path), tag="ffobot-fastapi-test:latest", clean_up=False
+    ) as image:
         with FastAPIContainer(str(image), port=8000) as container:
             yield container
 
 
 @pytest.mark.integration
 @pytest.mark.xdist_group("fastapi_container")
-def test_fastapi_container_root(fastapi_container):
+@pytest.mark.parametrize(
+    "path,expected",
+    [("/", {"status": "ok"}), ("/health", {"healthy": True})],
+    ids=["root", "health"],
+)
+def test_fastapi_container(fastapi_container, path, expected):
     url = fastapi_container.get_url()
-    response = httpx.get(f"{url}/", timeout=10)
-    assert response.status_code == 200
-    assert response.json() == {"status": "ok"}
-
-
-@pytest.mark.integration
-@pytest.mark.xdist_group("fastapi_container")
-def test_fastapi_container_health(fastapi_container):
-    url = fastapi_container.get_url()
-    response = httpx.get(f"{url}/health", timeout=10)
-    assert response.status_code == 200
-    assert response.json() == {"healthy": True}
+    r = httpx.get(f"{url}{path}", timeout=10)
+    assert r.status_code == 200
+    assert r.json() == expected

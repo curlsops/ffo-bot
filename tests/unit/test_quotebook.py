@@ -35,7 +35,6 @@ def _db_ctx(conn):
 
 
 class TestParseQuotes:
-    """Test quote extraction from message content."""
 
     def _msg(self, content: str, author_name: str = "TestUser", mentions=None):
         msg = MagicMock()

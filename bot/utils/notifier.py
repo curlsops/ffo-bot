@@ -5,6 +5,7 @@ import discord
 
 from bot.utils.config_repair import repair_servers_config
 from bot.utils.discord_helpers import get_or_fetch_channel
+from config.constants import Constants
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +37,9 @@ class AdminNotifier:
         cfg = repair_servers_config(row["config"]) if row and row["config"] is not None else None
         result = int(cfg["notify_channel_id"]) if cfg and cfg.get("notify_channel_id") else None
         if self.bot.cache:
-            self.bot.cache.set(cache_key, result if result is not None else -1, ttl=300)
+            self.bot.cache.set(
+                cache_key, result if result is not None else -1, ttl=Constants.CACHE_TTL
+            )
         return result
 
     async def get_notify_channel(self, server_id: int) -> discord.TextChannel | None:

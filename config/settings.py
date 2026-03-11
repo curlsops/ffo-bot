@@ -34,7 +34,14 @@ class Settings(BaseSettings):
     )
 
     cache_max_size: int = Field(default=10000, description="Maximum cache entries")
-    cache_default_ttl: int = Field(default=300, description="Default cache TTL in seconds")
+    cache_max_memory_mb: float = Field(
+        default=0.0,
+        description="Maximum cache memory in MB (0=unlimited). Evicts proactively when approaching limit.",
+    )
+    cache_default_ttl: int = Field(
+        default=86400,
+        description="Default cache TTL in seconds (24h). Eviction is by memory/count limits, not TTL.",
+    )
 
     rate_limit_user_capacity: int = Field(default=10, description="User rate limit capacity")
     rate_limit_server_capacity: int = Field(default=100, description="Server rate limit capacity")
@@ -43,6 +50,10 @@ class Settings(BaseSettings):
     log_format: str = Field(default="json", description="Log format (json or text)")
 
     health_check_port: int = Field(default=8080, description="Health check HTTP port")
+    interactions_endpoint_enabled: bool = Field(
+        default=False,
+        description="Enable /interactions HTTP endpoint for Discord Interactions Endpoint URL",
+    )
 
     shutdown_timeout_seconds: int = Field(default=30, description="Graceful shutdown timeout")
 
@@ -79,6 +90,10 @@ class Settings(BaseSettings):
         description="Channel ID in bot_owner_server_id for owner notifications",
     )
 
+    feature_anonymous_post: bool = Field(
+        default=False,
+        description="Enable anonymous post button with modal and anonymization",
+    )
     feature_music: bool = Field(
         default=False, description="Enable music commands (requires Lavalink)"
     )

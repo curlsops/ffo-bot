@@ -69,8 +69,7 @@ async def test_reactbot_add_various_phrases(phrase, emoji):
     bot.fetch_channel = AsyncMock(return_value=MagicMock())
     cog = ReactBotCommands(bot)
     i = make_interaction()
-    group = cog.reactbot_group
-    await group.add_cmd.callback(group, i, phrase=phrase, emoji=emoji)
+    await cog.reactbot_group.add_cmd.callback(cog.reactbot_group, i, phrase=phrase, emoji=emoji)
     conn.execute.assert_awaited()
     i.followup.send.assert_awaited()
 
@@ -92,7 +91,6 @@ async def test_reactbot_remove_success():
     bot.permission_checker.check_role = AsyncMock(return_value=True)
     cog = ReactBotCommands(bot)
     i = make_interaction()
-    group = cog.reactbot_group
-    await group.remove_cmd.callback(group, i, phrase="hello")
+    await cog.reactbot_group.remove_cmd.callback(cog.reactbot_group, i, phrase="hello")
     conn.execute.assert_awaited()
     i.followup.send.assert_awaited()
