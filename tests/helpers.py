@@ -73,7 +73,10 @@ def assert_followup_contains(i, substring, *, case_sensitive=False):
     assert substring in text, f"Expected {substring!r} in followup, got: {text[:200]}"
 
 
-async def invoke(cog, group_attr: str, cmd_name: str, i, **kwargs):
-    group = getattr(cog, group_attr)
-    cmd = getattr(group, cmd_name)
-    await cmd.callback(group, i, **kwargs)
+async def invoke(cog, group_attr: str, cmd_name: str | None, i, **kwargs):
+    cmd_or_group = getattr(cog, group_attr)
+    if cmd_name is None:
+        await cmd_or_group.callback(i, **kwargs)
+    else:
+        cmd = getattr(cmd_or_group, cmd_name)
+        await cmd.callback(cmd_or_group, i, **kwargs)

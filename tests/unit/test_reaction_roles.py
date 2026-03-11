@@ -1,9 +1,14 @@
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from discord import app_commands
 
 from bot.commands.reaction_roles import ReactionRoleCommands, _parse_message_ref
 from tests.helpers import assert_followup_contains, invoke, mock_db_pool, mock_interaction
+
+_OP_ADD = app_commands.Choice(name="Add", value="add")
+_OP_LIST = app_commands.Choice(name="List", value="list")
+_OP_REMOVE = app_commands.Choice(name="Remove", value="remove")
 
 
 class TestParseMessageRef:
@@ -39,9 +44,10 @@ class TestReactionRoleCommands:
         i = mock_interaction()
         await invoke(
             cog,
-            "reactionrole_group",
-            "add_cmd",
+            "reactionrole_cmd",
+            None,
             i,
+            operation=_OP_ADD,
             message="invalid",
             emoji="👍",
             role=MagicMock(id=123),
@@ -57,9 +63,10 @@ class TestReactionRoleCommands:
         i = mock_interaction()
         await invoke(
             cog,
-            "reactionrole_group",
-            "add_cmd",
+            "reactionrole_cmd",
+            None,
             i,
+            operation=_OP_ADD,
             message="https://discord.com/channels/1/2/123",
             emoji="👍",
             role=role,
@@ -74,9 +81,10 @@ class TestReactionRoleCommands:
         i = mock_interaction()
         await invoke(
             cog,
-            "reactionrole_group",
-            "remove_cmd",
+            "reactionrole_cmd",
+            None,
             i,
+            operation=_OP_REMOVE,
             message="https://discord.com/channels/1/2/123",
             emoji="👍",
         )
@@ -87,7 +95,7 @@ class TestReactionRoleCommands:
         pool, _ = mock_db_pool(fetch=[])
         cog.bot.db_pool = pool
         i = mock_interaction()
-        await invoke(cog, "reactionrole_group", "list_cmd", i)
+        await invoke(cog, "reactionrole_cmd", None, i, operation=_OP_LIST)
         assert_followup_contains(i, "No reaction roles")
 
     @pytest.mark.asyncio
@@ -97,14 +105,14 @@ class TestReactionRoleCommands:
         )
         cog.bot.db_pool = pool
         i = mock_interaction()
-        await invoke(cog, "reactionrole_group", "list_cmd", i)
+        await invoke(cog, "reactionrole_cmd", None, i, operation=_OP_LIST)
         assert_followup_contains(i, "Reaction Roles")
 
     @pytest.mark.asyncio
     async def test_not_admin(self, cog):
         cog.bot.permission_checker.check_role = AsyncMock(return_value=False)
         i = mock_interaction()
-        await invoke(cog, "reactionrole_group", "list_cmd", i)
+        await invoke(cog, "reactionrole_cmd", None, i, operation=_OP_LIST)
         assert_followup_contains(i, "Admin")
 
 

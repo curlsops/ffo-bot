@@ -1,9 +1,14 @@
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
+from discord import app_commands
 
 from bot.commands.reactbot import ReactBotCommands
 from tests.helpers import assert_followup_contains, invoke, mock_db_pool, mock_interaction
+
+_OP_ADD = app_commands.Choice(name="Add", value="add")
+_OP_LIST = app_commands.Choice(name="List", value="list")
+_OP_REMOVE = app_commands.Choice(name="Remove", value="remove")
 
 
 def _make_bot():
@@ -26,7 +31,7 @@ async def test_reactbot_add_success():
     bot.db_pool = db_pool
     cog = ReactBotCommands(bot)
     i = mock_interaction(guild_id=123456789, user_id=987654321)
-    await invoke(cog, "reactbot_group", "add_cmd", i, phrase=r"hello", emoji="👋")
+    await invoke(cog, "reactbot_cmd", None, i, operation=_OP_ADD, phrase=r"hello", emoji="👋")
     assert conn.execute.await_count == 1
     i.followup.send.assert_awaited()
 
@@ -39,7 +44,7 @@ async def test_reactbot_add_rate_limited():
     bot.db_pool = db_pool
     cog = ReactBotCommands(bot)
     i = mock_interaction(guild_id=123456789, user_id=987654321)
-    await invoke(cog, "reactbot_group", "add_cmd", i, phrase=r"hello", emoji="👋")
+    await invoke(cog, "reactbot_cmd", None, i, operation=_OP_ADD, phrase=r"hello", emoji="👋")
     conn.execute.assert_awaited()
     i.followup.send.assert_awaited()
 
@@ -51,7 +56,7 @@ async def test_reactbot_list_no_rows():
     bot.db_pool = db_pool
     cog = ReactBotCommands(bot)
     i = mock_interaction(guild_id=123456789, user_id=987654321)
-    await invoke(cog, "reactbot_group", "list_cmd", i)
+    await invoke(cog, "reactbot_cmd", None, i, operation=_OP_LIST)
     conn.fetch.assert_awaited()
     i.followup.send.assert_awaited()
 
@@ -67,7 +72,7 @@ async def test_reactbot_list_with_rows():
     bot.db_pool = db_pool
     cog = ReactBotCommands(bot)
     i = mock_interaction(guild_id=123456789, user_id=987654321)
-    await invoke(cog, "reactbot_group", "list_cmd", i)
+    await invoke(cog, "reactbot_cmd", None, i, operation=_OP_LIST)
     i.followup.send.assert_awaited()
 
 
@@ -78,7 +83,7 @@ async def test_reactbot_remove_success():
     bot.db_pool = db_pool
     cog = ReactBotCommands(bot)
     i = mock_interaction(guild_id=123456789, user_id=987654321)
-    await invoke(cog, "reactbot_group", "remove_cmd", i, phrase="hello")
+    await invoke(cog, "reactbot_cmd", None, i, operation=_OP_REMOVE, phrase="hello")
     conn.execute.assert_awaited()
     bot.phrase_matcher.invalidate_cache.assert_called_once_with(i.guild_id)
     i.followup.send.assert_awaited()
@@ -91,7 +96,7 @@ async def test_reactbot_remove_not_found():
     bot.db_pool = db_pool
     cog = ReactBotCommands(bot)
     i = mock_interaction(guild_id=123456789, user_id=987654321)
-    await invoke(cog, "reactbot_group", "remove_cmd", i, phrase="missing")
+    await invoke(cog, "reactbot_cmd", None, i, operation=_OP_REMOVE, phrase="missing")
     conn.execute.assert_awaited()
     i.followup.send.assert_awaited()
 
@@ -137,7 +142,7 @@ async def test_reactbot_add_various_phrases(phrase, emoji):
     bot.db_pool = db_pool
     cog = ReactBotCommands(bot)
     i = mock_interaction(guild_id=123456789, user_id=987654321)
-    await invoke(cog, "reactbot_group", "add_cmd", i, phrase=phrase, emoji=emoji)
+    await invoke(cog, "reactbot_cmd", None, i, operation=_OP_ADD, phrase=phrase, emoji=emoji)
     conn.execute.assert_awaited_once()
     i.followup.send.assert_awaited()
 
@@ -155,5 +160,5 @@ async def test_reactbot_add_validation_error():
     ):
         cog = ReactBotCommands(bot)
         i = mock_interaction(guild_id=123456789, user_id=987654321)
-        await invoke(cog, "reactbot_group", "add_cmd", i, phrase="[invalid", emoji="👍")
+        await invoke(cog, "reactbot_cmd", None, i, operation=_OP_ADD, phrase="[invalid", emoji="👍")
     assert_followup_contains(i, "❌")

@@ -2,6 +2,7 @@ from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from discord import app_commands
 
 from bot.commands.polls import PollCommands
 from bot.commands.privacy import PrivacyCommands
@@ -32,8 +33,8 @@ async def test_privacy_commands(cmd_name, mock_bot):
     mock_bot.db_pool.acquire = lambda: _pool()
     i = make_interaction()
     cog = PrivacyCommands(mock_bot)
-    cmd = getattr(cog.privacy_group, cmd_name)
-    await cmd.callback(cog.privacy_group, i)
+    op = app_commands.Choice(name=cmd_name.capitalize(), value=cmd_name)
+    await cog.privacy_cmd.callback(i, operation=op)
     i.followup.send.assert_awaited()
 
 
@@ -69,7 +70,8 @@ async def test_reactbot_add_various_phrases(phrase, emoji):
     bot.fetch_channel = AsyncMock(return_value=MagicMock())
     cog = ReactBotCommands(bot)
     i = make_interaction()
-    await cog.reactbot_group.add_cmd.callback(cog.reactbot_group, i, phrase=phrase, emoji=emoji)
+    op = app_commands.Choice(name="Add", value="add")
+    await cog.reactbot_cmd.callback(i, operation=op, phrase=phrase, emoji=emoji)
     conn.execute.assert_awaited()
     i.followup.send.assert_awaited()
 
@@ -91,6 +93,7 @@ async def test_reactbot_remove_success():
     bot.permission_checker.check_role = AsyncMock(return_value=True)
     cog = ReactBotCommands(bot)
     i = make_interaction()
-    await cog.reactbot_group.remove_cmd.callback(cog.reactbot_group, i, phrase="hello")
+    op = app_commands.Choice(name="Remove", value="remove")
+    await cog.reactbot_cmd.callback(i, operation=op, phrase="hello")
     conn.execute.assert_awaited()
     i.followup.send.assert_awaited()

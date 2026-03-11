@@ -164,6 +164,26 @@ class TestMinecraftRCONClient:
             assert "Alice" in result
 
     @pytest.mark.asyncio
+    async def test_whitelist_on_success(self, configured_settings):
+        client = MinecraftRCONClient(configured_settings)
+        with patch.object(
+            client, "_run_rcon", return_value="Whitelist is now turned on"
+        ) as mock_run:
+            result = await client.whitelist_on()
+            mock_run.assert_called_once_with("whitelist on")
+            assert result == "Whitelist is now turned on"
+
+    @pytest.mark.asyncio
+    async def test_whitelist_off_success(self, configured_settings):
+        client = MinecraftRCONClient(configured_settings)
+        with patch.object(
+            client, "_run_rcon", return_value="Whitelist is now turned off"
+        ) as mock_run:
+            result = await client.whitelist_off()
+            mock_run.assert_called_once_with("whitelist off")
+            assert result == "Whitelist is now turned off"
+
+    @pytest.mark.asyncio
     async def test_run_rcon_executes_in_executor(self, configured_settings):
         client = MinecraftRCONClient(configured_settings)
 
