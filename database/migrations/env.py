@@ -1,5 +1,6 @@
 import os
 from logging.config import fileConfig
+from urllib.parse import quote_plus
 
 from alembic import context
 from sqlalchemy import engine_from_config, pool
@@ -10,6 +11,15 @@ if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
 database_url = os.getenv("DATABASE_URL")
+if not database_url:
+    host = os.getenv("DB_HOST")
+    name = os.getenv("DB_NAME")
+    user = os.getenv("DB_USER")
+    if host and name and user is not None:
+        port = os.getenv("DB_PORT", "5432")
+        password = os.getenv("DB_PASSWORD", "")
+        pw = quote_plus(password) if password else ""
+        database_url = f"postgresql://{user}:{pw}@{host}:{port}/{name}"
 if database_url:
     config.set_main_option("sqlalchemy.url", database_url)
 

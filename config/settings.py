@@ -1,8 +1,14 @@
 from pathlib import Path
 from typing import Optional
+from urllib.parse import quote_plus
 
-from pydantic import Field, field_validator
+from pydantic import Field, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
+
+
+def _build_database_url(host: str, port: int, name: str, user: str, password: Optional[str]) -> str:
+    pw = quote_plus(password) if password else ""
+    return f"postgresql://{user}:{pw}@{host}:{port}/{name}"
 
 
 class Settings(BaseSettings):
@@ -18,7 +24,23 @@ class Settings(BaseSettings):
     discord_bot_token: str = Field(..., description="Discord bot token")
     discord_public_key: str = Field(..., description="Discord public key for webhook verification")
 
-    database_url: str = Field(..., description="PostgreSQL connection URL")
+    database_url: Optional[str] = Field(
+        default=None,
+        description="PostgreSQL connection URL (or use DB_HOST/DB_PORT/DB_NAME/DB_USER/DB_PASSWORD)",
+    )
+    db_host: Optional[str] = Field(
+        default=None, description="Database host (when not using DATABASE_URL)"
+    )
+    db_port: int = Field(default=5432, description="Database port (when not using DATABASE_URL)")
+    db_name: Optional[str] = Field(
+        default=None, description="Database name (when not using DATABASE_URL)"
+    )
+    db_user: Optional[str] = Field(
+        default=None, description="Database user (when not using DATABASE_URL)"
+    )
+    db_password: Optional[str] = Field(
+        default=None, description="Database password (when not using DATABASE_URL)"
+    )
     db_pool_min_size: int = Field(default=5, description="Minimum database pool size")
     db_pool_max_size: int = Field(default=20, description="Maximum database pool size")
     db_connection_timeout: float = Field(
@@ -75,9 +97,7 @@ class Settings(BaseSettings):
     feature_faq_submissions: bool = Field(
         default=True, description="Allow users to submit FAQ questions for admins"
     )
-    feature_notify_moderation: bool = Field(
-        default=True, description="Notify on moderation events (kicks, bans, name changes)"
-    )
+    feature_notify_moderation: bool = Field(default=True, description="Notify on moderation events")
     feature_notify_rate_limit: bool = Field(
         default=False, description="Notify when users hit rate limit (can be noisy)"
     )
@@ -108,9 +128,6 @@ class Settings(BaseSettings):
         default=None,
         description="Spotify app client secret for playlist support (SPOTIFY_CLIENT_SECRET env)",
     )
-
-    # Minecraft RCON (when feature_minecraft_whitelist is enabled)
-    # Host: K8s service DNS (e.g. minecraft.discord.svc.cluster.local) or external IP/hostname
     minecraft_rcon_host: Optional[str] = Field(
         default=None, description="Minecraft server host for RCON"
     )
@@ -118,6 +135,20 @@ class Settings(BaseSettings):
     minecraft_rcon_password: Optional[str] = Field(
         default=None, description="RCON password (from secret)"
     )
+
+    @model_validator(mode="after")
+    def resolve_database_url(self) -> "Settings":
+        if self.database_url:
+            return self
+        if self.db_host and self.db_name and self.db_user is not None:
+            url = _build_database_url(
+                self.db_host, self.db_port, self.db_name, self.db_user, self.db_password
+            )
+            object.__setattr__(self, "database_url", url)
+            return self
+        raise ValueError(
+            "Provide DATABASE_URL or all of DB_HOST, DB_NAME, DB_USER (and optionally DB_PORT, DB_PASSWORD)"
+        )
 
     @field_validator("log_level")
     @classmethod

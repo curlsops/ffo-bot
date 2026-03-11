@@ -24,7 +24,7 @@ def _parse_host_from_message(msg: discord.Message) -> int | None:
 
 
 class CloseGiveawayThreadView(discord.ui.View):
-    def __init__(self, host_id: int, timeout: float = None):
+    def __init__(self, host_id: int, timeout: float | None = None):
         super().__init__(timeout=timeout)
         self.host_id = host_id
 

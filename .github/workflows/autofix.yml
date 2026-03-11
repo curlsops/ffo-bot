@@ -3,9 +3,14 @@ name: Autofix
 on:
   workflow_call:
 
+concurrency:
+  group: autofix-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   autofix:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
 
     steps:
       - name: Generate GitHub App token
@@ -27,8 +32,8 @@ jobs:
           python-version: "3.14"
           cache: "pip"
 
-      - name: Install formatters
-        run: pip install black isort
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
 
       - name: Run formatters
         run: |

@@ -18,7 +18,7 @@
 docker pull ghcr.io/curlsops/ffo-bot:latest
 ```
 
-**Required env:** `DISCORD_BOT_TOKEN`, `DISCORD_PUBLIC_KEY`, `DATABASE_URL`
+**Required env:** `DISCORD_BOT_TOKEN`, `DISCORD_PUBLIC_KEY`, and either `DATABASE_URL` or `DB_HOST`/`DB_NAME`/`DB_USER` (optionally `DB_PORT`, `DB_PASSWORD`)
 
 ```bash
 # Docker Compose
@@ -129,7 +129,7 @@ Endpoints: `/healthz`, `/readyz`, `/metrics`
 
 ```bash
 pytest tests/ -v
-./build.sh
+./scripts/build.sh
 ```
 
 [CC BY-NC-SA 4.0](LICENSE) · [curlsops](https://github.com/curlsops)

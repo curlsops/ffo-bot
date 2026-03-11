@@ -41,7 +41,6 @@ async def test_privacy_commands(cmd_name, mock_bot):
 @pytest.mark.asyncio
 @pytest.mark.parametrize("duration", ["1h", "6h", "1d", "3d", "7d"])
 async def test_poll_durations(duration, mock_bot):
-    mock_bot.permission_checker.check_role = AsyncMock(return_value=True)
     cog = PollCommands(mock_bot)
     i = make_interaction()
     await cog.poll.callback(cog, i, "Q?", "A,B,C", duration=duration)

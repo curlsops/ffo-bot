@@ -4,6 +4,7 @@ import asyncio
 import logging
 import sys
 import time
+from typing import TYPE_CHECKING, cast
 
 import discord
 from aiohttp import web
@@ -21,11 +22,17 @@ from bot.utils.rate_limiter import RateLimiter
 from config.settings import Settings
 from database.connection import DatabasePool
 
+if TYPE_CHECKING:
+    from mafic import NodePool
+
 logger = logging.getLogger(__name__)
 
 
 class MetricsCommandTree(app_commands.CommandTree):
     async def _call(self, interaction: discord.Interaction) -> None:
+        from bot.client import FFOBot
+
+        bot = cast(FFOBot, self.client)
         start = time.perf_counter()
         command_name = "unknown"
         server_id = str(interaction.guild_id) if interaction.guild_id else "0"
@@ -37,13 +44,13 @@ class MetricsCommandTree(app_commands.CommandTree):
             else:
                 command_name = data.get("name", "unknown")
 
-            if self.client.rate_limiter and interaction.guild_id:
-                allowed, reason = await self.client.rate_limiter.check_rate_limit(
+            if bot.rate_limiter and interaction.guild_id:
+                allowed, reason = await bot.rate_limiter.check_rate_limit(
                     interaction.user.id, interaction.guild_id
                 )
                 if not allowed:
-                    if self.client.settings.feature_notify_rate_limit and self.client.notifier:
-                        await self.client.notifier.notify_rate_limit_hit(
+                    if bot.settings.feature_notify_rate_limit and bot.notifier:
+                        await bot.notifier.notify_rate_limit_hit(
                             interaction.guild_id,
                             interaction.user.id,
                             reason,
@@ -55,14 +62,14 @@ class MetricsCommandTree(app_commands.CommandTree):
 
             await super()._call(interaction)
         finally:
-            if self.client.metrics:
+            if bot.metrics:
                 status = "error" if getattr(interaction, "command_failed", False) else "success"
-                self.client.metrics.commands_executed.labels(
+                bot.metrics.commands_executed.labels(
                     command_name=command_name,
                     server_id=server_id,
                     status=status,
                 ).inc()
-                self.client.metrics.command_duration.labels(command_name=command_name).observe(
+                bot.metrics.command_duration.labels(command_name=command_name).observe(
                     time.perf_counter() - start
                 )
 
@@ -80,19 +87,29 @@ class FFOBot(commands.Bot):
         )
 
         self.settings = settings
-        self.db_pool = self.cache = self.metrics = self.phrase_matcher = None
-        self.media_downloader = self.voice_transcriber = self.permission_checker = None
-        self.rate_limiter = self.notifier = self.minecraft_rcon = None
-        self.pool = None
+        self.db_pool: DatabasePool | None = None
+        self.cache: InMemoryCache | None = None
+        self.metrics: BotMetrics | None = None
+        self.phrase_matcher: PhraseMatcher | None = None
+        self.media_downloader: object | None = None
+        self.voice_transcriber: object | None = None
+        self.permission_checker: PermissionChecker | None = None
+        self.rate_limiter: RateLimiter | None = None
+        self.notifier: AdminNotifier | None = None
+        self.minecraft_rcon: object | None = None
+        self.pool: NodePool | None = None
         self._lavalink_node_created = False
         self._shutdown_event = asyncio.Event()
         self._health_server: web.AppRunner | None = None
 
     async def setup_hook(self):
         logger.info("Initializing...")
+        db_url = self.settings.database_url
+        if not db_url:
+            raise ValueError("Database URL not configured")
         self.metrics = BotMetrics()
         self.db_pool = await DatabasePool.create(
-            self.settings.database_url,
+            db_url,
             min_size=self.settings.db_pool_min_size,
             max_size=self.settings.db_pool_max_size,
             connection_timeout=self.settings.db_connection_timeout,
@@ -112,19 +129,20 @@ class FFOBot(commands.Bot):
 
         self.phrase_matcher = PhraseMatcher(self.db_pool, self.cache)
 
-        if self.settings.feature_media_download:
+        if self.settings.feature_media_download and self.db_pool and self.metrics:
             from bot.processors.media_downloader import MediaDownloader
 
-            self.media_downloader = MediaDownloader(
-                self.db_pool, self.settings.media_storage_path, self.metrics
-            )
-            await self.media_downloader.initialize()
+            md = MediaDownloader(self.db_pool, self.settings.media_storage_path, self.metrics)
+            await md.initialize()
+            self.media_downloader = md
 
         if self.settings.feature_voice_transcription and self.settings.openai_api_key:
             from bot.processors.voice_transcriber import VoiceTranscriber
 
-            self.voice_transcriber = VoiceTranscriber(api_key=self.settings.openai_api_key)
+            vt = VoiceTranscriber(api_key=self.settings.openai_api_key)
+            self.voice_transcriber = vt
 
+        assert self.db_pool is not None and self.cache is not None
         self.permission_checker = PermissionChecker(self.db_pool, self.cache, self)
         self.rate_limiter = RateLimiter(
             user_capacity=self.settings.rate_limit_user_capacity,
@@ -137,8 +155,8 @@ class FFOBot(commands.Bot):
         if self.settings.feature_minecraft_whitelist:
             from bot.services.minecraft_rcon import MinecraftRCONClient
 
-            self.minecraft_rcon = MinecraftRCONClient(self.settings)
-        self.pool = None
+            rcon = MinecraftRCONClient(self.settings)
+            self.minecraft_rcon = rcon
         if self.settings.feature_music and self.settings.lavalink_password:
             from mafic import NodePool
 
@@ -196,6 +214,8 @@ class FFOBot(commands.Bot):
         self._health_server = health_server.runner
 
     async def _register_persistent_views(self):
+        if not self.db_pool:
+            return
         if self.settings.feature_anonymous_post:
             from bot.commands.anonymous import AnonymousPostButtonView
 
@@ -263,6 +283,8 @@ class FFOBot(commands.Bot):
             self.metrics.set_connection_status(1)
 
     async def _register_server(self, guild: discord.Guild):
+        if not self.db_pool:
+            return
         try:
             async with self.db_pool.acquire() as conn:
                 await conn.execute(
@@ -328,7 +350,7 @@ class FFOBot(commands.Bot):
         if self._health_server:
             await self._health_server.cleanup()
         if self.media_downloader:
-            await self.media_downloader.close()
+            await self.media_downloader.close()  # type: ignore[attr-defined]
         if self.db_pool:
             await self.db_pool.close()
         if self.cache:
@@ -353,16 +375,18 @@ class FFOBot(commands.Bot):
         error = sys.exc_info()[1]
         logger.exception("Error in %s", event_method)
         if self.notifier and (server_id := self._extract_server_id(args)):
-            await self.notifier.notify_error(server_id, error, f"Event: {event_method}")
+            exc = error if isinstance(error, Exception) else RuntimeError(str(error))
+            await self.notifier.notify_error(server_id, exc, f"Event: {event_method}")
 
-    def _extract_server_id(self, args) -> int | None:
+    def _extract_server_id(self, args: tuple[object, ...]) -> int | None:
         for arg in args:
             if hasattr(arg, "guild") and arg.guild:
-                return arg.guild.id
+                return int(getattr(arg.guild, "id", 0))
             if hasattr(arg, "guild_id") and arg.guild_id:
-                return arg.guild_id
+                return int(arg.guild_id)
             if isinstance(arg, discord.Guild):
-                return arg.id
+                return int(arg.id)
+        return None
 
     async def _on_app_command_error(
         self, interaction: discord.Interaction, error: discord.app_commands.AppCommandError

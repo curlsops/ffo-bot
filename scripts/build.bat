@@ -1,6 +1,8 @@
 @echo off
 REM Build and test script for Windows
 
+cd /d "%~dp0\.."
+
 echo 🤖 FFO Discord Bot - Build and Test
 echo ====================================
 

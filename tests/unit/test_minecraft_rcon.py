@@ -184,6 +184,23 @@ class TestMinecraftRCONClient:
             assert result == "Whitelist is now turned off"
 
     @pytest.mark.asyncio
+    async def test_run_rcon_raises_when_host_or_password_none_after_is_configured(
+        self, configured_settings
+    ):
+        client = MinecraftRCONClient(configured_settings)
+        with patch.object(client, "_is_configured", return_value=True):
+            configured_settings.minecraft_rcon_host = None
+            with pytest.raises(MinecraftRCONError, match="not configured"):
+                await client._run_rcon("whitelist list")
+
+        client2 = MinecraftRCONClient(configured_settings)
+        configured_settings.minecraft_rcon_host = "localhost"
+        configured_settings.minecraft_rcon_password = None
+        with patch.object(client2, "_is_configured", return_value=True):
+            with pytest.raises(MinecraftRCONError, match="not configured"):
+                await client2._run_rcon("whitelist list")
+
+    @pytest.mark.asyncio
     async def test_run_rcon_executes_in_executor(self, configured_settings):
         client = MinecraftRCONClient(configured_settings)
 

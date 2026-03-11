@@ -51,7 +51,7 @@ async def _get_profile_from_mojang(username: str) -> tuple[str, str] | None:
     return None
 
 
-async def _get_profile_from_namemc(username: str) -> tuple[str, str] | None:
+async def _get_profile_from_namemc(username: str) -> tuple[str | None, str] | None:
     url = NAMEMC_PROFILE_URL.format(username=username)
     try:
         async with aiohttp.ClientSession() as session:
@@ -84,9 +84,9 @@ async def get_profile(username: str) -> tuple[str, str] | None:
     if result:
         return result
     namemc_result = await _get_profile_from_namemc(username)
-    if namemc_result and namemc_result[0]:
+    if namemc_result and namemc_result[0] is not None:
         logger.debug("Got profile from NameMC fallback for %s", username)
-        return namemc_result
+        return (namemc_result[0], namemc_result[1])
     return None
 
 

@@ -36,12 +36,13 @@ async def test_poll_success():
 
 
 @pytest.mark.asyncio
-async def test_poll_not_admin():
+async def test_poll_channel_param_requires_admin():
     bot = make_bot(admin=False)
     cog = PollCommands(bot)
     i = make_interaction()
-    await cog.poll.callback(cog, i, "Question?", "Yes,No", "1d")
-    i.channel.send.assert_not_awaited()
+    target_channel = MagicMock(send=AsyncMock())
+    await cog.poll.callback(cog, i, "Question?", "Yes,No", "1d", channel=target_channel)
+    target_channel.send.assert_not_awaited()
     i.followup.send.assert_awaited_with("Admin required.", ephemeral=True)
 
 

@@ -156,24 +156,23 @@ class PermissionsListView(discord.ui.View):
             ]
         else:
             header = "**User permissions (per-user grants):**\n\n"
-            items = self.user_rows
-            start = self.page * PER_PAGE
-            chunk = items[start : start + PER_PAGE]
+            user_chunk = self.user_rows[self.page * PER_PAGE : self.page * PER_PAGE + PER_PAGE]
             lines = [
-                f"{ROLE_EMOJI.get(r['role'], '•')} <@{r['user_id']}> - {r['role'].replace('_', ' ').title()}"
-                for r in chunk
+                f"{ROLE_EMOJI.get(str(row.get('role', '')), '•')} <@{row['user_id']}> - {str(row.get('role', '')).replace('_', ' ').title()}"
+                for row in user_chunk
             ]
         body = "\n".join(lines) if lines else "*(none)*"
         return truncate_for_discord(header + body)
 
     def _update_buttons(self):
-        self.page_btn.label = f"{self.page + 1}/{self._max_page + 1}"
+        if self.page_btn:
+            self.page_btn.label = f"{self.page + 1}/{self._max_page + 1}"
         for child in self.children:
-            if child.custom_id == "perm:prev":
+            if getattr(child, "custom_id", None) == "perm:prev":
                 child.disabled = self.page <= 0
-            elif child.custom_id == "perm:next":
+            elif getattr(child, "custom_id", None) == "perm:next":
                 child.disabled = self.page >= self._max_page
-            elif child.custom_id == "perm:toggle":
+            elif getattr(child, "custom_id", None) == "perm:toggle":
                 child.label = "User Mapped" if self.mode == "role" else "Role Mapped"
 
     async def _toggle_callback(self, interaction: discord.Interaction):
@@ -261,6 +260,7 @@ class PermissionsGroup(app_commands.Group):
         if err:
             await send_error(interaction, err)
             return
+        assert target is not None
         try:
             async with self.cog.bot.db_pool.acquire() as conn:
                 existing = await conn.fetchval(
@@ -311,6 +311,7 @@ class PermissionsGroup(app_commands.Group):
         if err:
             await send_error(interaction, err)
             return
+        assert target is not None
         try:
             async with self.cog.bot.db_pool.acquire() as conn:
                 result = await conn.execute(
@@ -356,15 +357,20 @@ class PermissionsGroup(app_commands.Group):
         await interaction.response.defer(ephemeral=True)
         if not await require_super_admin(interaction, "permissions set", self.cog.bot):
             return
-        await self.cog.bot._register_server(interaction.guild)
+        if not await require_guild(interaction):
+            return
+        guild = interaction.guild
+        if not guild:
+            return
+        await self.cog.bot._register_server(guild)
         role_enum = Role(level)
         success = await set_server_role(
             self.cog.bot.db_pool,
-            interaction.guild_id,
+            interaction.guild_id or 0,
             role_enum,
             discord_role.id if discord_role else None,
             cache=self.cog.bot.cache,
-            server_name=interaction.guild.name if interaction.guild else None,
+            server_name=guild.name,
         )
         if not success:
             await send_error(interaction, "Failed to update.")

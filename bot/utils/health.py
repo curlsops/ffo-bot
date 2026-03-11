@@ -32,7 +32,7 @@ class HealthCheckServer:
         self.port = port
         self.public_key = public_key
         self.app = web.Application()
-        self.runner = None
+        self.runner: web.AppRunner | None = None
         self.app.router.add_get("/healthz", self.liveness)
         self.app.router.add_get("/readyz", self.readiness)
         self.app.router.add_get("/metrics", self.metrics)
@@ -45,6 +45,8 @@ class HealthCheckServer:
     async def readiness(self, request):
         if not self.bot.is_ready():
             return web.Response(status=503, text="Discord not connected")
+        if not self.bot.db_pool:
+            return web.Response(status=503, text="Database not initialized")
         try:
             async with self.bot.db_pool.acquire() as conn:
                 await conn.fetchval("SELECT 1")
@@ -82,6 +84,7 @@ class HealthCheckServer:
     async def start(self):
         if self.public_key:
             self.app.router.add_post("/interactions", self.interactions)
-        self.runner = web.AppRunner(self.app)
-        await self.runner.setup()
-        await web.TCPSite(self.runner, "0.0.0.0", self.port).start()
+        runner = web.AppRunner(self.app)
+        self.runner = runner
+        await runner.setup()
+        await web.TCPSite(runner, "0.0.0.0", self.port).start()

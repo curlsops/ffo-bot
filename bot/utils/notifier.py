@@ -1,5 +1,6 @@
 import logging
 import traceback
+from collections.abc import Sequence
 
 import discord
 
@@ -89,7 +90,7 @@ class AdminNotifier:
         title: str,
         desc: str,
         color: discord.Color,
-        fields: list[tuple[str, str | None, bool]] | None = None,
+        fields: Sequence[tuple[str, str | None, bool]] | None = None,
         footer: str | None = None,
     ) -> bool:
         embed = discord.Embed(title=title, description=desc, color=color)

@@ -16,7 +16,7 @@ permissions:
 
 jobs:
   release-please:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     outputs:
       release_created: ${{ steps.release.outputs.release_created }}
       tag_name: ${{ steps.release.outputs.tag_name }}
@@ -25,13 +25,15 @@ jobs:
       - uses: googleapis/release-please-action@16a9c90856f42705d54a6fda1823352bdc62cf38 # v4
         id: release
         with:
-          config-file: release-please-config.json
-          manifest-file: .release-please-manifest.json
+          config-file: .github/release-please-config.json
+          manifest-file: .github/.release-please-manifest.json
 
   build-and-push:
     needs: release-please
     if: ${{ needs.release-please.outputs.release_created }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: production
     permissions:
       contents: read
       packages: write
@@ -44,12 +46,20 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4
 
-      - name: Log in to Container Registry
+      - name: Log in to GitHub Container Registry
         uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Requires DOCKERHUB_USERNAME and DOCKERHUB_TOKEN repo secrets
+      - name: Log in to Docker Hub
+        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4
+        with:
+          registry: docker.io
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Build and push Docker image
         uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7
@@ -57,24 +67,52 @@ jobs:
           context: .
           build-args: |
             FFO_BOT_VERSION=${{ needs.release-please.outputs.version }}
+            IMAGE_SOURCE=${{ github.server_url }}/${{ github.repository }}
           push: true
           tags: |
             ghcr.io/${{ github.repository }}:${{ needs.release-please.outputs.tag_name }}
             ghcr.io/${{ github.repository }}:${{ needs.release-please.outputs.version }}
             ghcr.io/${{ github.repository }}:latest
+            docker.io/${{ secrets.DOCKERHUB_USERNAME }}/ffo-bot:${{ needs.release-please.outputs.tag_name }}
+            docker.io/${{ secrets.DOCKERHUB_USERNAME }}/ffo-bot:${{ needs.release-please.outputs.version }}
+            docker.io/${{ secrets.DOCKERHUB_USERNAME }}/ffo-bot:latest
           labels: |
             org.opencontainers.image.version=${{ needs.release-please.outputs.version }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
-          provenance: false
-          platforms: linux/amd64
+          platforms: linux/amd64,linux/arm64
+          sbom: true
+
+  trivy-scan:
+    needs: build-and-push
+    if: ${{ needs.release-please.outputs.release_created }}
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@0.34.0
+        with:
+          image-ref: ghcr.io/${{ github.repository }}:${{ needs.release-please.outputs.tag_name }}
+          format: sarif
+          output: trivy-results.sarif
+
+      - name: Upload Trivy results
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif
 
   upload-release-artifacts:
     needs: release-please
     if: ${{ needs.release-please.outputs.release_created }}
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    environment: production
     permissions:
       contents: write
 
@@ -85,16 +123,20 @@ jobs:
 
       - name: Create package info artifact
         run: |
-          IMAGE="ghcr.io/${{ github.repository }}"
+          GHCR="ghcr.io/${{ github.repository }}"
+          DOCKERHUB="docker.io/${{ secrets.DOCKERHUB_USERNAME }}/ffo-bot"
           TAG="${{ needs.release-please.outputs.tag_name }}"
           VERSION="${{ needs.release-please.outputs.version }}"
           jq -n \
             --arg pkg "ffo-bot" \
             --arg ver "$VERSION" \
-            --arg img "${IMAGE}:${TAG}" \
-            --arg imgVer "${IMAGE}:${VERSION}" \
-            --arg imgLatest "${IMAGE}:latest" \
-            '{package:$pkg,version:$ver,docker_image:$img,tags:[$img,$imgVer,$imgLatest]}' \
+            --arg imgGhcr "${GHCR}:${TAG}" \
+            --arg imgDh "${DOCKERHUB}:${TAG}" \
+            --arg imgGhcrVer "${GHCR}:${VERSION}" \
+            --arg imgDhVer "${DOCKERHUB}:${VERSION}" \
+            --arg imgGhcrLatest "${GHCR}:latest" \
+            --arg imgDhLatest "${DOCKERHUB}:latest" \
+            '{package:$pkg,version:$ver,docker_image:$imgGhcr,docker_image_dockerhub:$imgDh,tags:[$imgGhcr,$imgGhcrVer,$imgGhcrLatest,$imgDh,$imgDhVer,$imgDhLatest]}' \
             > release-package-info.json
 
       - name: Upload artifact to release

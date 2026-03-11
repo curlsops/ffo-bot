@@ -1,10 +1,14 @@
 import logging
 from collections.abc import Awaitable, Callable
+from typing import TYPE_CHECKING, cast
 
 import discord
 from discord import app_commands
 
 from config.constants import Constants
+
+if TYPE_CHECKING:
+    from bot.client import FFOBot
 
 logger = logging.getLogger(__name__)
 
@@ -23,7 +27,7 @@ async def cached_autocomplete(
     if not interaction.guild_id:
         return []
     try:
-        bot = interaction.client
+        bot = cast("FFOBot", interaction.client)  # FFOBot adds cache, db_pool
         guild_id = interaction.guild_id
         cache_key = cache_key_template.format(server_id=guild_id)
         rows = bot.cache.get(cache_key) if bot.cache else None

@@ -29,6 +29,7 @@ venv/
 ENV/
 env/
 .pytest_cache/
+.pre-commit-cache/
 .coverage
 coverage.xml
 *.cover
@@ -40,6 +41,9 @@ htmlcov/
 *~
 *.md
 docs/
+!docs/CHANGELOG.md
+# Azure deployment reference
+docs/AZURE_DEPLOYMENT.md
 .dockerignore
 docker-compose.yml
 .env

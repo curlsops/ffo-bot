@@ -7,8 +7,8 @@ DISCORD_LIMIT = Constants.DISCORD_MESSAGE_LIMIT
 
 
 def paginate_by_char_limit(blocks: list[str], limit: int) -> list[str]:
-    pages = []
-    current = []
+    pages: list[str] = []
+    current: list[str] = []
     current_len = 0
     for block in blocks:
         block_len = len(block)
