@@ -96,7 +96,7 @@ jobs:
 
     steps:
       - name: Run Trivy vulnerability scanner
-        uses: aquasecurity/trivy-action@0.34.0
+        uses: aquasecurity/trivy-action@0.35.0
         with:
           image-ref: ghcr.io/${{ github.repository }}:${{ needs.release-please.outputs.tag_name }}
           format: sarif
@@ -104,6 +104,7 @@ jobs:
           exit-code: "0"
 
       - name: Upload Trivy results
+        if: always()
         uses: github/codeql-action/upload-sarif@v3
         with:
           sarif_file: trivy-results.sarif
