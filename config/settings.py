@@ -72,6 +72,10 @@ class Settings(BaseSettings):
     log_format: str = Field(default="json", description="Log format (json or text)")
 
     health_check_port: int = Field(default=8080, description="Health check HTTP port")
+    health_check_host: str = Field(
+        default="0.0.0.0",
+        description="Bind address for health server (0.0.0.0=all interfaces, 127.0.0.1=localhost only)",
+    )
     interactions_endpoint_enabled: bool = Field(
         default=False,
         description="Enable /interactions HTTP endpoint for Discord Interactions Endpoint URL",

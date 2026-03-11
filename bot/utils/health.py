@@ -1,5 +1,6 @@
 import json
 import logging
+import time
 
 import nacl.encoding
 import nacl.exceptions
@@ -27,10 +28,21 @@ def _verify_discord_signature(
 
 
 class HealthCheckServer:
-    def __init__(self, bot, port: int = 8080, public_key: str | None = None):
+    CACHE_SIZE_UPDATE_INTERVAL = 5.0
+
+    def __init__(
+        self,
+        bot,
+        port: int = 8080,
+        public_key: str | None = None,
+        host: str = "0.0.0.0",
+    ):
         self.bot = bot
         self.port = port
         self.public_key = public_key
+        self.host = host
+        self._last_cache_size: int | None = None
+        self._last_cache_size_ts: float | None = None
         self.app = web.Application()
         self.runner: web.AppRunner | None = None
         self.app.router.add_get("/healthz", self.liveness)
@@ -57,7 +69,18 @@ class HealthCheckServer:
 
     async def metrics(self, request):
         if self.bot.cache and self.bot.metrics:
-            self.bot.metrics.set_cache_size(self.bot.cache.size())
+            now = time.monotonic()
+            if (
+                self._last_cache_size_ts is None
+                or now - self._last_cache_size_ts >= self.CACHE_SIZE_UPDATE_INTERVAL
+            ):
+                try:
+                    self._last_cache_size = self.bot.cache.size()
+                except Exception as e:
+                    logger.warning("Failed to compute cache size for metrics: %s", e)
+                self._last_cache_size_ts = now
+            if self._last_cache_size is not None:
+                self.bot.metrics.set_cache_size(self._last_cache_size)
         return web.Response(
             text=generate_metrics_response().decode("utf-8"), content_type="text/plain"
         )
@@ -75,7 +98,11 @@ class HealthCheckServer:
         if not _verify_discord_signature(body, signature, timestamp, self.public_key):
             return web.Response(status=401, text="Invalid request signature")
         try:
-            data = json.loads(body.decode())
+            body_text = body.decode("utf-8")
+        except UnicodeDecodeError:
+            return web.Response(status=400, text="Invalid encoding")
+        try:
+            data = json.loads(body_text)
         except json.JSONDecodeError:
             return web.Response(status=400, text="Invalid JSON")
         if data.get("type") == 1:
@@ -88,4 +115,4 @@ class HealthCheckServer:
         runner = web.AppRunner(self.app)
         self.runner = runner
         await runner.setup()
-        await web.TCPSite(runner, "0.0.0.0", self.port).start()
+        await web.TCPSite(runner, self.host, self.port).start()

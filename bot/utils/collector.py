@@ -1,5 +1,3 @@
-"""Event collectors - wait for messages or reactions matching criteria."""
-
 import asyncio
 from typing import Callable, TypeVar
 
@@ -16,7 +14,6 @@ async def wait_for_message(
     check: Callable[[discord.Message], bool] | None = None,
     timeout: float = 60.0,
 ) -> discord.Message | None:
-    """Wait for a message matching criteria. Returns None on timeout."""
     future: asyncio.Future[discord.Message] = asyncio.get_event_loop().create_future()
 
     def predicate(m: discord.Message) -> bool:
@@ -51,7 +48,6 @@ async def wait_for_reaction(
     emoji: str | discord.Emoji | None = None,
     timeout: float = 60.0,
 ) -> discord.RawReactionActionEvent | None:
-    """Wait for a reaction on a message. Returns None on timeout."""
     future: asyncio.Future[discord.RawReactionActionEvent] = (
         asyncio.get_event_loop().create_future()
     )

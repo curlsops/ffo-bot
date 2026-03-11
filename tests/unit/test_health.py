@@ -108,6 +108,24 @@ class TestMetrics:
             response = await server.metrics(MagicMock())
         assert response.status == 200
 
+    @pytest.mark.asyncio
+    async def test_metrics_cache_size_exception_logged(self, server):
+        server.bot.cache = MagicMock(size=MagicMock(side_effect=RuntimeError("cache error")))
+        server.bot.metrics = MagicMock()
+        with patch("bot.utils.metrics.generate_metrics_response", return_value=b"# metrics\n"):
+            response = await server.metrics(MagicMock())
+        assert response.status == 200
+        server.bot.metrics.set_cache_size.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_metrics_cache_size_throttled(self, server):
+        server.bot.cache = MagicMock(size=MagicMock(return_value=10))
+        server.bot.metrics = MagicMock()
+        with patch("bot.utils.metrics.generate_metrics_response", return_value=b"# metrics\n"):
+            await server.metrics(MagicMock())
+            await server.metrics(MagicMock())
+        server.bot.cache.size.assert_called_once()
+
 
 class TestHealthViaTestServer:
     @pytest.mark.asyncio
@@ -139,6 +157,18 @@ class TestStart:
 
                 mock_runner.setup.assert_called_once()
                 mock_site_class.assert_called_with(mock_runner, "0.0.0.0", 9999)
+
+    @pytest.mark.asyncio
+    async def test_start_server_custom_host(self, mock_bot):
+        server = HealthCheckServer(mock_bot, port=9999, host="127.0.0.1")
+        with patch("aiohttp.web.AppRunner") as mock_runner_class:
+            mock_runner = AsyncMock()
+            mock_runner_class.return_value = mock_runner
+            with patch("aiohttp.web.TCPSite") as mock_site_class:
+                mock_site = AsyncMock()
+                mock_site_class.return_value = mock_site
+                await server.start()
+                mock_site_class.assert_called_with(mock_runner, "127.0.0.1", 9999)
                 assert server.runner == mock_runner
 
     @pytest.mark.asyncio
@@ -201,6 +231,20 @@ class TestInteractions:
         req.read = AsyncMock(return_value=b"{}")
         resp = await server.interactions(req)
         assert resp.status == 401
+
+    @pytest.mark.asyncio
+    async def test_interactions_invalid_encoding_400(self):
+        server = HealthCheckServer(MagicMock(), port=8080, public_key="0" * 64)
+        req = MagicMock()
+        req.method = "POST"
+        req.headers = {
+            "X-Signature-Ed25519": "0" * 128,
+            "X-Signature-Timestamp": "123",
+        }
+        req.read = AsyncMock(return_value=b"\xff\xfe")
+        with patch("bot.utils.health._verify_discord_signature", return_value=True):
+            resp = await server.interactions(req)
+        assert resp.status == 400 and "encoding" in resp.text.lower()
 
     @pytest.mark.asyncio
     async def test_interactions_invalid_json_400(self):

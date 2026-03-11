@@ -49,7 +49,6 @@ async def _permissions_user_autocomplete(
 async def _parse_user_and_target(
     interaction: discord.Interaction, user_str: str, bot
 ) -> tuple[int | None, discord.User | None, str | None]:
-    """Returns (user_id, target, error_msg). Call require_guild first."""
     guild = interaction.guild
     if not guild:
         return None, None, "Server only."

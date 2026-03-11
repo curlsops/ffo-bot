@@ -75,6 +75,7 @@ https://discord.com/api/oauth2/authorize?client_id=YOUR_CLIENT_ID&permissions=27
 | Variable | Default | Description |
 |----------|---------|-------------|
 | `HEALTH_CHECK_PORT` | 8080 | Health/metrics port |
+| `HEALTH_CHECK_HOST` | 0.0.0.0 | Bind address (0.0.0.0=all, 127.0.0.1=localhost) |
 | `FEATURE_GIVEAWAYS` | true | Enable giveaway commands |
 | `FEATURE_REACTION_ROLES` | true | Enable reaction role setup |
 | `FEATURE_QUOTEBOOK` | false | Enable quote submissions |

@@ -1,5 +1,3 @@
-"""Edit tracking handler: update bot response when user edits their prefix command."""
-
 import logging
 
 import discord

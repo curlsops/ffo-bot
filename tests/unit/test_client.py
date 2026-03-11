@@ -22,6 +22,7 @@ def mock_settings():
     s.feature_faq = False
     s.feature_music = False
     s.health_check_port = 8080
+    s.health_check_host = "0.0.0.0"
     s.interactions_endpoint_enabled = False
     s.feature_anonymous_post = False
     s.rate_limit_user_capacity = 10
@@ -885,7 +886,10 @@ class TestFFOBotHealthServer:
             await bot._start_health_server()
 
             mock_cls.assert_called_once_with(
-                bot, port=mock_settings.health_check_port, public_key=None
+                bot,
+                port=mock_settings.health_check_port,
+                public_key=None,
+                host=mock_settings.health_check_host,
             )
             mock_server.start.assert_called_once()
             assert bot._health_server == mock_server.runner

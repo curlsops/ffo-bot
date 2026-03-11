@@ -208,7 +208,10 @@ class FFOBot(commands.Bot):
             else None
         )
         health_server = HealthCheckServer(
-            self, port=self.settings.health_check_port, public_key=public_key
+            self,
+            port=self.settings.health_check_port,
+            public_key=public_key,
+            host=self.settings.health_check_host,
         )
         await health_server.start()
         self._health_server = health_server.runner

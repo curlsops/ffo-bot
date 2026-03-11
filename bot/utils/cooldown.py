@@ -1,5 +1,3 @@
-"""Per-command cooldowns."""
-
 import asyncio
 from collections import defaultdict
 from datetime import UTC, datetime
@@ -16,7 +14,6 @@ class CommandCooldown:
         self._lock = asyncio.Lock()
 
     async def check(self, user_id: int, guild_id: int, command_name: str) -> tuple[bool, float]:
-        """Return (allowed, retry_after_seconds)."""
         key = (user_id, guild_id or 0, command_name)
         async with self._lock:
             now = datetime.now(UTC)
@@ -32,8 +29,6 @@ class CommandCooldown:
 
 
 def with_cooldown(rate: int = 1, per: float = 60.0):
-    """Return an app_commands check for per-command cooldown."""
-
     cooldown = CommandCooldown(rate=rate, per=per)
 
     async def check(interaction: discord.Interaction) -> bool:
