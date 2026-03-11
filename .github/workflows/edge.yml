@@ -117,6 +117,7 @@ jobs:
           image-ref: ghcr.io/${{ github.repository }}:edge
           format: sarif
           output: trivy-results.sarif
+          exit-code: "0"
 
       - name: Upload Trivy results
         uses: github/codeql-action/upload-sarif@v3

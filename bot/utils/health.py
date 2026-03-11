@@ -51,7 +51,8 @@ class HealthCheckServer:
             async with self.bot.db_pool.acquire() as conn:
                 await conn.fetchval("SELECT 1")
         except Exception as e:
-            return web.Response(status=503, text=f"Database error: {e}")
+            logger.warning("readiness check failed: %s", e)
+            return web.Response(status=503, text="Database unavailable")
         return web.Response(status=200, text="Ready")
 
     async def metrics(self, request):
