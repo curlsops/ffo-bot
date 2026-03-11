@@ -46,12 +46,15 @@ class TestGiveawayJsonbParams:
         i.response.defer = AsyncMock()
         i.followup.send = AsyncMock(return_value=MagicMock(id=999))
 
-        await cog.giveaway_group.start_cmd.callback(
-            cog.giveaway_group,
+        from discord import app_commands
+
+        op = app_commands.Choice(name="Start", value="start")
+        await cog.giveaway_cmd.callback(
             i,
-            "1h",
-            1,
-            "Prize",
+            operation=op,
+            duration="1h",
+            winners=1,
+            prize="Prize",
             donor=None,
             required_roles=None,
             blacklist_roles=None,

@@ -12,13 +12,17 @@ logger = logging.getLogger(__name__)
 ANONYMOUS_BUTTON_CUSTOM_ID = "anonymous:post"
 MAX_MESSAGE_LENGTH = 2000
 
+ANONYMOUS_OPERATION_CHOICES = [
+    app_commands.Choice(name="Setup", value="setup"),
+    app_commands.Choice(name="Remove", value="remove"),
+]
+
 
 def _process_anonymous_submission(
     raw_text: str,
     channel_id: int,
     bot: commands.Bot,
 ) -> tuple[str | None, str | None]:
-    """Return (error_message, anonymized_text). None error means success."""
     text = raw_text.strip()
     if not text:
         return ("Message cannot be empty.", None)
@@ -86,100 +90,104 @@ class AnonymousPostButtonView(discord.ui.View):
         await interaction.response.send_modal(AnonymousPostModal(self.channel_id, self.bot))
 
 
-@app_commands.guild_only()
-class AnonymousGroup(app_commands.Group):
-    def __init__(self, cog: "AnonymousCommands"):
-        super().__init__(name="anonymous", description="Anonymous post setup")
-        self.cog = cog
-
+def _anonymous_command(cog: "AnonymousCommands"):
     @app_commands.command(
-        name="setup", description="Post the anonymous submit button in this channel"
+        name="anonymous",
+        description="Anonymous post setup. Provide operation.",
     )
-    async def setup(self, interaction: discord.Interaction) -> None:
+    @app_commands.guild_only()
+    @app_commands.describe(operation="Setup or remove the anonymous post button")
+    @app_commands.choices(operation=ANONYMOUS_OPERATION_CHOICES)
+    async def anonymous_cmd(
+        interaction: discord.Interaction,
+        operation: app_commands.Choice[str],
+    ):
         if not interaction.guild_id or not interaction.channel_id:
             await send_error(interaction, "Server only.")
             return
-        if not await require_admin(interaction, "anonymous setup", self.cog.bot):
+        if not await require_admin(interaction, "anonymous", cog.bot):
             return
 
         await interaction.response.defer(ephemeral=True)
 
-        embed = discord.Embed(
-            title="Anonymous Post",
-            description="Click the button below to post a message anonymously. Names will be anonymized.",
-            color=discord.Color.blurple(),
-        )
-
-        view = AnonymousPostButtonView(interaction.channel_id, self.cog.bot)
-        msg = await interaction.channel.send(embed=embed, view=view)
-
-        try:
-            async with self.cog.bot.db_pool.acquire() as conn:
-                await conn.execute(
-                    """
-                    INSERT INTO anonymous_post_channels (server_id, channel_id, message_id)
-                    VALUES ($1, $2, $3)
-                    ON CONFLICT (server_id) DO UPDATE
-                    SET channel_id = EXCLUDED.channel_id, message_id = EXCLUDED.message_id
-                    """,
-                    interaction.guild_id,
-                    interaction.channel_id,
-                    msg.id,
-                )
-            await interaction.followup.send(
-                f"Anonymous post button added. Message ID: {msg.id}", ephemeral=True
+        if operation.value == "setup":
+            embed = discord.Embed(
+                title="Anonymous Post",
+                description="Click the button below to post a message anonymously. Names will be anonymized.",
+                color=discord.Color.blurple(),
             )
-        except Exception as e:
-            logger.exception("Failed to save anonymous post channel: %s", e)
-            await send_error(interaction, "Failed to save configuration.")
-
-    @app_commands.command(name="remove", description="Remove the anonymous post button")
-    async def remove(self, interaction: discord.Interaction) -> None:
-        if not interaction.guild_id:
-            await send_error(interaction, "Server only.")
-            return
-        if not await require_admin(interaction, "anonymous remove", self.cog.bot):
-            return
-
-        await interaction.response.defer(ephemeral=True)
-
-        try:
-            async with self.cog.bot.db_pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    "SELECT channel_id, message_id FROM anonymous_post_channels WHERE server_id = $1",
-                    interaction.guild_id,
-                )
-                if not row:
-                    await interaction.followup.send(
-                        "No anonymous post channel configured.", ephemeral=True
+            view = AnonymousPostButtonView(interaction.channel_id, cog.bot)
+            msg = await interaction.channel.send(embed=embed, view=view)
+            try:
+                async with cog.bot.db_pool.acquire() as conn:
+                    await conn.execute(
+                        """
+                        INSERT INTO anonymous_post_channels (server_id, channel_id, message_id)
+                        VALUES ($1, $2, $3)
+                        ON CONFLICT (server_id) DO UPDATE
+                        SET channel_id = EXCLUDED.channel_id, message_id = EXCLUDED.message_id
+                        """,
+                        interaction.guild_id,
+                        interaction.channel_id,
+                        msg.id,
                     )
-                    return
-                await conn.execute(
-                    "DELETE FROM anonymous_post_channels WHERE server_id = $1",
-                    interaction.guild_id,
+                await interaction.followup.send(
+                    f"Anonymous post button added. Message ID: {msg.id}",
+                    ephemeral=True,
                 )
+            except Exception as e:
+                logger.exception("Failed to save anonymous post channel: %s", e)
+                await send_error(interaction, "Failed to save configuration.")
+        else:
+            try:
+                async with cog.bot.db_pool.acquire() as conn:
+                    row = await conn.fetchrow(
+                        "SELECT channel_id, message_id FROM anonymous_post_channels WHERE server_id = $1",
+                        interaction.guild_id,
+                    )
+                    if not row:
+                        await interaction.followup.send(
+                            "No anonymous post channel configured.",
+                            ephemeral=True,
+                        )
+                        return
+                    await conn.execute(
+                        "DELETE FROM anonymous_post_channels WHERE server_id = $1",
+                        interaction.guild_id,
+                    )
 
-            channel = self.cog.bot.get_channel(row["channel_id"])
-            if channel:
-                try:
-                    msg = await channel.fetch_message(row["message_id"])
-                    await msg.delete()
-                except discord.NotFound:
-                    pass
-                except discord.HTTPException as e:
-                    logger.warning("Failed to delete anonymous post message: %s", e)
+                channel = cog.bot.get_channel(row["channel_id"])
+                if channel:
+                    try:
+                        msg = await channel.fetch_message(row["message_id"])
+                        await msg.delete()
+                    except discord.NotFound:
+                        pass
+                    except discord.HTTPException as e:
+                        logger.warning("Failed to delete anonymous post message: %s", e)
 
-            await interaction.followup.send("Anonymous post removed.", ephemeral=True)
-        except Exception as e:
-            logger.exception("Failed to remove anonymous post: %s", e)
-            await send_error(interaction, "Failed to remove.")
+                await interaction.followup.send(
+                    "Anonymous post removed.",
+                    ephemeral=True,
+                )
+            except Exception as e:
+                logger.exception("Failed to remove anonymous post: %s", e)
+                await send_error(interaction, "Failed to remove.")
+
+    return anonymous_cmd
 
 
 class AnonymousCommands(commands.Cog):
     def __init__(self, bot: commands.Bot):
         self.bot = bot
-        self._group = AnonymousGroup(self)
-        self.bot.tree.add_command(self._group)
+        self.anonymous_cmd = _anonymous_command(self)
+
+    async def cog_load(self):
+        self.bot.tree.add_command(self.anonymous_cmd)
 
     def cog_unload(self) -> None:
-        self.bot.tree.remove_command(self._group.name)
+        self.bot.tree.remove_command(self.anonymous_cmd.name)
+
+
+async def setup(bot):
+    await bot.add_cog(AnonymousCommands(bot))

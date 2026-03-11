@@ -90,6 +90,12 @@ class MinecraftRCONClient:
     async def whitelist_list(self) -> str:
         return await self._run_rcon("whitelist list")
 
+    async def whitelist_on(self) -> str:
+        return await self._run_rcon("whitelist on")
+
+    async def whitelist_off(self) -> str:
+        return await self._run_rcon("whitelist off")
+
 
 def parse_whitelist_list_response(response: str) -> list[str]:
     response = response.strip()

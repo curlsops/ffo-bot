@@ -3,8 +3,12 @@ from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
+from discord import app_commands
 
 from bot.commands.giveaway import GiveawayCommands
+
+_OP_REROLL = app_commands.Choice(name="Reroll", value="reroll")
+_OP_START = app_commands.Choice(name="Start", value="start")
 
 
 def make_interaction():
@@ -59,7 +63,7 @@ async def test_greroll_success():
 
     cog = GiveawayCommands(bot)
     i = make_interaction()
-    await cog.giveaway_group.reroll_cmd.callback(cog.giveaway_group, i, "123456789012345678")
+    await cog.giveaway_cmd.callback(i, operation=_OP_REROLL, message_id="123456789012345678")
 
     conn.execute.assert_awaited()
     i.followup.send.assert_awaited()
@@ -74,7 +78,7 @@ async def test_greroll_not_found():
 
     cog = GiveawayCommands(bot)
     i = make_interaction()
-    await cog.giveaway_group.reroll_cmd.callback(cog.giveaway_group, i, "123456789012345678")
+    await cog.giveaway_cmd.callback(i, operation=_OP_REROLL, message_id="123456789012345678")
 
     assert "not found" in str(i.followup.send.call_args)
 
@@ -92,7 +96,7 @@ async def test_greroll_still_active():
 
     cog = GiveawayCommands(bot)
     i = make_interaction()
-    await cog.giveaway_group.reroll_cmd.callback(cog.giveaway_group, i, "123456789012345678")
+    await cog.giveaway_cmd.callback(i, operation=_OP_REROLL, message_id="123456789012345678")
 
     assert "still active" in str(i.followup.send.call_args)
 
@@ -105,7 +109,7 @@ async def test_greroll_invalid_message_id():
 
     cog = GiveawayCommands(bot)
     i = make_interaction()
-    await cog.giveaway_group.reroll_cmd.callback(cog.giveaway_group, i, "not-a-valid-id")
+    await cog.giveaway_cmd.callback(i, operation=_OP_REROLL, message_id="not-a-valid-id")
 
     assert "Invalid message ID" in str(i.followup.send.call_args)
     conn.fetchrow.assert_not_awaited()
@@ -127,9 +131,9 @@ async def test_gstart_with_role_constraints():
     i.channel_id = 222
     i.user.id = 333
     i.followup.send = AsyncMock(return_value=MagicMock(id=999))
-    await cog.giveaway_group.start_cmd.callback(
-        cog.giveaway_group,
+    await cog.giveaway_cmd.callback(
         i,
+        operation=_OP_START,
         duration="1h",
         winners=1,
         prize="Test Prize",

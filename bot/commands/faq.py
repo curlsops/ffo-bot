@@ -77,8 +77,6 @@ async def _faq_topic_autocomplete(
 
 @app_commands.guild_only()
 class FAQGroup(app_commands.Group):
-    """FAQ topics and entries."""
-
     def __init__(self, cog: "FAQCommands"):
         super().__init__(name="faq", description="FAQ topics and entries")
         self.cog = cog

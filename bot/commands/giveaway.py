@@ -35,6 +35,11 @@ GIVEAWAY_DURATIONS = [
     "2w",
 ]
 
+GIVEAWAY_OPERATION_CHOICES = [
+    app_commands.Choice(name="Start", value="start"),
+    app_commands.Choice(name="Reroll", value="reroll"),
+]
+
 TIME_REGEX = re.compile(r"^(\d+)([smhdw])$", re.IGNORECASE)
 TIME_UNITS = {"s": 1, "m": 60, "h": 3600, "d": 86400, "w": 604800}
 
@@ -101,21 +106,23 @@ async def _giveaway_message_id_autocomplete(
     )
 
 
-@app_commands.guild_only()
-@app_commands.default_permissions(administrator=True)
-class GiveawayGroup(app_commands.Group):
-    """Giveaway management."""
-
-    def __init__(self, cog: "GiveawayCommands"):
-        super().__init__(name="giveaway", description="Giveaway management")
-        self.cog = cog
-
-    @app_commands.command(name="start", description="Start a giveaway")
+def _giveaway_command(cog: "GiveawayCommands"):
+    @app_commands.command(
+        name="giveaway",
+        description="Giveaway management. Provide operation.",
+    )
+    @app_commands.guild_only()
+    @app_commands.default_permissions(administrator=True)
+    @app_commands.choices(operation=GIVEAWAY_OPERATION_CHOICES)
     @app_commands.autocomplete(duration=_giveaway_duration_autocomplete)
+    @app_commands.autocomplete(message_id=_giveaway_message_id_autocomplete)
     @app_commands.describe(
-        duration="Duration (e.g. 1h, 2d, 1w)",
-        winners="Number of winners",
-        prize="Prize description",
+        operation="Start a giveaway or reroll winners",
+        duration="Duration (Start only, e.g. 1h, 2d, 1w)",
+        winners="Number of winners (Start only)",
+        prize="Prize description (Start only)",
+        message_id="Giveaway message ID (Reroll only)",
+        count="Winners to reroll (Reroll only, default: all)",
         donor="User who donated the prize",
         required_roles="Comma-separated role mentions required to enter",
         blacklist_roles="Comma-separated role mentions blocked from entering",
@@ -128,12 +135,14 @@ class GiveawayGroup(app_commands.Group):
         extra_text="Additional text to display",
         image="Image URL to display",
     )
-    async def start_cmd(
-        self,
+    async def giveaway_cmd(
         interaction: discord.Interaction,
-        duration: str,
-        winners: int,
-        prize: str,
+        operation: app_commands.Choice[str],
+        duration: str | None = None,
+        winners: int | None = None,
+        prize: str | None = None,
+        message_id: str | None = None,
+        count: int | None = None,
         donor: discord.Member | None = None,
         required_roles: str | None = None,
         blacklist_roles: str | None = None,
@@ -146,222 +155,270 @@ class GiveawayGroup(app_commands.Group):
         extra_text: str | None = None,
         image: str | None = None,
     ):
-        await interaction.response.defer()
-        try:
-            if not await require_admin(interaction, "giveaway start", self.cog.bot):
-                return
+        if operation.value == "start":
+            await _giveaway_start(
+                cog,
+                interaction,
+                duration,
+                winners,
+                prize,
+                donor,
+                required_roles,
+                blacklist_roles,
+                bypass_roles,
+                bonus_roles,
+                messages,
+                nodonorwin,
+                ping,
+                nodefaults,
+                extra_text,
+                image,
+            )
+        else:
+            await _giveaway_reroll(cog, interaction, message_id, count)
 
-            seconds = parse_duration(duration)
-            if not seconds or seconds < 60:
-                await send_error(interaction, "Invalid duration. Min 1m. Examples: 1h, 2d, 1w")
-                return
-            if winners < 1 or winners > 50:
-                await send_error(interaction, "Winners must be 1-50.")
-                return
-            if len(prize) > 500:
-                await send_error(interaction, "Prize max 500 chars.")
-                return
+    return giveaway_cmd
 
-            ends_at = datetime.now(timezone.utc) + timedelta(seconds=seconds)
-            giveaway_id = uuid.uuid4()
-            giveaway_data = {
-                "prize": prize,
-                "host_id": interaction.user.id,
-                "donor_id": donor.id if donor else None,
-                "winners_count": winners,
-                "ends_at": ends_at,
-                "extra_text": extra_text,
-                "image_url": image,
-            }
 
-            async with self.cog.bot.db_pool.acquire() as conn:
-                await conn.execute(
-                    """INSERT INTO giveaways (id, server_id, channel_id, host_id, donor_id,
-                       prize, winners_count, ends_at, required_roles, blacklist_roles,
-                       bypass_roles, bonus_roles, message_req, no_donor_win, no_defaults,
-                       ping, extra_text, image_url)
-                       VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)""",
-                    giveaway_id,
-                    interaction.guild_id,
-                    interaction.channel_id,
-                    interaction.user.id,
-                    donor.id if donor else None,
-                    prize,
-                    winners,
-                    ends_at,
-                    self.cog._parse_roles(required_roles),
-                    self.cog._parse_roles(blacklist_roles),
-                    self.cog._parse_roles(bypass_roles),
-                    self.cog._parse_bonus_roles(bonus_roles),
-                    self.cog._parse_messages(messages),
-                    nodonorwin,
-                    nodefaults,
-                    ping,
-                    extra_text,
-                    image,
-                )
+async def _giveaway_start(
+    cog: "GiveawayCommands",
+    interaction: discord.Interaction,
+    duration: str | None,
+    winners: int | None,
+    prize: str | None,
+    donor: discord.Member | None,
+    required_roles: str | None,
+    blacklist_roles: str | None,
+    bypass_roles: str | None,
+    bonus_roles: str | None,
+    messages: str | None,
+    nodonorwin: bool,
+    ping: bool,
+    nodefaults: bool,
+    extra_text: str | None,
+    image: str | None,
+):
+    await interaction.response.defer()
+    try:
+        if not await require_admin(interaction, "giveaway", cog.bot):
+            return
+        if not duration or winners is None or not prize:
+            await send_error(
+                interaction,
+                "Duration, winners, and prize required for Start.",
+            )
+            return
 
-            view = GiveawayView(giveaway_id, self.cog.bot, entry_count=0)
-            msg = await interaction.followup.send(
-                content="@everyone" if ping else None,
-                embed=build_embed(giveaway_data, 0),
-                view=view,
+        seconds = parse_duration(duration)
+        if not seconds or seconds < 60:
+            await send_error(interaction, "Invalid duration. Min 1m. Examples: 1h, 2d, 1w")
+            return
+        if winners < 1 or winners > 50:
+            await send_error(interaction, "Winners must be 1-50.")
+            return
+        if len(prize) > 500:
+            await send_error(interaction, "Prize max 500 chars.")
+            return
+
+        ends_at = datetime.now(timezone.utc) + timedelta(seconds=seconds)
+        giveaway_id = uuid.uuid4()
+        giveaway_data = {
+            "prize": prize,
+            "host_id": interaction.user.id,
+            "donor_id": donor.id if donor else None,
+            "winners_count": winners,
+            "ends_at": ends_at,
+            "extra_text": extra_text,
+            "image_url": image,
+        }
+
+        async with cog.bot.db_pool.acquire() as conn:
+            await conn.execute(
+                """INSERT INTO giveaways (id, server_id, channel_id, host_id, donor_id,
+                   prize, winners_count, ends_at, required_roles, blacklist_roles,
+                   bypass_roles, bonus_roles, message_req, no_donor_win, no_defaults,
+                   ping, extra_text, image_url)
+                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)""",
+                giveaway_id,
+                interaction.guild_id,
+                interaction.channel_id,
+                interaction.user.id,
+                donor.id if donor else None,
+                prize,
+                winners,
+                ends_at,
+                cog._parse_roles(required_roles),
+                cog._parse_roles(blacklist_roles),
+                cog._parse_roles(bypass_roles),
+                cog._parse_bonus_roles(bonus_roles),
+                cog._parse_messages(messages),
+                nodonorwin,
+                nodefaults,
+                ping,
+                extra_text,
+                image,
             )
 
-            async with self.cog.bot.db_pool.acquire() as conn:
-                await conn.execute(
-                    "UPDATE giveaways SET message_id = $1 WHERE id = $2", msg.id, giveaway_id
+        view = GiveawayView(giveaway_id, cog.bot, entry_count=0)
+        msg = await interaction.followup.send(
+            content="@everyone" if ping else None,
+            embed=build_embed(giveaway_data, 0),
+            view=view,
+        )
+
+        async with cog.bot.db_pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE giveaways SET message_id = $1 WHERE id = $2", msg.id, giveaway_id
+            )
+
+        if cog.bot.cache:
+            cog.bot.cache.delete(CACHE_GIVEAWAY_MESSAGE_ID.format(server_id=interaction.guild_id))
+
+        if cog.bot.metrics:
+            cog.bot.metrics.commands_executed.labels(
+                command_name="giveaway start",
+                server_id=str(interaction.guild_id),
+                status="success",
+            ).inc()
+
+        if cog.bot.notifier:
+            await cog.bot.notifier.notify_giveaway_created(
+                interaction.guild_id,
+                prize,
+                interaction.user.id,
+                interaction.channel_id,
+                ends_at,
+            )
+    except Exception as e:
+        logger.error("giveaway start error: %s", e, exc_info=True)
+        await send_error(interaction, "Error starting giveaway.")
+
+
+async def _giveaway_reroll(
+    cog: "GiveawayCommands",
+    interaction: discord.Interaction,
+    message_id: str | None,
+    count: int | None,
+):
+    await interaction.response.defer(ephemeral=True)
+    try:
+        if not await require_admin(interaction, "giveaway", cog.bot):
+            return
+        if not message_id:
+            await send_error(interaction, "Message ID required for Reroll.")
+            return
+
+        msg_id = cog._parse_message_id(message_id)
+        if not msg_id:
+            await send_error(
+                interaction,
+                "Invalid message ID. Use the number from the message link or enable Developer Mode and right-click → Copy Message Link.",
+            )
+            return
+
+        async with cog.bot.db_pool.acquire() as conn:
+            giveaway = await conn.fetchrow(
+                "SELECT " + GIVEAWAY_COLUMNS + " FROM giveaways WHERE message_id = $1",
+                msg_id,
+            )
+        if not giveaway:
+            await send_error(interaction, "Giveaway not found.")
+            return
+        if giveaway["is_active"]:
+            await send_error(
+                interaction,
+                "Giveaway is still active. Reroll only works for ended giveaways.",
+            )
+            return
+
+        async with cog.bot.db_pool.acquire() as conn:
+            entries = await conn.fetch(
+                "SELECT user_id, entries FROM giveaway_entries WHERE giveaway_id = $1",
+                giveaway["id"],
+            )
+            old_winners = await conn.fetch(
+                "SELECT user_id FROM giveaway_entries WHERE giveaway_id = $1 AND is_winner = true",
+                giveaway["id"],
+            )
+
+        if not entries:
+            await send_error(interaction, "No entries to reroll from.")
+            return
+
+        old_winner_ids = {r["user_id"] for r in old_winners}
+        default_reroll_count = len(old_winner_ids) or giveaway["winners_count"]
+        reroll_count = default_reroll_count if count is None else count
+        if reroll_count < 1:
+            await send_error(interaction, "Count must be at least 1.")
+            return
+        if old_winner_ids and reroll_count > len(old_winner_ids):
+            await send_error(
+                interaction,
+                f"Cannot reroll more than {len(old_winner_ids)} winner(s).",
+            )
+            return
+
+        if reroll_count < len(old_winner_ids):
+            winners_to_remove = set(random.sample(list(old_winner_ids), reroll_count))
+        else:
+            winners_to_remove = old_winner_ids
+        non_winners = [e for e in entries if e["user_id"] not in old_winner_ids]
+        if not non_winners:
+            await send_error(
+                interaction,
+                "All entrants were winners. No one left to reroll.",
+            )
+            return
+        new_winners = cog._select_winners(non_winners, reroll_count)
+        final_winners = (old_winner_ids - winners_to_remove) | set(new_winners)
+
+        async with cog.bot.db_pool.acquire() as conn:
+            await conn.execute(
+                "UPDATE giveaway_entries SET is_winner = false WHERE giveaway_id = $1",
+                giveaway["id"],
+            )
+            if final_winners:
+                await conn.executemany(
+                    "UPDATE giveaway_entries SET is_winner = true WHERE giveaway_id = $1 AND user_id = $2",
+                    [(giveaway["id"], w) for w in final_winners],
                 )
 
-            if self.cog.bot.cache:
-                self.cog.bot.cache.delete(
-                    CACHE_GIVEAWAY_MESSAGE_ID.format(server_id=interaction.guild_id)
-                )
-
-            if self.cog.bot.metrics:
-                self.cog.bot.metrics.commands_executed.labels(
-                    command_name="giveaway start",
-                    server_id=str(interaction.guild_id),
-                    status="success",
-                ).inc()
-
-            if self.cog.bot.notifier:
-                await self.cog.bot.notifier.notify_giveaway_created(
-                    interaction.guild_id,
-                    prize,
-                    interaction.user.id,
-                    interaction.channel_id,
-                    ends_at,
-                )
-        except Exception as e:
-            logger.error("giveaway start error: %s", e, exc_info=True)
-            await send_error(interaction, "Error starting giveaway.")
-
-    @app_commands.command(name="reroll", description="Reroll winners for an ended giveaway")
-    @app_commands.autocomplete(message_id=_giveaway_message_id_autocomplete)
-    @app_commands.describe(
-        message_id="The giveaway message ID (from the message link, or right-click → Copy ID)",
-        count="Number of winners to reroll (default: all). Use when some winners didn't claim.",
-    )
-    async def reroll_cmd(
-        self, interaction: discord.Interaction, message_id: str, count: int | None = None
-    ):
-        await interaction.response.defer(ephemeral=True)
-        try:
-            if not await require_admin(interaction, "giveaway reroll", self.cog.bot):
-                return
-
-            msg_id = self.cog._parse_message_id(message_id)
-            if not msg_id:
-                await send_error(
-                    interaction,
-                    "Invalid message ID. Use the number from the message link or enable Developer Mode and right-click → Copy Message Link.",
-                )
-                return
-
-            async with self.cog.bot.db_pool.acquire() as conn:
-                giveaway = await conn.fetchrow(
-                    "SELECT " + GIVEAWAY_COLUMNS + " FROM giveaways WHERE message_id = $1",
-                    msg_id,
-                )
-            if not giveaway:
-                await send_error(interaction, "Giveaway not found.")
-                return
-            if giveaway["is_active"]:
-                await send_error(
-                    interaction,
-                    "Giveaway is still active. Reroll only works for ended giveaways.",
-                )
-                return
-
-            async with self.cog.bot.db_pool.acquire() as conn:
-                entries = await conn.fetch(
-                    "SELECT user_id, entries FROM giveaway_entries WHERE giveaway_id = $1",
-                    giveaway["id"],
-                )
-                old_winners = await conn.fetch(
-                    "SELECT user_id FROM giveaway_entries WHERE giveaway_id = $1 AND is_winner = true",
-                    giveaway["id"],
-                )
-
-            if not entries:
-                await send_error(interaction, "No entries to reroll from.")
-                return
-
-            old_winner_ids = {r["user_id"] for r in old_winners}
-            default_reroll_count = len(old_winner_ids) or giveaway["winners_count"]
-            reroll_count = default_reroll_count if count is None else count
-            if reroll_count < 1:
-                await send_error(interaction, "Count must be at least 1.")
-                return
-            if old_winner_ids and reroll_count > len(old_winner_ids):
-                await send_error(
-                    interaction,
-                    f"Cannot reroll more than {len(old_winner_ids)} winner(s).",
-                )
-                return
-
-            if reroll_count < len(old_winner_ids):
-                winners_to_remove = set(random.sample(list(old_winner_ids), reroll_count))
-            else:
-                winners_to_remove = old_winner_ids
-            non_winners = [e for e in entries if e["user_id"] not in old_winner_ids]
-            if not non_winners:
-                await send_error(
-                    interaction,
-                    "All entrants were winners. No one left to reroll.",
-                )
-                return
-            new_winners = self.cog._select_winners(non_winners, reroll_count)
-            final_winners = (old_winner_ids - winners_to_remove) | set(new_winners)
-
-            async with self.cog.bot.db_pool.acquire() as conn:
-                await conn.execute(
-                    "UPDATE giveaway_entries SET is_winner = false WHERE giveaway_id = $1",
-                    giveaway["id"],
-                )
-                if final_winners:
-                    await conn.executemany(
-                        "UPDATE giveaway_entries SET is_winner = true WHERE giveaway_id = $1 AND user_id = $2",
-                        [(giveaway["id"], w) for w in final_winners],
-                    )
-
-            channel = self.cog.bot.get_channel(giveaway["channel_id"])
-            if channel:
-                try:
-                    msg = await channel.fetch_message(giveaway["message_id"])
-                    embed = build_embed(dict(giveaway), len(entries), ended=True)
-                    if new_winners:
-                        embed.add_field(
-                            name="Winners (Rerolled)",
-                            value="\n".join(f"<@{w}>" for w in new_winners),
-                            inline=False,
-                        )
-                    await msg.edit(embed=embed)
-                except discord.NotFound:
-                    pass
-
+        channel = cog.bot.get_channel(giveaway["channel_id"])
+        if channel:
+            try:
+                msg = await channel.fetch_message(giveaway["message_id"])
+                embed = build_embed(dict(giveaway), len(entries), ended=True)
                 if new_winners:
-                    mentions = " ".join(f"<@{w}>" for w in new_winners)
-                    await channel.send(
-                        f"🎉 Reroll! New winners for **{giveaway['prize']}**: {mentions}"
+                    embed.add_field(
+                        name="Winners (Rerolled)",
+                        value="\n".join(f"<@{w}>" for w in new_winners),
+                        inline=False,
                     )
-                else:
-                    await channel.send(f"Reroll for **{giveaway['prize']}** — no valid entries.")
+                await msg.edit(embed=embed)
+            except discord.NotFound:
+                pass
 
-            await interaction.followup.send(
-                f"Rerolled! New winner(s): {', '.join(f'<@{w}>' for w in new_winners) if new_winners else 'None'}",
-                ephemeral=True,
-            )
-        except Exception as e:
-            logger.error("giveaway reroll error: %s", e, exc_info=True)
-            await send_error(interaction, "Error rerolling giveaway.")
+            if new_winners:
+                mentions = " ".join(f"<@{w}>" for w in new_winners)
+                await channel.send(
+                    f"🎉 Reroll! New winners for **{giveaway['prize']}**: {mentions}"
+                )
+            else:
+                await channel.send(f"Reroll for **{giveaway['prize']}** — no valid entries.")
+
+        await interaction.followup.send(
+            f"Rerolled! New winner(s): {', '.join(f'<@{w}>' for w in new_winners) if new_winners else 'None'}",
+            ephemeral=True,
+        )
+    except Exception as e:
+        logger.error("giveaway reroll error: %s", e, exc_info=True)
+        await send_error(interaction, "Error rerolling giveaway.")
 
 
 class GiveawayCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
-        self.giveaway_group = GiveawayGroup(self)
+        self.giveaway_cmd = _giveaway_command(self)
 
     def _parse_message_id(self, s: str) -> int | None:
         s = s.strip()
@@ -419,10 +476,10 @@ class GiveawayCommands(commands.Cog):
         return None
 
     async def cog_load(self):
-        self.bot.tree.add_command(self.giveaway_group)
+        self.bot.tree.add_command(self.giveaway_cmd)
 
     async def cog_unload(self):
-        self.bot.tree.remove_command(self.giveaway_group.name)
+        self.bot.tree.remove_command(self.giveaway_cmd.name)
 
 
 async def setup(bot):

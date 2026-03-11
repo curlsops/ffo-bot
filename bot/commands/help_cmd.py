@@ -2,6 +2,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+_MAX_EMBED_FIELDS = 25
+
 
 def _build_help_embed(bot: commands.Bot) -> discord.Embed:
     embed = discord.Embed(
@@ -9,17 +11,19 @@ def _build_help_embed(bot: commands.Bot) -> discord.Embed:
         description="Slash commands available on this server.",
         color=discord.Color.blue(),
     )
+    fields = []
     for cmd in sorted(bot.tree.get_commands(), key=lambda c: c.name):
         if isinstance(cmd, app_commands.Group):
             for sub in cmd.commands:
-                name = f"/{cmd.name} {sub.name}"
-                desc = sub.description or "—"
-                embed.add_field(name=name, value=desc[:100], inline=False)
+                fields.append((f"/{cmd.name} {sub.name}", (sub.description or "—")[:100]))
         elif not getattr(cmd, "hidden", False):
-            name = f"/{cmd.name}"
-            desc = cmd.description or "—"
-            embed.add_field(name=name, value=desc[:100], inline=False)
-    embed.set_footer(text="Use / before a command to see its options.")
+            fields.append((f"/{cmd.name}", (cmd.description or "—")[:100]))
+    for name, value in fields[:_MAX_EMBED_FIELDS]:
+        embed.add_field(name=name, value=value, inline=False)
+    footer = "Use / before a command to see its options."
+    if len(fields) > _MAX_EMBED_FIELDS:
+        footer += f" (Showing first {_MAX_EMBED_FIELDS} of {len(fields)}.)"
+    embed.set_footer(text=footer)
     return embed
 
 

@@ -148,6 +148,11 @@ class TestRequireAdmin:
 
 
 class TestPrivacy:
+    def _op(self, cmd):
+        from discord import app_commands
+
+        return app_commands.Choice(name=cmd.capitalize(), value=cmd)
+
     @pytest.mark.asyncio
     @pytest.mark.parametrize("cmd", ["optout", "optin"])
     async def test_optout_optin(self, cmd):
@@ -155,7 +160,7 @@ class TestPrivacy:
         bot.db_pool.acquire = _pool
         i = _i()
         cog = PrivacyCommands(bot)
-        await getattr(cog.privacy_group, cmd).callback(cog.privacy_group, i)
+        await cog.privacy_cmd.callback(i, operation=self._op(cmd))
         i.followup.send.assert_awaited()
 
     @pytest.mark.asyncio
@@ -165,5 +170,5 @@ class TestPrivacy:
         bot.db_pool.acquire = lambda: _pool(Exception("DB"))
         i = _i()
         cog = PrivacyCommands(bot)
-        await getattr(cog.privacy_group, cmd).callback(cog.privacy_group, i)
+        await cog.privacy_cmd.callback(i, operation=self._op(cmd))
         assert "error" in str(i.followup.send.call_args).lower()

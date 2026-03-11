@@ -29,3 +29,18 @@ def test_build_help_embed_with_command(mock_bot):
     assert len(embed.fields) == 1
     assert embed.fields[0].name == "/ping"
     assert embed.fields[0].value == "Pong"
+
+
+def test_build_help_embed_truncates_at_25_fields(mock_bot):
+    cmds = []
+    for i in range(30):
+        c = MagicMock()
+        c.name = f"cmd{i}"
+        c.commands = []
+        c.description = f"Desc {i}"
+        c.hidden = False
+        cmds.append(c)
+    mock_bot.tree.get_commands.return_value = cmds
+    embed = _build_help_embed(mock_bot)
+    assert len(embed.fields) == 25
+    assert "30" in (embed.footer.text or "")

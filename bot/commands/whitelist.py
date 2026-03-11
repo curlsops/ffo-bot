@@ -1,5 +1,4 @@
 import logging
-from typing import Optional
 
 import discord
 from discord import app_commands
@@ -24,6 +23,7 @@ WHITELIST_REJECT_EMOJI = "\u274c"  # ❌
 
 OPERATION_CHOICES = [
     app_commands.Choice(name="Add", value="add"),
+    app_commands.Choice(name="ClearChannel", value="clear_channel"),
     app_commands.Choice(name="List", value="list"),
     app_commands.Choice(name="Off", value="off"),
     app_commands.Choice(name="On", value="on"),
@@ -64,160 +64,135 @@ def _validate_username(username: str) -> str | None:
     return s if s.replace("_", "").isalnum() else None
 
 
-@app_commands.guild_only()
-class WhitelistGroup(app_commands.Group):
-    """Minecraft whitelist management. Operations: Add, List, Off, On, Remove, Sync."""
-
-    def __init__(self, cog: "WhitelistCommands"):
-        super().__init__(
-            name="whitelist",
-            description="Minecraft whitelist management. Operations: Add, List, Off, On, Remove, Sync.",
-        )
-        self.cog = cog
-
-    @app_commands.command(name="channel", description="Set channel for whitelist IGN posts (admin)")
-    @app_commands.default_permissions(administrator=True)
-    @app_commands.describe(channel="Channel to monitor (leave empty to disable)")
-    async def channel_cmd(
-        self,
-        interaction: discord.Interaction,
-        channel: discord.TextChannel | None = None,
-    ):
-        await interaction.response.defer(ephemeral=True)
-        if not await require_admin(interaction, "whitelist channel", self.cog.bot):
-            return
-
-        await self.cog.bot._register_server(interaction.guild)
-        new_channel_id = channel.id if channel else None
-        current_id = await get_whitelist_channel_id(
-            self.cog.bot.db_pool, interaction.guild_id, cache=self.cog.bot.cache
-        )
-
-        if current_id == new_channel_id:
-            if channel:
-                await interaction.followup.send(
-                    f"Whitelist channel is already set to {channel.mention}."
-                )
-            else:
-                await interaction.followup.send("Whitelist channel is already disabled.")
-            return
-
-        success = await set_whitelist_channel(
-            self.cog.bot.db_pool,
-            interaction.guild_id,
-            new_channel_id,
-            cache=self.cog.bot.cache,
-        )
-        if not success:
-            await interaction.followup.send("Failed to update whitelist channel.")
-            return
-
-        if channel:
-            await interaction.followup.send(
-                f"Whitelist channel set to {channel.mention}. "
-                "Users should post only their Minecraft IGN (one per message)."
-            )
-        else:
-            await interaction.followup.send("Whitelist channel disabled.")
-
+def _whitelist_command(cog: "WhitelistCommands"):
     @app_commands.command(
-        name="run",
-        description="Whitelist operations: Add, List, Off, On, Remove, Sync (matches RCON).",
+        name="whitelist",
+        description="Minecraft whitelist management. Provide operation and/or channel.",
     )
+    @app_commands.guild_only()
     @app_commands.describe(
-        operation="Add, List, Off, On, Remove, Sync",
-        channel="Channel for IGN posts (On only, admin)",
+        operation="Add, ClearChannel, List, Off, On, Remove, Sync",
         username="Minecraft username (Add/Remove only)",
+        channel="Channel for IGN posts (admin; omit with ClearChannel to disable)",
     )
     @app_commands.choices(operation=OPERATION_CHOICES)
     @app_commands.autocomplete(username=_whitelist_username_autocomplete)
-    async def run_cmd(
-        self,
+    async def whitelist_cmd(
         interaction: discord.Interaction,
-        operation: app_commands.Choice[str],
-        channel: discord.TextChannel | None = None,
+        operation: app_commands.Choice[str] | None = None,
         username: str | None = None,
+        channel: discord.TextChannel | None = None,
     ):
         await interaction.response.defer(ephemeral=True)
-        op = operation.value
 
-        if op in ("off", "on"):
-            if not await require_admin(interaction, "whitelist", self.cog.bot):
+        if channel is not None:
+            if not await require_admin(interaction, "whitelist channel", cog.bot):
                 return
-            await self.cog._handle_channel(interaction, op, channel)
-            return
-
-        if not await require_mod(interaction, "whitelist", self.cog.bot):
-            return
-        if not await require_rcon(interaction, self.cog.bot):
-            return
-
-        if op == "add":
-            await self.cog._handle_add(interaction, username)
-        elif op == "list":
-            await self.cog._handle_list(interaction)
-        elif op == "sync":
-            await self.cog._handle_sync(interaction)
-        elif op == "remove":
-            await self.cog._handle_remove(interaction, username)
-        else:
-            await interaction.followup.send("Unknown operation.", ephemeral=True)
-
-
-@app_commands.guild_only()
-class WhitelistCommands(commands.Cog):
-    def __init__(self, bot):
-        self.bot = bot
-        self.whitelist_group = WhitelistGroup(self)
-
-    async def _handle_channel(
-        self,
-        interaction: discord.Interaction,
-        op: str,
-        channel: Optional[discord.TextChannel],
-    ):
-        await self.bot._register_server(interaction.guild)
-        new_channel_id = channel.id if channel else None
-        current_id = await get_whitelist_channel_id(
-            self.bot.db_pool, interaction.guild_id, cache=self.bot.cache
-        )
-
-        if op == "off":
-            new_channel_id = None
-        elif op == "on" and not channel:
-            await interaction.followup.send(
-                "Provide a channel when enabling (e.g. /whitelist run operation:On channel:#whitelist)."
+            await cog.bot._register_server(interaction.guild)
+            new_channel_id = channel.id
+            current_id = await get_whitelist_channel_id(
+                cog.bot.db_pool, interaction.guild_id, cache=cog.bot.cache
             )
-            return
-
-        if current_id == new_channel_id:
-            if new_channel_id:
+            if current_id == new_channel_id:
                 await interaction.followup.send(
                     f"Whitelist channel is already set to {channel.mention}."
                 )
-            else:
-                await interaction.followup.send("Whitelist channel is already disabled.")
-            return
-
-        success = await set_whitelist_channel(
-            self.bot.db_pool, interaction.guild_id, new_channel_id, cache=self.bot.cache
-        )
-        if not success:
-            await interaction.followup.send("Failed to update whitelist channel.")
-            return
-
-        if new_channel_id:
+                return
+            success = await set_whitelist_channel(
+                cog.bot.db_pool,
+                interaction.guild_id,
+                new_channel_id,
+                cache=cog.bot.cache,
+            )
+            if not success:
+                await interaction.followup.send("Failed to update whitelist channel.")
+                return
             await interaction.followup.send(
                 f"Whitelist channel set to {channel.mention}. "
                 "Users should post only their Minecraft IGN (one per message)."
             )
-        else:
-            await interaction.followup.send("Whitelist channel disabled.")
+            return
+
+        if operation is not None:
+            op = operation.value
+            if op == "clear_channel":
+                if not await require_admin(interaction, "whitelist channel", cog.bot):
+                    return
+                current_id = await get_whitelist_channel_id(
+                    cog.bot.db_pool, interaction.guild_id, cache=cog.bot.cache
+                )
+                if current_id is None:
+                    await interaction.followup.send("Whitelist channel is already disabled.")
+                    return
+                success = await set_whitelist_channel(
+                    cog.bot.db_pool,
+                    interaction.guild_id,
+                    None,
+                    cache=cog.bot.cache,
+                )
+                if not success:
+                    await interaction.followup.send("Failed to update whitelist channel.")
+                    return
+                await interaction.followup.send("Whitelist channel disabled.")
+                return
+
+            if op in ("off", "on"):
+                if not await require_admin(interaction, "whitelist", cog.bot):
+                    return
+                if not await require_rcon(interaction, cog.bot):
+                    return
+                await cog._handle_whitelist_toggle(interaction, op)
+                return
+
+            if not await require_mod(interaction, "whitelist", cog.bot):
+                return
+            if not await require_rcon(interaction, cog.bot):
+                return
+
+            if op == "add":
+                await cog._handle_add(interaction, username)
+            elif op == "list":
+                await cog._handle_list(interaction)
+            elif op == "sync":
+                await cog._handle_sync(interaction)
+            elif op == "remove":
+                await cog._handle_remove(interaction, username)
+            else:
+                await interaction.followup.send("Unknown operation.", ephemeral=True)
+            return
+
+        await interaction.followup.send(
+            "Provide operation (Add, List, Off, On, Remove, Sync, ClearChannel) "
+            "or channel to set.",
+            ephemeral=True,
+        )
+
+    return whitelist_cmd
+
+
+class WhitelistCommands(commands.Cog):
+    def __init__(self, bot):
+        self.bot = bot
+        self.whitelist_cmd = _whitelist_command(self)
+
+    async def _handle_whitelist_toggle(self, interaction: discord.Interaction, op: str):
+        try:
+            if op == "on":
+                resp = await self.bot.minecraft_rcon.whitelist_on()
+            else:
+                resp = await self.bot.minecraft_rcon.whitelist_off()
+            await interaction.followup.send(f"Whitelist: {resp}", ephemeral=True)
+        except MinecraftRCONError as e:
+            logger.warning("RCON whitelist %s failed: %s", op, e)
+            await interaction.followup.send(
+                "Could not connect to the Minecraft server. Check RCON configuration.",
+                ephemeral=True,
+            )
 
     async def _handle_add(self, interaction: discord.Interaction, username: str | None):
         if not username:
             await interaction.followup.send(
-                "Username required for Add (e.g. /whitelist run operation:Add username:Steve).",
+                "Username required for Add (e.g. operation:Add username:Steve).",
                 ephemeral=True,
             )
             return
@@ -299,7 +274,7 @@ class WhitelistCommands(commands.Cog):
     async def _handle_remove(self, interaction: discord.Interaction, username: str | None):
         if not username:
             await interaction.followup.send(
-                "Username required for Remove (e.g. /whitelist run operation:Remove username:Steve).",
+                "Username required for Remove (e.g. operation:Remove username:Steve).",
                 ephemeral=True,
             )
             return
@@ -324,10 +299,10 @@ class WhitelistCommands(commands.Cog):
             )
 
     async def cog_load(self):
-        self.bot.tree.add_command(self.whitelist_group)
+        self.bot.tree.add_command(self.whitelist_cmd)
 
     async def cog_unload(self):
-        self.bot.tree.remove_command(self.whitelist_group.name)
+        self.bot.tree.remove_command(self.whitelist_cmd.name)
 
 
 async def setup(bot):

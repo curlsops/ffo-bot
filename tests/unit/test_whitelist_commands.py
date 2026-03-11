@@ -17,6 +17,8 @@ def _whitelist_bot():
     bot.minecraft_rcon.whitelist_add = AsyncMock(return_value="Added")
     bot.minecraft_rcon.whitelist_remove = AsyncMock(return_value="Removed")
     bot.minecraft_rcon.whitelist_list = AsyncMock(return_value="Steve, Alex")
+    bot.minecraft_rcon.whitelist_on = AsyncMock(return_value="Whitelist is now turned on")
+    bot.minecraft_rcon.whitelist_off = AsyncMock(return_value="Whitelist is now turned off")
     return bot
 
 
@@ -64,8 +66,79 @@ class TestSetWhitelistChannel:
             i = mock_interaction(user_id=2)
             i.guild = MagicMock()
             channel = MagicMock(id=999)
-            await invoke(cog, "whitelist_group", "channel_cmd", i, channel=channel)
+            await invoke(cog, "whitelist_cmd", None, i, channel=channel)
             assert_followup_contains(i, "set", case_sensitive=False)
+
+    @pytest.mark.asyncio
+    async def test_clear_channel_success(self):
+        with (
+            patch(
+                "bot.commands.whitelist.get_whitelist_channel_id",
+                new_callable=AsyncMock,
+                return_value=888,
+            ),
+            patch(
+                "bot.commands.whitelist.set_whitelist_channel",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+        ):
+            bot = _whitelist_bot()
+            bot.db_pool, _ = mock_db_pool()
+            cog = WhitelistCommands(bot)
+            i = mock_interaction(user_id=2)
+            i.guild = MagicMock()
+            await invoke(
+                cog,
+                "whitelist_cmd",
+                None,
+                i,
+                operation=_op_choice("clear_channel"),
+                username=None,
+                channel=None,
+            )
+            assert_followup_contains(i, "disabled", case_sensitive=False)
+
+    @pytest.mark.asyncio
+    async def test_clear_channel_already_disabled(self):
+        with patch(
+            "bot.commands.whitelist.get_whitelist_channel_id",
+            new_callable=AsyncMock,
+            return_value=None,
+        ):
+            bot = _whitelist_bot()
+            bot.db_pool, _ = mock_db_pool()
+            cog = WhitelistCommands(bot)
+            i = mock_interaction(user_id=2)
+            i.guild = MagicMock()
+            await invoke(
+                cog,
+                "whitelist_cmd",
+                None,
+                i,
+                operation=_op_choice("clear_channel"),
+                username=None,
+                channel=None,
+            )
+            assert_followup_contains(i, "already disabled", case_sensitive=False)
+
+    @pytest.mark.asyncio
+    async def test_no_params_shows_help(self):
+        bot = _whitelist_bot()
+        bot.db_pool, _ = mock_db_pool()
+        cog = WhitelistCommands(bot)
+        i = mock_interaction(user_id=2)
+        i.guild = MagicMock()
+        await invoke(
+            cog,
+            "whitelist_cmd",
+            None,
+            i,
+            operation=None,
+            username=None,
+            channel=None,
+        )
+        assert_followup_contains(i, "Provide operation", case_sensitive=False)
 
     @pytest.mark.asyncio
     async def test_channel_cmd_same_as_current(self):
@@ -80,69 +153,82 @@ class TestSetWhitelistChannel:
             i = mock_interaction(user_id=2)
             i.guild = MagicMock()
             channel = MagicMock(id=999)
-            await invoke(cog, "whitelist_group", "channel_cmd", i, channel=channel)
+            await invoke(cog, "whitelist_cmd", None, i, channel=channel)
             assert_followup_contains(i, "already", case_sensitive=False)
 
     @pytest.mark.asyncio
-    async def test_run_on_sets_channel(self):
-        with (
-            patch(
-                "bot.commands.whitelist.get_whitelist_channel_id",
-                new_callable=AsyncMock,
-                return_value=None,
-            ),
-            patch(
-                "bot.commands.whitelist.set_whitelist_channel",
-                new_callable=AsyncMock,
-                return_value=True,
-            ),
-        ):
-            bot = _whitelist_bot()
-            bot.db_pool, _ = mock_db_pool()
-            cog = WhitelistCommands(bot)
-            i = mock_interaction(user_id=2)
-            i.guild = MagicMock()
-            channel = MagicMock(id=999)
-            await invoke(
-                cog,
-                "whitelist_group",
-                "run_cmd",
-                i,
-                operation=_op_choice("on"),
-                channel=channel,
-                username=None,
-            )
-            assert_followup_contains(i, "set", case_sensitive=False)
+    async def test_run_on_toggles_whitelist(self):
+        bot = _whitelist_bot()
+        bot.db_pool, _ = mock_db_pool()
+        cog = WhitelistCommands(bot)
+        i = mock_interaction(user_id=2)
+        i.guild = MagicMock()
+        await invoke(
+            cog,
+            "whitelist_cmd",
+            None,
+            i,
+            operation=_op_choice("on"),
+            username=None,
+        )
+        bot.minecraft_rcon.whitelist_on.assert_awaited_once()
+        assert_followup_contains(i, "Whitelist:", case_sensitive=False)
 
     @pytest.mark.asyncio
-    async def test_run_off_disables_channel(self):
-        with (
-            patch(
-                "bot.commands.whitelist.get_whitelist_channel_id",
-                new_callable=AsyncMock,
-                return_value=999,
-            ),
-            patch(
-                "bot.commands.whitelist.set_whitelist_channel",
-                new_callable=AsyncMock,
-                return_value=True,
-            ),
-        ):
-            bot = _whitelist_bot()
-            bot.db_pool, _ = mock_db_pool()
-            cog = WhitelistCommands(bot)
-            i = mock_interaction(user_id=2)
-            i.guild = MagicMock()
-            await invoke(
-                cog,
-                "whitelist_group",
-                "run_cmd",
-                i,
-                operation=_op_choice("off"),
-                channel=None,
-                username=None,
-            )
-            assert_followup_contains(i, "disabled", case_sensitive=False)
+    async def test_run_off_toggles_whitelist(self):
+        bot = _whitelist_bot()
+        bot.db_pool, _ = mock_db_pool()
+        cog = WhitelistCommands(bot)
+        i = mock_interaction(user_id=2)
+        i.guild = MagicMock()
+        await invoke(
+            cog,
+            "whitelist_cmd",
+            None,
+            i,
+            operation=_op_choice("off"),
+            username=None,
+        )
+        bot.minecraft_rcon.whitelist_off.assert_awaited_once()
+        assert_followup_contains(i, "Whitelist:", case_sensitive=False)
+
+    @pytest.mark.asyncio
+    async def test_run_on_requires_admin(self):
+        bot = _whitelist_bot()
+        bot.permission_checker.check_role = AsyncMock(return_value=False)
+        bot.db_pool, _ = mock_db_pool()
+        cog = WhitelistCommands(bot)
+        i = mock_interaction(user_id=2)
+        i.guild = MagicMock()
+        await invoke(
+            cog,
+            "whitelist_cmd",
+            None,
+            i,
+            operation=_op_choice("on"),
+            username=None,
+        )
+        bot.minecraft_rcon.whitelist_on.assert_not_awaited()
+        assert_followup_contains(i, "Admin", case_sensitive=False)
+
+    @pytest.mark.asyncio
+    async def test_run_off_requires_admin(self):
+        bot = _whitelist_bot()
+        bot.permission_checker.check_role = AsyncMock(return_value=False)
+        bot.db_pool, _ = mock_db_pool()
+        cog = WhitelistCommands(bot)
+        i = mock_interaction(user_id=2)
+        i.guild = MagicMock()
+        await invoke(
+            cog,
+            "whitelist_cmd",
+            None,
+            i,
+            operation=_op_choice("off"),
+            username=None,
+        )
+        bot.minecraft_rcon.whitelist_off.assert_not_awaited()
+        assert_followup_contains(i, "Admin", case_sensitive=False)
 
 
 class TestWhitelistList:
@@ -154,11 +240,10 @@ class TestWhitelistList:
         i = mock_interaction(user_id=2)
         await invoke(
             cog,
-            "whitelist_group",
-            "run_cmd",
+            "whitelist_cmd",
+            None,
             i,
             operation=_op_choice("list"),
-            channel=None,
             username=None,
         )
         bot.minecraft_rcon.whitelist_list.assert_awaited_once()
@@ -182,11 +267,10 @@ class TestWhitelistAdd:
             i = mock_interaction(user_id=2)
             await invoke(
                 cog,
-                "whitelist_group",
-                "run_cmd",
+                "whitelist_cmd",
+                None,
                 i,
                 operation=_op_choice("add"),
-                channel=None,
                 username="Steve",
             )
             bot.minecraft_rcon.whitelist_add.assert_awaited_once_with("Steve")
@@ -199,11 +283,10 @@ class TestWhitelistAdd:
         i = mock_interaction(user_id=2)
         await invoke(
             cog,
-            "whitelist_group",
-            "run_cmd",
+            "whitelist_cmd",
+            None,
             i,
             operation=_op_choice("add"),
-            channel=None,
             username="ab",
         )
         bot.minecraft_rcon.whitelist_add.assert_not_awaited()
@@ -217,11 +300,10 @@ class TestWhitelistAdd:
         i = mock_interaction(user_id=2)
         await invoke(
             cog,
-            "whitelist_group",
-            "run_cmd",
+            "whitelist_cmd",
+            None,
             i,
             operation=_op_choice("add"),
-            channel=None,
             username=None,
         )
         bot.minecraft_rcon.whitelist_add.assert_not_awaited()
@@ -236,11 +318,10 @@ class TestWhitelistAdd:
         i = mock_interaction(user_id=2)
         await invoke(
             cog,
-            "whitelist_group",
-            "run_cmd",
+            "whitelist_cmd",
+            None,
             i,
             operation=_op_choice("add"),
-            channel=None,
             username="Steve",
         )
         assert_followup_contains(i, "not configured", case_sensitive=False)
@@ -256,11 +337,10 @@ class TestWhitelistRemove:
             i = mock_interaction(user_id=2)
             await invoke(
                 cog,
-                "whitelist_group",
-                "run_cmd",
+                "whitelist_cmd",
+                None,
                 i,
                 operation=_op_choice("remove"),
-                channel=None,
                 username="Steve",
             )
             bot.minecraft_rcon.whitelist_remove.assert_awaited_once_with("Steve")
@@ -273,11 +353,10 @@ class TestWhitelistRemove:
         i = mock_interaction(user_id=2)
         await invoke(
             cog,
-            "whitelist_group",
-            "run_cmd",
+            "whitelist_cmd",
+            None,
             i,
             operation=_op_choice("remove"),
-            channel=None,
             username="x",
         )
         bot.minecraft_rcon.whitelist_remove.assert_not_awaited()
@@ -292,11 +371,10 @@ class TestWhitelistRemove:
         i = mock_interaction(user_id=2)
         await invoke(
             cog,
-            "whitelist_group",
-            "run_cmd",
+            "whitelist_cmd",
+            None,
             i,
             operation=_op_choice("remove"),
-            channel=None,
             username="Steve",
         )
         assert_followup_contains(i, "not configured", case_sensitive=False)
@@ -323,11 +401,10 @@ class TestWhitelistSync:
             i = mock_interaction(user_id=2)
             await invoke(
                 cog,
-                "whitelist_group",
-                "run_cmd",
+                "whitelist_cmd",
+                None,
                 i,
                 operation=_op_choice("sync"),
-                channel=None,
                 username=None,
             )
             assert_followup_contains(i, "Synced")
@@ -345,11 +422,10 @@ class TestWhitelistSync:
             i = mock_interaction(user_id=2)
             await invoke(
                 cog,
-                "whitelist_group",
-                "run_cmd",
+                "whitelist_cmd",
+                None,
                 i,
                 operation=_op_choice("sync"),
-                channel=None,
                 username=None,
             )
             assert_followup_contains(i, "Failed")
@@ -363,11 +439,10 @@ class TestWhitelistSync:
         i = mock_interaction(user_id=2)
         await invoke(
             cog,
-            "whitelist_group",
-            "run_cmd",
+            "whitelist_cmd",
+            None,
             i,
             operation=_op_choice("sync"),
-            channel=None,
             username=None,
         )
         assert_followup_contains(i, "not configured", case_sensitive=False)

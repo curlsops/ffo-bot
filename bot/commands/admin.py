@@ -52,7 +52,8 @@ class RegisterCommandsView(discord.ui.View):
             return
         await i.response.defer(ephemeral=True)
         try:
-            await self.bot.tree.clear_commands(guild=i.guild)
+            self.bot.tree.clear_commands(guild=i.guild)
+            await self.bot.tree.sync(guild=i.guild)
             await i.followup.send("Cleared guild commands.", ephemeral=True)
         except Exception as e:
             logger.exception("Command clear failed: %s", e)
@@ -62,8 +63,6 @@ class RegisterCommandsView(discord.ui.View):
 @app_commands.guild_only()
 @app_commands.default_permissions(administrator=True)
 class AdminGroup(app_commands.Group):
-    """Admin configuration and tools."""
-
     def __init__(self, cog: "AdminCommands"):
         super().__init__(name="admin", description="Admin configuration and tools")
         self.cog = cog

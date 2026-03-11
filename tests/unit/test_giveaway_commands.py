@@ -5,14 +5,19 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import discord
 import pytest
+from discord import app_commands
 
-from bot.commands.giveaway import GiveawayCommands, GiveawayView, parse_duration
+from bot.commands.giveaway import GiveawayCommands, parse_duration
 from bot.views.giveaway import (
     AlreadyJoinedView,
     EntriesPaginatedView,
+    GiveawayView,
     _discord_timestamp,
     build_embed,
 )
+
+_OP_START = app_commands.Choice(name="Start", value="start")
+_OP_REROLL = app_commands.Choice(name="Reroll", value="reroll")
 
 
 @pytest.fixture
@@ -240,21 +245,27 @@ class TestGiveawayCommands:
     )
     async def test_gstart_validation(self, cog, duration, winners, prize, expected):
         i = _interaction()
-        await cog.giveaway_group.start_cmd.callback(cog.giveaway_group, i, duration, winners, prize)
+        await cog.giveaway_cmd.callback(
+            i, operation=_OP_START, duration=duration, winners=winners, prize=prize
+        )
         assert expected in str(i.followup.send.call_args)
 
     @pytest.mark.asyncio
     async def test_gstart_not_admin(self, cog):
         cog.bot.permission_checker.check_role = AsyncMock(return_value=False)
         i = _interaction()
-        await cog.giveaway_group.start_cmd.callback(cog.giveaway_group, i, "1h", 1, "Prize")
+        await cog.giveaway_cmd.callback(
+            i, operation=_OP_START, duration="1h", winners=1, prize="Prize"
+        )
         assert "Admin" in str(i.followup.send.call_args)
 
     @pytest.mark.asyncio
     async def test_gstart_success(self, cog):
         cog.bot.db_pool = _db_ctx(AsyncMock())
         i = _interaction()
-        await cog.giveaway_group.start_cmd.callback(cog.giveaway_group, i, "1h", 1, "Prize")
+        await cog.giveaway_cmd.callback(
+            i, operation=_OP_START, duration="1h", winners=1, prize="Prize"
+        )
         i.followup.send.assert_called()
 
     @pytest.mark.asyncio
@@ -262,8 +273,8 @@ class TestGiveawayCommands:
         cog.bot.db_pool = _db_ctx(AsyncMock())
         cog.bot.notifier = MagicMock(notify_giveaway_created=AsyncMock())
         i = _interaction()
-        await cog.giveaway_group.start_cmd.callback(
-            cog.giveaway_group, i, "1h", 1, "Prize", ping=True
+        await cog.giveaway_cmd.callback(
+            i, operation=_OP_START, duration="1h", winners=1, prize="Prize", ping=True
         )
         call = i.followup.send.call_args
         assert call.kwargs.get("content") == "@everyone"
@@ -272,7 +283,9 @@ class TestGiveawayCommands:
     async def test_gstart_error(self, cog):
         cog.bot.db_pool = _db_ctx(AsyncMock(execute=AsyncMock(side_effect=Exception("DB"))))
         i = _interaction()
-        await cog.giveaway_group.start_cmd.callback(cog.giveaway_group, i, "1h", 1, "Prize")
+        await cog.giveaway_cmd.callback(
+            i, operation=_OP_START, duration="1h", winners=1, prize="Prize"
+        )
         assert "Error starting" in str(i.followup.send.call_args)
 
 
@@ -807,7 +820,7 @@ class TestGreroll:
     async def test_invalid_message_id(self, cog):
         cog.bot.db_pool = _db_ctx(AsyncMock())
         i = _interaction()
-        await cog.giveaway_group.reroll_cmd.callback(cog.giveaway_group, i, "invalid")
+        await cog.giveaway_cmd.callback(i, operation=_OP_REROLL, message_id="invalid")
         assert "Invalid message ID" in str(i.followup.send.call_args)
 
     @pytest.mark.asyncio
@@ -815,7 +828,7 @@ class TestGreroll:
         conn = AsyncMock(fetchrow=AsyncMock(return_value=None))
         cog.bot.db_pool = _db_ctx(conn)
         i = _interaction()
-        await cog.giveaway_group.reroll_cmd.callback(cog.giveaway_group, i, "123456789012345678")
+        await cog.giveaway_cmd.callback(i, operation=_OP_REROLL, message_id="123456789012345678")
         assert "not found" in str(i.followup.send.call_args)
 
     @pytest.mark.asyncio
@@ -823,7 +836,7 @@ class TestGreroll:
         conn = AsyncMock(fetchrow=AsyncMock(return_value={"id": 1, "is_active": True}))
         cog.bot.db_pool = _db_ctx(conn)
         i = _interaction()
-        await cog.giveaway_group.reroll_cmd.callback(cog.giveaway_group, i, "123456789012345678")
+        await cog.giveaway_cmd.callback(i, operation=_OP_REROLL, message_id="123456789012345678")
         assert "still active" in str(i.followup.send.call_args)
 
     @pytest.mark.asyncio
@@ -843,7 +856,7 @@ class TestGreroll:
         )
         cog.bot.db_pool = _db_ctx(conn)
         i = _interaction()
-        await cog.giveaway_group.reroll_cmd.callback(cog.giveaway_group, i, "123456789012345678")
+        await cog.giveaway_cmd.callback(i, operation=_OP_REROLL, message_id="123456789012345678")
         assert "No entries" in str(i.followup.send.call_args)
 
     @pytest.mark.asyncio
@@ -868,7 +881,7 @@ class TestGreroll:
         )
         cog.bot.db_pool = _db_ctx(conn)
         i = _interaction()
-        await cog.giveaway_group.reroll_cmd.callback(cog.giveaway_group, i, "123456789012345678")
+        await cog.giveaway_cmd.callback(i, operation=_OP_REROLL, message_id="123456789012345678")
         assert "All entrants were winners" in str(i.followup.send.call_args)
 
     @pytest.mark.asyncio
@@ -896,7 +909,7 @@ class TestGreroll:
         cog.bot.db_pool = _db_ctx(conn)
         cog.bot.get_channel = MagicMock(return_value=None)
         i = _interaction()
-        await cog.giveaway_group.reroll_cmd.callback(cog.giveaway_group, i, "123456789012345678")
+        await cog.giveaway_cmd.callback(i, operation=_OP_REROLL, message_id="123456789012345678")
         assert "Rerolled" in str(i.followup.send.call_args)
 
     @pytest.mark.asyncio
@@ -904,7 +917,7 @@ class TestGreroll:
         cog.bot.permission_checker.check_role = AsyncMock(return_value=False)
         cog.bot.db_pool = _db_ctx(AsyncMock())
         i = _interaction()
-        await cog.giveaway_group.reroll_cmd.callback(cog.giveaway_group, i, "123456789012345678")
+        await cog.giveaway_cmd.callback(i, operation=_OP_REROLL, message_id="123456789012345678")
         assert "Admin" in str(i.followup.send.call_args)
 
     @pytest.mark.asyncio
@@ -934,7 +947,9 @@ class TestGreroll:
         cog.bot.db_pool = _db_ctx(conn)
         cog.bot.get_channel = MagicMock(return_value=None)
         i = _interaction()
-        await cog.giveaway_group.reroll_cmd.callback(cog.giveaway_group, i, "123456789012345678", 1)
+        await cog.giveaway_cmd.callback(
+            i, operation=_OP_REROLL, message_id="123456789012345678", count=1
+        )
         assert "Rerolled" in str(i.followup.send.call_args)
         executemany_args = conn.executemany.call_args[0][1]
         assert len(executemany_args) == 3
@@ -966,8 +981,8 @@ class TestGreroll:
         cog.bot.get_channel = MagicMock(return_value=None)
         with patch.object(cog, "_select_winners", wraps=cog._select_winners) as mock_select:
             i = _interaction()
-            await cog.giveaway_group.reroll_cmd.callback(
-                cog.giveaway_group, i, "123456789012345678"
+            await cog.giveaway_cmd.callback(
+                i, operation=_OP_REROLL, message_id="123456789012345678"
             )
             pool, count = mock_select.call_args[0]
             pool_user_ids = {e["user_id"] for e in pool}
@@ -997,7 +1012,9 @@ class TestGreroll:
         )
         cog.bot.db_pool = _db_ctx(conn)
         i = _interaction()
-        await cog.giveaway_group.reroll_cmd.callback(cog.giveaway_group, i, "123456789012345678", 5)
+        await cog.giveaway_cmd.callback(
+            i, operation=_OP_REROLL, message_id="123456789012345678", count=5
+        )
         assert "Cannot reroll more than 2" in str(i.followup.send.call_args)
 
 
