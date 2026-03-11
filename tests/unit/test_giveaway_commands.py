@@ -439,6 +439,20 @@ class TestGiveawayView:
         mock_bot.cache.delete.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_join_button_success_without_cache(self, view, mock_bot):
+        mock_bot.cache = None
+        mock_bot.db_pool = _db_ctx(
+            AsyncMock(
+                fetchrow=AsyncMock(return_value=_active_giveaway(view)),
+                execute=AsyncMock(),
+                fetchval=AsyncMock(return_value=1),
+            )
+        )
+        i = _interaction()
+        await view.join_button(i)
+        assert "joined" in str(i.followup.send.call_args)
+
+    @pytest.mark.asyncio
     async def test_defer_ephemeral_not_found_returns_false(self, view):
         i = _interaction()
         i.response.defer = AsyncMock(side_effect=discord.NotFound(MagicMock(), ""))

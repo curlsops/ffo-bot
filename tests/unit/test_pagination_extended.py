@@ -66,18 +66,18 @@ class TestListPaginatedViewExtended:
     @pytest.mark.asyncio
     async def test_prev_at_zero_no_edit(self):
         view = ListPaginatedView(["a"], "H", _fmt)
-        interaction = MagicMock()
-        interaction.response.edit_message = AsyncMock()
-        await view._prev_callback(interaction)
-        interaction.response.edit_message.assert_not_awaited()
+        i = MagicMock()
+        i.response.edit_message = AsyncMock()
+        await view._prev_callback(i)
+        i.response.edit_message.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_next_at_max_no_edit(self):
         view = ListPaginatedView(["a"], "H", _fmt)
-        interaction = MagicMock()
-        interaction.response.edit_message = AsyncMock()
-        await view._next_callback(interaction)
-        interaction.response.edit_message.assert_not_awaited()
+        i = MagicMock()
+        i.response.edit_message = AsyncMock()
+        await view._next_callback(i)
+        i.response.edit_message.assert_not_awaited()
 
 
 class TestEmbedPaginatedView:

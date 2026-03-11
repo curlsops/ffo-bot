@@ -60,6 +60,7 @@ class TestConstantsExtended:
     @pytest.mark.parametrize(
         "attr",
         [
+            "CACHE_TTL",
             "PERMISSION_CACHE_TTL",
             "PHRASE_PATTERN_CACHE_TTL",
             "USER_ROLE_CACHE_TTL",

@@ -7,6 +7,7 @@ from discord.ext import commands
 
 from bot.auth.command_helpers import require_admin, send_error
 from bot.utils.pagination import ListPaginatedView
+from config.constants import Constants
 
 logger = logging.getLogger(__name__)
 
@@ -226,7 +227,7 @@ class ReactionRoleGroup(app_commands.Group):
                     )
                 rows = [dict(r) for r in rows]
                 if self.cog.bot.cache:
-                    self.cog.bot.cache.set(cache_key, rows, ttl=300)
+                    self.cog.bot.cache.set(cache_key, rows, ttl=Constants.CACHE_TTL)
 
             if not rows:
                 await send_error(interaction, "No reaction roles configured.")

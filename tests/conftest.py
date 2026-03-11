@@ -80,6 +80,21 @@ def mock_bot():
 
 
 @pytest.fixture
+def mock_admin_bot(mock_db_pool):
+    from tests.helpers import mock_user
+
+    bot = MagicMock()
+    bot.permission_checker.check_role = AsyncMock(return_value=True)
+    bot.permission_checker.invalidate_user_cache = MagicMock()
+    bot._register_server = AsyncMock()
+    bot.cache = MagicMock()
+    bot.cache.get = MagicMock(return_value=None)
+    bot.db_pool = mock_db_pool
+    bot.fetch_user = AsyncMock(side_effect=lambda uid: mock_user(uid, f"user-{uid}"))
+    return bot
+
+
+@pytest.fixture
 def mock_discord_message():
     message = MagicMock()
     message.id = 123456789

@@ -2,6 +2,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from bot.utils.config_repair import repair_servers_config
+from config.constants import Constants
 
 if TYPE_CHECKING:
     from bot.cache.memory import InMemoryCache
@@ -30,7 +31,7 @@ async def get_whitelist_channel_id(
         else:
             result = None
         if cache:
-            cache.set(cache_key, result if result is not None else -1, ttl=300)
+            cache.set(cache_key, result if result is not None else -1, ttl=Constants.CACHE_TTL)
         return result
     except Exception as e:
         logger.warning("Failed to get whitelist channel: %s", e)

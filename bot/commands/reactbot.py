@@ -10,6 +10,7 @@ from bot.utils.autocomplete import cached_autocomplete
 from bot.utils.pagination import ListPaginatedView
 from bot.utils.regex_validator import RegexValidationError
 from bot.utils.validation import InputValidator, ValidationError
+from config.constants import Constants
 
 logger = logging.getLogger(__name__)
 
@@ -54,7 +55,7 @@ async def _reactbot_phrase_autocomplete(
         CACHE_REACTBOT_PHRASES,
         _fetch_reactbot_phrases,
         _reactbot_phrases_to_choices,
-        ttl=300,
+        ttl=Constants.CACHE_TTL,
         log_prefix="Reactbot phrase",
     )
 
@@ -128,7 +129,7 @@ class ReactBotGroup(app_commands.Group):
                     )
                 rows = [dict(r) for r in rows]
                 if self.cog.bot.cache:
-                    self.cog.bot.cache.set(cache_key, rows, ttl=300)
+                    self.cog.bot.cache.set(cache_key, rows, ttl=Constants.CACHE_TTL)
             if not rows:
                 await send_error(interaction, "No phrase reactions configured.")
                 return

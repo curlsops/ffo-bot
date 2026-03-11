@@ -34,8 +34,6 @@ def minecraft_container():
         yield container
 
 
-# Valid Mojang usernames (server validates against Mojang API in online mode)
-# Used consistently across all Minecraft RCON integration tests
 VALID_USERS = ("pn55", "MrCurlsTV", "notch")
 
 
@@ -43,20 +41,16 @@ VALID_USERS = ("pn55", "MrCurlsTV", "notch")
 @pytest.mark.slow
 def test_rcon_whitelist_add_list_remove(minecraft_container):
     user = VALID_USERS[0]
-    # Add player (must be valid Mojang username)
     add_resp = _rcon_exec(minecraft_container, f"whitelist add {user}")
     assert "added" in add_resp.lower() or "already" in add_resp.lower()
 
-    # List whitelist - should contain our player (server may return different casing)
     list_resp = _rcon_exec(minecraft_container, "whitelist list")
     usernames = parse_whitelist_list_response(list_resp)
     assert user.lower() in [u.lower() for u in usernames]
 
-    # Remove player
     remove_resp = _rcon_exec(minecraft_container, f"whitelist remove {user}")
     assert "removed" in remove_resp.lower()
 
-    # Verify removed
     list_resp2 = _rcon_exec(minecraft_container, "whitelist list")
     usernames2 = parse_whitelist_list_response(list_resp2)
     assert user.lower() not in [u.lower() for u in usernames2]

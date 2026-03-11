@@ -55,10 +55,11 @@ class TestConstants:
         assert Constants.AUDIT_LOG_RETENTION_DAYS == 730
 
     def test_cache_ttl_constants(self):
-        assert Constants.PERMISSION_CACHE_TTL == 300
-        assert Constants.PHRASE_PATTERN_CACHE_TTL == 300
-        assert Constants.USER_ROLE_CACHE_TTL == 300
-        assert Constants.COMMAND_PERMISSION_CACHE_TTL == 60
+        assert Constants.CACHE_TTL == 86400
+        assert Constants.PERMISSION_CACHE_TTL == 86400
+        assert Constants.PHRASE_PATTERN_CACHE_TTL == 86400
+        assert Constants.USER_ROLE_CACHE_TTL == 86400
+        assert Constants.COMMAND_PERMISSION_CACHE_TTL == 86400
 
     def test_regex_timeout_positive(self):
         assert Constants.REGEX_TIMEOUT_SECONDS > 0

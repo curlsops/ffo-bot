@@ -3,7 +3,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING
 
 from bot.utils.db import TRANSIENT_DB_ERRORS
-from config.constants import Role
+from config.constants import Constants, Role
 
 if TYPE_CHECKING:
     from discord.ext.commands import Bot
@@ -78,7 +78,7 @@ class PermissionChecker:
         except TRANSIENT_DB_ERRORS:
             return False
 
-        self.cache.set(cache_key, has_permission, ttl=60)
+        self.cache.set(cache_key, has_permission, ttl=Constants.COMMAND_PERMISSION_CACHE_TTL)
         return has_permission
 
     async def get_user_role(self, server_id: int, user_id: int) -> Role | None:
@@ -127,7 +127,7 @@ class PermissionChecker:
             except TRANSIENT_DB_ERRORS:
                 pass
 
-        self.cache.set(cache_key, role, ttl=300)
+        self.cache.set(cache_key, role, ttl=Constants.USER_ROLE_CACHE_TTL)
         return role
 
     async def _log_permission_denial(self, ctx: PermissionContext, required_role: Role):

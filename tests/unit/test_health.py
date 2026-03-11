@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from bot.utils.health import HealthCheckServer
+from bot.utils.health import HealthCheckServer, _verify_discord_signature
 
 
 @pytest.fixture
@@ -19,6 +19,16 @@ def server(mock_bot):
 @asynccontextmanager
 async def _db_ctx(conn):
     yield conn
+
+
+def test_verify_discord_signature_invalid():
+    assert _verify_discord_signature(b"body", "bad", "ts", "0" * 64) is False
+
+
+def test_verify_discord_signature_valid():
+    with patch("bot.utils.health.nacl.signing.VerifyKey") as mock_vk:
+        mock_vk.return_value.verify = MagicMock()
+        assert _verify_discord_signature(b"body", "00" * 32, "ts", "0" * 64) is True
 
 
 class TestHealthCheckServerInit:
@@ -124,7 +134,106 @@ class TestStart:
                 mock_site_class.assert_called_with(mock_runner, "0.0.0.0", 9999)
                 assert server.runner == mock_runner
 
+    @pytest.mark.asyncio
+    async def test_start_with_public_key_adds_interactions_route(self, mock_bot):
+        server = HealthCheckServer(mock_bot, port=9999, public_key="0" * 64)
+        with patch("aiohttp.web.AppRunner") as mock_runner_class:
+            mock_runner = AsyncMock()
+            mock_runner_class.return_value = mock_runner
+            with patch("aiohttp.web.TCPSite") as mock_site_class:
+                mock_site = AsyncMock()
+                mock_site_class.return_value = mock_site
+                await server.start()
+        routes = [r.resource.canonical for r in server.app.router.routes()]
+        assert "/interactions" in routes
+
     @pytest.mark.parametrize("port", [8080, 3000, 9999])
     def test_server_port(self, mock_bot, port):
         server = HealthCheckServer(mock_bot, port=port)
         assert server.port == port
+
+
+class TestInteractions:
+    @pytest.mark.asyncio
+    async def test_interactions_get_405(self):
+        server = HealthCheckServer(MagicMock(), port=8080, public_key="0" * 64)
+        req = MagicMock()
+        req.method = "GET"
+        resp = await server.interactions(req)
+        assert resp.status == 405
+
+    @pytest.mark.asyncio
+    async def test_interactions_no_public_key_501(self):
+        server = HealthCheckServer(MagicMock(), port=8080, public_key=None)
+        req = MagicMock()
+        req.method = "POST"
+        req.headers = {}
+        req.read = AsyncMock(return_value=b"{}")
+        resp = await server.interactions(req)
+        assert resp.status == 501
+
+    @pytest.mark.asyncio
+    async def test_interactions_missing_headers_401(self):
+        server = HealthCheckServer(MagicMock(), port=8080, public_key="0" * 64)
+        req = MagicMock()
+        req.method = "POST"
+        req.headers = {}
+        req.read = AsyncMock(return_value=b"{}")
+        resp = await server.interactions(req)
+        assert resp.status == 401
+
+    @pytest.mark.asyncio
+    async def test_interactions_invalid_signature_401(self):
+        server = HealthCheckServer(MagicMock(), port=8080, public_key="0" * 64)
+        req = MagicMock()
+        req.method = "POST"
+        req.headers = {
+            "X-Signature-Ed25519": "bad",
+            "X-Signature-Timestamp": "123",
+        }
+        req.read = AsyncMock(return_value=b"{}")
+        resp = await server.interactions(req)
+        assert resp.status == 401
+
+    @pytest.mark.asyncio
+    async def test_interactions_invalid_json_400(self):
+        server = HealthCheckServer(MagicMock(), port=8080, public_key="0" * 64)
+        req = MagicMock()
+        req.method = "POST"
+        req.headers = {
+            "X-Signature-Ed25519": "0" * 128,
+            "X-Signature-Timestamp": "123",
+        }
+        req.read = AsyncMock(return_value=b"not json")
+        with patch("bot.utils.health._verify_discord_signature", return_value=True):
+            resp = await server.interactions(req)
+        assert resp.status == 400
+
+    @pytest.mark.asyncio
+    async def test_interactions_ping_returns_pong(self):
+        server = HealthCheckServer(MagicMock(), port=8080, public_key="0" * 64)
+        req = MagicMock()
+        req.method = "POST"
+        req.headers = {
+            "X-Signature-Ed25519": "0" * 128,
+            "X-Signature-Timestamp": "123",
+        }
+        req.read = AsyncMock(return_value=b'{"type": 1}')
+        with patch("bot.utils.health._verify_discord_signature", return_value=True):
+            resp = await server.interactions(req)
+        assert resp.status == 200
+        assert b'"type": 1' in resp.body
+
+    @pytest.mark.asyncio
+    async def test_interactions_unsupported_type_501(self):
+        server = HealthCheckServer(MagicMock(), port=8080, public_key="0" * 64)
+        req = MagicMock()
+        req.method = "POST"
+        req.headers = {
+            "X-Signature-Ed25519": "0" * 128,
+            "X-Signature-Timestamp": "123",
+        }
+        req.read = AsyncMock(return_value=b'{"type": 2}')
+        with patch("bot.utils.health._verify_discord_signature", return_value=True):
+            resp = await server.interactions(req)
+        assert resp.status == 501

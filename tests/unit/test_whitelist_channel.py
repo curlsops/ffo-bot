@@ -107,7 +107,7 @@ async def test_get_whitelist_channel_id_cache_miss_sets_cache():
     cache.get.return_value = None
     result = await get_whitelist_channel_id(pool, 123, cache=cache)
     assert result == 888
-    cache.set.assert_called_once_with("whitelist_channel:123", 888, ttl=300)
+    cache.set.assert_called_once_with("whitelist_channel:123", 888, ttl=86400)
 
 
 @pytest.mark.asyncio
@@ -119,7 +119,7 @@ async def test_get_whitelist_channel_id_cache_miss_none_sets_sentinel():
     cache.get.return_value = None
     result = await get_whitelist_channel_id(pool, 123, cache=cache)
     assert result is None
-    cache.set.assert_called_once_with("whitelist_channel:123", -1, ttl=300)
+    cache.set.assert_called_once_with("whitelist_channel:123", -1, ttl=86400)
 
 
 @pytest.mark.asyncio

@@ -6,7 +6,7 @@ from discord.ext import commands
 from bot.auth.permissions import PermissionContext
 from bot.utils.discord_helpers import get_or_fetch_channel
 from bot.utils.whitelist_cache import add_to_cache
-from config.constants import Role
+from config.constants import Constants, Role
 
 logger = logging.getLogger(__name__)
 
@@ -184,7 +184,9 @@ class ReactionHandler(commands.Cog):
                     emoji,
                 )
             if self.bot.cache:
-                self.bot.cache.set(cache_key, role_id if role_id is not None else -1, ttl=300)
+                self.bot.cache.set(
+                    cache_key, role_id if role_id is not None else -1, ttl=Constants.CACHE_TTL
+                )
             return role_id
         except Exception as e:
             logger.error("Error fetching reaction role: %s", e)

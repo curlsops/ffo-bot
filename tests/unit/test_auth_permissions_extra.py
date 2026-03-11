@@ -189,7 +189,7 @@ class TestGetUserRole:
             result = await checker.get_user_role(1, 2)
         assert result == Role.ADMIN
         conn.fetchval.assert_not_awaited()
-        cache.set.assert_called_once_with("user_role:1:2", Role.ADMIN, ttl=300)
+        cache.set.assert_called_once_with("user_role:1:2", Role.ADMIN, ttl=86400)
 
     @pytest.mark.asyncio
     async def test_from_server_roles_falls_to_db_when_member_has_no_matching_role(self):
@@ -308,7 +308,7 @@ class TestGetUserRole:
         checker, _, cache = _checker(fetchval_side_effect=asyncpg.CannotConnectNowError("down"))
         result = await checker.get_user_role(1, 2)
         assert result is None
-        cache.set.assert_called_once_with("user_role:1:2", None, ttl=300)
+        cache.set.assert_called_once_with("user_role:1:2", None, ttl=86400)
 
 
 class TestLogPermissionDenial:

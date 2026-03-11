@@ -38,14 +38,19 @@ async def test_get_whitelist_channel_id_with_channel():
     assert result == 999
 
 
-@pytest.mark.asyncio
-async def test_get_cached_usernames_empty_db_returns_empty():
+def _make_fetch_pool(fetch_result):
     conn = MagicMock()
-    conn.fetch = AsyncMock(return_value=[])
+    conn.fetch = AsyncMock(return_value=fetch_result)
     ctx = MagicMock()
     ctx.__aenter__ = AsyncMock(return_value=conn)
     ctx.__aexit__ = AsyncMock(return_value=None)
     pool = MagicMock()
     pool.acquire.return_value = ctx
+    return pool
+
+
+@pytest.mark.asyncio
+async def test_get_cached_usernames_empty_db_returns_empty():
+    pool = _make_fetch_pool([])
     result = await get_cached_usernames(pool, 1, None)
     assert result == []

@@ -2,6 +2,7 @@ import logging
 from typing import TYPE_CHECKING
 
 from bot.services.minecraft_rcon import parse_whitelist_list_response
+from config.constants import Constants
 
 if TYPE_CHECKING:
     from bot.cache.memory import InMemoryCache
@@ -31,7 +32,9 @@ async def get_cached_usernames(
             )
         result = [r["username"] for r in rows]
         if cache:
-            cache.set(CACHE_KEY_WHITELIST.format(server_id=server_id), result, ttl=300)
+            cache.set(
+                CACHE_KEY_WHITELIST.format(server_id=server_id), result, ttl=Constants.CACHE_TTL
+            )
         return result
     except Exception as e:
         logger.warning("Failed to get whitelist cache: %s", e)

@@ -51,4 +51,5 @@ class TestUsernameExists:
     @pytest.mark.asyncio
     async def test_not_exists_when_no_profile(self):
         with patch("bot.services.mojang._get_profile_from_mojang", return_value=None):
-            assert await username_exists("nonexistent") is False
+            with patch("bot.services.mojang._get_profile_from_namemc", return_value=None):
+                assert await username_exists("nonexistent") is False

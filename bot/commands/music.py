@@ -16,7 +16,11 @@ from bot.services.spotify import (
     spotify_playlist_to_search_queries,
     spotify_url_to_search_query,
 )
-from bot.services.tidal import tidal_playlist_to_search_queries, tidal_url_to_search_query
+from bot.services.tidal import (
+    tidal_mix_to_search_queries,
+    tidal_playlist_to_search_queries,
+    tidal_url_to_search_query,
+)
 from bot.utils.music import (
     EMBED_COLOR,
     _clear_queue,
@@ -77,8 +81,10 @@ async def _resolve_url_tracks(
     player: Player, query: str, bot: "FFOBot"
 ) -> tuple[list[Track] | None, bool, str | None, str | None]:
     """Returns (tracks, is_playlist, resolved_search_query, error_msg)."""
-    if "tidal.com" in query.lower():
+    if "tidal.com" in query.lower() or "listen.tidal.com" in query.lower():
         pq = await tidal_playlist_to_search_queries(query)
+        if not pq:
+            pq = await tidal_mix_to_search_queries(query)
         if pq:
             return await _fetch_playlist_tracks(player, pq), True, None, None
         sq = await tidal_url_to_search_query(query)
@@ -239,7 +245,7 @@ class MusicGroup(app_commands.Group):
 
     @app_commands.command(name="play", description="Play a track (URL or search query)")
     @app_commands.describe(
-        query="YouTube URL (incl. playlists), Tidal URL, Spotify URL (track/playlist), or search query",
+        query="YouTube URL (incl. playlists), Tidal URL (track/playlist/mix), Spotify URL (track/playlist), or search query",
         force_next="Play next in queue (mod+ only)",
     )
     async def play(self, i: discord.Interaction, query: str, force_next: bool = False):
@@ -258,7 +264,11 @@ class MusicGroup(app_commands.Group):
         tracks = None
         playlist = False
         from_resolved_url = False
-        if is_url and ("tidal.com" in query.lower() or "spotify.com" in query.lower()):
+        if is_url and (
+            "tidal.com" in query.lower()
+            or "listen.tidal.com" in query.lower()
+            or "spotify.com" in query.lower()
+        ):
             tracks, playlist, resolved_sq, err = await _resolve_url_tracks(player, query, bot)
             if err:
                 await i.followup.send(err, ephemeral=True)
