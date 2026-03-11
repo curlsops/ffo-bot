@@ -3,6 +3,7 @@ from __future__ import annotations
 import asyncio
 import logging
 from typing import TYPE_CHECKING, cast
+from urllib.parse import urlparse
 
 import discord
 from discord import app_commands
@@ -45,6 +46,34 @@ TRACK_PICKER_MAX = 5
 CONNECTION_FAILED_MSG = "Music connection failed. Try /music leave then /music join again."
 
 
+def _get_url_host(query: str) -> str:
+    if not query.startswith(("http://", "https://")):
+        return ""
+    try:
+        return (urlparse(query).hostname or "").lower()
+    except Exception:
+        return ""
+
+
+def _is_tidal_url(query: str) -> bool:
+    h = _get_url_host(query)
+    return h == "tidal.com" or h.endswith(".tidal.com")
+
+
+def _is_spotify_url(query: str) -> bool:
+    h = _get_url_host(query)
+    return h == "spotify.com" or h.endswith(".spotify.com")
+
+
+def _is_youtube_url(query: str) -> bool:
+    h = _get_url_host(query)
+    return h in ("youtube.com", "youtu.be") or h.endswith(".youtube.com")
+
+
+def _is_allowed_music_url(query: str) -> bool:
+    return _is_tidal_url(query) or _is_spotify_url(query) or _is_youtube_url(query)
+
+
 def _get_voice_client(guild: discord.Guild, bot: "FFOBot"):
     return guild.voice_client or discord.utils.get(bot.voice_clients, guild=guild)
 
@@ -80,8 +109,7 @@ async def _fetch_playlist_tracks(player: Player, queries: list[str]) -> list[Tra
 async def _resolve_url_tracks(
     player: Player, query: str, bot: "FFOBot"
 ) -> tuple[list[Track] | None, bool, str | None, str | None]:
-    """Returns (tracks, is_playlist, resolved_search_query, error_msg)."""
-    if "tidal.com" in query.lower() or "listen.tidal.com" in query.lower():
+    if _is_tidal_url(query):
         pq = await tidal_playlist_to_search_queries(query)
         if not pq:
             pq = await tidal_mix_to_search_queries(query)
@@ -93,7 +121,7 @@ async def _resolve_url_tracks(
             if sq
             else (None, False, None, "Could not resolve Tidal link. Try searching by song name.")
         )
-    if "spotify.com" in query.lower():
+    if _is_spotify_url(query):
         s = getattr(bot, "settings", None)
         cid, csec = (
             (getattr(s, "spotify_client_id", None), getattr(s, "spotify_client_secret", None))
@@ -269,11 +297,7 @@ class MusicGroup(app_commands.Group):
         tracks = None
         playlist = False
         from_resolved_url = False
-        if is_url and (
-            "tidal.com" in query.lower()
-            or "listen.tidal.com" in query.lower()
-            or "spotify.com" in query.lower()
-        ):
+        if is_url and _is_allowed_music_url(query):
             tracks, playlist, resolved_sq, err = await _resolve_url_tracks(player, query, bot)
             if err:
                 await i.followup.send(err, ephemeral=True)
