@@ -1,5 +1,3 @@
-"""Anonymization for anonymous posts using spaCy NER for person detection."""
-
 import logging
 import random
 import re
@@ -48,7 +46,6 @@ def _get_nlp():
 
 
 def anonymize_text(text: str) -> str:
-    """Replace Discord mentions and NER-detected person names with random names."""
     if not text or not text.strip():
         return text
 

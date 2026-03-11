@@ -1,5 +1,3 @@
-"""Edit tracking: when user edits their prefix command message, update bot response."""
-
 import asyncio
 import logging
 from collections import defaultdict

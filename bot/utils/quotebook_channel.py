@@ -1,5 +1,3 @@
-"""Quotebook channel: where approved quotes are posted."""
-
 import logging
 from typing import TYPE_CHECKING
 

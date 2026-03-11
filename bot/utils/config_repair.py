@@ -1,5 +1,3 @@
-"""Repair corrupted servers.config from double-encoded JSONB."""
-
 import json
 
 

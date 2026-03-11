@@ -1,5 +1,3 @@
-"""Server role configuration: map Discord roles to bot permission levels."""
-
 import logging
 from typing import TYPE_CHECKING, cast
 
@@ -63,7 +61,6 @@ async def set_server_role(
     cache: "InMemoryCache | None" = None,
     server_name: str | None = None,
 ) -> bool:
-    """Set or clear a Discord role mapping for a bot role."""
     key = ROLE_KEYS.get(role)
     if not key:
         return False
