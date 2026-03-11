@@ -157,8 +157,6 @@ async def _quote_id_approve_autocomplete(
 
 @app_commands.guild_only()
 class QuoteGroup(app_commands.Group):
-    """Quotebook submissions and management."""
-
     def __init__(self, cog: "QuotebookCommands"):
         super().__init__(name="quote", description="Quotebook submissions and management")
         self.cog = cog

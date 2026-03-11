@@ -201,8 +201,6 @@ class PermissionsListView(discord.ui.View):
 @app_commands.guild_only()
 @app_commands.default_permissions(administrator=True)
 class PermissionsGroup(app_commands.Group):
-    """Manage permissions - user grants and Discord role mappings."""
-
     def __init__(self, cog: "PermissionCommands"):
         super().__init__(name="permissions", description="Manage permissions")
         self.cog = cog

@@ -23,7 +23,6 @@ def _process_anonymous_submission(
     channel_id: int,
     bot: commands.Bot,
 ) -> tuple[str | None, str | None]:
-    """Return (error_message, anonymized_text). None error means success."""
     text = raw_text.strip()
     if not text:
         return ("Message cannot be empty.", None)

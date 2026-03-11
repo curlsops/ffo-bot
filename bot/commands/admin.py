@@ -63,8 +63,6 @@ class RegisterCommandsView(discord.ui.View):
 @app_commands.guild_only()
 @app_commands.default_permissions(administrator=True)
 class AdminGroup(app_commands.Group):
-    """Admin configuration and tools."""
-
     def __init__(self, cog: "AdminCommands"):
         super().__init__(name="admin", description="Admin configuration and tools")
         self.cog = cog
