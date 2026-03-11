@@ -52,7 +52,8 @@ class RegisterCommandsView(discord.ui.View):
             return
         await i.response.defer(ephemeral=True)
         try:
-            await self.bot.tree.clear_commands(guild=i.guild)
+            self.bot.tree.clear_commands(guild=i.guild)
+            await self.bot.tree.sync(guild=i.guild)
             await i.followup.send("Cleared guild commands.", ephemeral=True)
         except Exception as e:
             logger.exception("Command clear failed: %s", e)
