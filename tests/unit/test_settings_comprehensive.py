@@ -31,6 +31,7 @@ class TestSettingsFieldDefaults:
             ("rate_limit_user_capacity", 10),
             ("rate_limit_server_capacity", 100),
             ("health_check_port", 8080),
+            ("health_check_host", "0.0.0.0"),
             ("shutdown_timeout_seconds", 30),
             ("media_max_file_size", 104857600),
             ("feature_media_download", True),
