@@ -41,6 +41,7 @@ class TestRegexValidatorParametrized:
 
 class TestRegexValidationError:
     def test_message_preserved(self):
-        with pytest.raises(RegexValidationError) as exc:
+        try:
             raise RegexValidationError("custom message")
-        assert str(exc.value) == "custom message"
+        except RegexValidationError as e:
+            assert str(e) == "custom message"

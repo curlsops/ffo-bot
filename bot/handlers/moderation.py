@@ -37,7 +37,7 @@ class ModerationHandler(commands.Cog):
                         if entry.reason:
                             reason = entry.reason
                         break
-            except discord.Forbidden:
+            except discord.Forbidden:  # no audit log permission
                 pass
             await self.bot.notifier.notify_moderation(
                 guild.id, "Member Banned", user.id, moderator_id, reason=reason
@@ -69,7 +69,7 @@ class ModerationHandler(commands.Cog):
                         reason=entry.reason,
                     )
                     return
-        except discord.Forbidden:
+        except discord.Forbidden:  # no audit log permission
             pass
         except Exception as e:
             logger.warning("moderation notify kick failed: %s", e)
@@ -105,7 +105,7 @@ class ModerationHandler(commands.Cog):
                         extra=extra,
                     )
                     return
-        except discord.Forbidden:
+        except discord.Forbidden:  # no audit log permission
             pass
 
     async def _notify_username_change(self, before: discord.Member, after: discord.Member):
@@ -136,7 +136,7 @@ class ModerationHandler(commands.Cog):
                     moderator_id = entry.user.id if entry.user else None
                     reason = entry.reason
                     break
-        except discord.Forbidden:
+        except discord.Forbidden:  # no audit log permission
             pass
         if after.communication_disabled_until:
             extra = f"Until <t:{int(after.communication_disabled_until.timestamp())}:F>"
@@ -194,7 +194,7 @@ class ModerationHandler(commands.Cog):
                 if entry.target and entry.target.id == target_id:
                     moderator_id = entry.user.id if entry.user else None
                     break
-        except discord.Forbidden:
+        except discord.Forbidden:  # no audit log permission
             pass
         channel_name = getattr(channel, "name", "?")
         extra = f"Channel: #{channel_name}"
@@ -222,7 +222,7 @@ class ModerationHandler(commands.Cog):
                         extra=extra,
                     )
                     return
-        except discord.Forbidden:
+        except discord.Forbidden:  # no audit log permission
             pass
 
     @commands.Cog.listener()
@@ -241,7 +241,7 @@ class ModerationHandler(commands.Cog):
                     if ch and ch.id == message.channel.id:
                         moderator_id = entry.user.id if entry.user else None
                         break
-            except discord.Forbidden:
+            except discord.Forbidden:  # no audit log permission
                 pass
             content = (message.content or "(no text)")[:200]
             if message.attachments:
@@ -272,7 +272,7 @@ class ModerationHandler(commands.Cog):
                 ):
                     moderator_id = entry.user.id if entry.user else None
                     break
-            except discord.Forbidden:
+            except discord.Forbidden:  # no audit log permission
                 pass
             extra = f"Channel: <#{channel.id}>\nCount: {len(messages)} messages"
             await self.bot.notifier.notify_moderation(
