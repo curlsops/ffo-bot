@@ -1,7 +1,7 @@
 """Server role configuration: map Discord roles to bot permission levels."""
 
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from bot.utils.config_repair import repair_servers_config
 from config.constants import Constants, Role
@@ -40,7 +40,7 @@ async def get_server_role_ids(
     if cache:
         cached = cache.get(cache_key)
         if cached is not None:
-            return cached
+            return cast(dict[Role, int], cached)
     try:
         async with db_pool.acquire() as conn:
             row = await conn.fetchrow("SELECT config FROM servers WHERE server_id = $1", server_id)

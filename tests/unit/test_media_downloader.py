@@ -140,6 +140,23 @@ class TestDownloadOperations:
             m.assert_called_once()
 
     @pytest.mark.asyncio
+    async def test_download_file_calls_initialize_when_session_none(self, downloader, tmpdir):
+        downloader.session = None
+        resp = AsyncMock(raise_for_status=MagicMock())
+        resp.content.iter_chunked = lambda _: _async_chunks([b"test data"])
+        mock_session = MagicMock(get=MagicMock(return_value=AsyncCtx(resp)))
+
+        async def set_session():
+            downloader.session = mock_session
+
+        init_mock = AsyncMock(side_effect=set_session)
+        with patch.object(downloader, "initialize", init_mock):
+            dest = Path(tmpdir) / "test.txt"
+            checksum = await downloader._download_file("https://example.com/f", dest)
+        init_mock.assert_called_once()
+        assert len(checksum) == 64
+
+    @pytest.mark.asyncio
     async def test_download_file(self, downloader, tmpdir):
         resp = AsyncMock(raise_for_status=MagicMock())
         resp.content.iter_chunked = lambda _: _async_chunks([b"test data"])

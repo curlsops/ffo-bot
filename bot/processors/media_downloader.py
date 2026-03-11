@@ -124,6 +124,9 @@ class MediaDownloader:
         return path
 
     async def _download_file(self, url: str, destination: Path) -> str:
+        if not self.session:
+            await self.initialize()
+        assert self.session is not None
         sha256 = hashlib.sha256()
         async with self.session.get(url) as response:
             response.raise_for_status()

@@ -1,9 +1,9 @@
 from datetime import timedelta
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from bot.commands.polls import PollCommands, _parse_duration
+from bot.commands.polls import PollCommands, _close_reaction_poll_after, _parse_duration
 
 
 @pytest.fixture
@@ -83,21 +83,6 @@ class TestParseDuration:
 
 class TestPollCommands:
     @pytest.mark.asyncio
-    async def test_require_admin_success(self, cog):
-        from bot.auth.command_helpers import require_admin
-
-        assert await require_admin(_interaction(), "poll", cog.bot) is True
-
-    @pytest.mark.asyncio
-    async def test_require_admin_failure(self, cog):
-        from bot.auth.command_helpers import require_admin
-
-        cog.bot.permission_checker.check_role = AsyncMock(return_value=False)
-        i = _interaction()
-        assert await require_admin(i, "poll", cog.bot) is False
-        i.followup.send.assert_called_with("Admin required.", ephemeral=True)
-
-    @pytest.mark.asyncio
     async def test_poll_question_too_long(self, cog):
         i = _interaction()
         await cog.poll.callback(cog, i, "X" * 301, "Yes,No", "1d")
@@ -116,11 +101,21 @@ class TestPollCommands:
         assert "Invalid duration" in str(i.followup.send.call_args)
 
     @pytest.mark.asyncio
-    async def test_poll_not_admin(self, cog):
+    async def test_poll_channel_param_requires_admin(self, cog):
         cog.bot.permission_checker.check_role = AsyncMock(return_value=False)
         i = _interaction()
-        await cog.poll.callback(cog, i, "Question?", "Yes,No", "1d")
+        target_channel = MagicMock(send=AsyncMock())
+        await cog.poll.callback(cog, i, "Question?", "Yes,No", "1d", channel=target_channel)
+        target_channel.send.assert_not_awaited()
         i.followup.send.assert_called_with("Admin required.", ephemeral=True)
+
+    @pytest.mark.asyncio
+    async def test_poll_with_channel_posts_there(self, cog):
+        i = _interaction()
+        target_channel = MagicMock(send=AsyncMock())
+        await cog.poll.callback(cog, i, "Q?", "A,B", "1d", channel=target_channel)
+        target_channel.send.assert_awaited_once()
+        i.channel.send.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_poll_success(self, cog):
@@ -189,12 +184,75 @@ class TestPollLongFormat:
         assert "Question too long" in str(i.followup.send.call_args)
 
     @pytest.mark.asyncio
-    async def test_poll_not_admin_long_format(self, cog):
-        cog.bot.permission_checker.check_role = AsyncMock(return_value=False)
+    async def test_poll_long_format_everyone_can_create(self, cog):
         i = _interaction()
+        i.channel.send = AsyncMock(return_value=MagicMock(add_reaction=AsyncMock()))
         opts = ",".join(f"X{i}" for i in range(11))
         await cog.poll.callback(cog, i, "Q?", opts, "1d")
-        i.followup.send.assert_called_with("Admin required.", ephemeral=True)
+        i.channel.send.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_poll_long_invalid_duration(self, cog):
+        i = _interaction()
+        i.channel.send = AsyncMock(return_value=MagicMock(add_reaction=AsyncMock()))
+        opts = ",".join(f"X{i}" for i in range(11))
+        await cog.poll.callback(cog, i, "Q?", opts, "invalid")
+        assert "Invalid duration" in str(i.followup.send.call_args)
+
+    @pytest.mark.asyncio
+    async def test_poll_long_embed_has_ends_footer(self, cog):
+        i = _interaction()
+        i.channel.send = AsyncMock(return_value=MagicMock(add_reaction=AsyncMock()))
+        opts = ",".join(f"X{i}" for i in range(11))
+        await cog.poll.callback(cog, i, "Q?", opts, "1d")
+        embed = i.channel.send.call_args.kwargs["embed"]
+        assert embed.footer.text is not None
+        assert "Ends" in embed.footer.text
+        assert "<t:" in embed.footer.text
+
+    @pytest.mark.asyncio
+    async def test_poll_long_schedules_close_task(self, cog):
+        i = _interaction()
+        i.channel.send = AsyncMock(return_value=MagicMock(add_reaction=AsyncMock(), id=999))
+        opts = ",".join(f"X{i}" for i in range(11))
+        with patch("bot.commands.polls.asyncio.create_task") as create_task:
+            await cog.poll.callback(cog, i, "Q?", opts, "1d")
+            create_task.assert_called_once()
+            coro = create_task.call_args[0][0]
+            assert coro.cr_code.co_name == "_close_reaction_poll_after"
+
+
+class TestCloseReactionPollAfter:
+    @pytest.mark.asyncio
+    async def test_edits_embed_with_results_and_clears_reactions(self):
+        channel = MagicMock()
+        msg = MagicMock()
+        msg.reactions = [
+            MagicMock(emoji="1️⃣", count=4),
+            MagicMock(emoji="2️⃣", count=2),
+            MagicMock(emoji="3️⃣", count=1),
+        ]
+        msg.edit = AsyncMock()
+        msg.clear_reactions = AsyncMock()
+        channel.fetch_message = AsyncMock(return_value=msg)
+
+        opts = ["Alpha", "Beta", "Gamma"]
+        emojis = ["1️⃣", "2️⃣", "3️⃣"]
+        delta = timedelta(seconds=0)
+
+        with patch("bot.commands.polls.asyncio.sleep", new_callable=AsyncMock):
+            await _close_reaction_poll_after(channel, 123, delta, opts, emojis, "Pick one?")
+
+        channel.fetch_message.assert_awaited_once_with(123)
+        msg.edit.assert_awaited_once()
+        edit_embed = msg.edit.call_args.kwargs["embed"]
+        assert "Pick one?" in edit_embed.title
+        assert "*Poll ended*" in edit_embed.description
+        assert "Alpha — 3" in edit_embed.description
+        assert "Beta — 1" in edit_embed.description
+        assert "Gamma — 0" in edit_embed.description
+        assert edit_embed.footer.text == "Poll ended"
+        msg.clear_reactions.assert_awaited_once()
 
 
 class TestSetup:

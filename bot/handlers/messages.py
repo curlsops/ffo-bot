@@ -40,6 +40,67 @@ class MessageHandler(commands.Cog):
         if getattr(self.bot.settings, "feature_minecraft_whitelist", False):
             await self._process_whitelist_channel(message)
 
+    @commands.Cog.listener()
+    async def on_message_edit(self, before: discord.Message, after: discord.Message):
+        if before.content == after.content or not after.content or after.author.bot:
+            return
+        if not after.guild or self.bot.is_shutting_down():
+            return
+        if not self.bot.phrase_matcher:
+            return
+        if await self._check_user_opt_out(after.guild.id, after.author.id):
+            return
+
+        if self.bot.metrics:
+            self.bot.metrics.messages_processed.labels(server_id=str(after.guild.id)).inc()
+
+        await self._process_phrase_matching_edit(after)
+
+    async def _process_phrase_matching_edit(self, message: discord.Message):
+        try:
+            matches = await self.bot.phrase_matcher.match_phrases(message.content, message.guild.id)
+            should_have = {emoji for _, emoji in matches}
+
+            try:
+                msg = await message.channel.fetch_message(message.id)
+            except discord.NotFound:
+                return
+
+            current_ours = {str(r.emoji) for r in msg.reactions if r.me}
+            to_add = should_have - current_ours
+            to_remove = current_ours - should_have
+
+            for emoji in to_remove:
+                try:
+                    await msg.remove_reaction(emoji, self.bot.user)
+                except discord.HTTPException as e:
+                    logger.warning("Failed to remove reaction %s: %s", emoji, e)
+
+            for emoji in to_add:
+                try:
+                    await msg.add_reaction(emoji)
+                    for phrase_id, matched_emoji in matches:
+                        if matched_emoji == emoji:
+                            if self.bot.metrics:
+                                self.bot.metrics.phrase_matches.labels(
+                                    server_id=str(message.guild.id),
+                                    phrase_id=phrase_id,
+                                ).inc()
+                            await self._log_phrase_match(
+                                message.guild.id,
+                                message.id,
+                                message.channel.id,
+                                message.author.id,
+                                phrase_id,
+                                emoji,
+                            )
+                except discord.HTTPException as e:
+                    logger.warning("Failed to add reaction %s: %s", emoji, e)
+        except Exception as e:
+            logger.error("Phrase matching edit error: %s", e, exc_info=True)
+            if self.bot.metrics:
+                self.bot.metrics.errors_total.labels(error_type="phrase_matching").inc()
+
     async def _process_whitelist_channel(self, message: discord.Message):
         from bot.commands.whitelist import WHITELIST_APPROVE_EMOJI, WHITELIST_REJECT_EMOJI
         from bot.services.mojang import get_profile

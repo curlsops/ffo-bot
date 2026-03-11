@@ -80,7 +80,7 @@ async def _get_spotify_token(client_id: str, client_secret: str) -> str | None:
     if not token or not isinstance(token, str):
         return None
     _SPOTIFY_TOKEN_CACHE = (token, now)
-    return token
+    return str(token)
 
 
 def _track_to_search_query(item: dict) -> str | None:
@@ -95,8 +95,8 @@ def _track_to_search_query(item: dict) -> str | None:
     if artists and isinstance(artists[0], dict):
         artist_name = artists[0].get("name")
     if artist_name:
-        return f"{artist_name} - {name}".strip()[:200]
-    return name.strip()[:200]
+        return str(f"{artist_name} - {name}".strip()[:200])
+    return str(name.strip()[:200])
 
 
 async def spotify_playlist_to_search_queries(

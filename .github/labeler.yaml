@@ -48,12 +48,13 @@ area/ci:
   - changed-files:
       - any-glob-to-any-file:
           - .github/**/*
+          - .pre-commit-config.yaml
 area/docker:
   - changed-files:
       - any-glob-to-any-file:
           - Dockerfile
-          - build.sh
-          - build.bat
+          - scripts/build.sh
+          - scripts/build.bat
 area/docs:
   - changed-files:
       - any-glob-to-any-file:
@@ -65,10 +66,11 @@ area/deps:
           - requirements.txt
           - requirements-dev.txt
           - pyproject.toml
+          - .python-version
 area/renovate:
   - changed-files:
       - any-glob-to-any-file:
-          - .renovaterc.json5
+          - .github/renovate.json5
 area/scripts:
   - changed-files:
       - any-glob-to-any-file:

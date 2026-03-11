@@ -62,6 +62,13 @@ class TestReadiness:
         assert response.status == 503 and "not connected" in response.text.lower()
 
     @pytest.mark.asyncio
+    async def test_db_pool_none(self, server):
+        server.bot.is_ready.return_value = True
+        server.bot.db_pool = None
+        response = await server.readiness(MagicMock())
+        assert response.status == 503 and "database" in response.text.lower()
+
+    @pytest.mark.asyncio
     async def test_db_fails(self, server):
         server.bot.is_ready.return_value = True
         conn = AsyncMock(fetchval=AsyncMock(side_effect=Exception("Connection failed")))

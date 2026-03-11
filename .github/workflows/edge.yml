@@ -12,7 +12,8 @@ concurrency:
 
 jobs:
   test:
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-24.04
+    timeout-minutes: 15
 
     services:
       postgres:
@@ -44,11 +45,13 @@ jobs:
       - name: Run tests
         env:
           DATABASE_URL: postgresql://test:test@localhost:5432/ffobot_test
-        run: pytest tests/ -v
+        run: pytest tests/ -v -n auto
 
   build-and-push:
     needs: test
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+    environment: staging
     permissions:
       contents: read
       packages: write
@@ -59,12 +62,20 @@ jobs:
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4
 
-      - name: Log in to Container Registry
+      - name: Log in to GitHub Container Registry
         uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4
         with:
           registry: ghcr.io
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
+
+      # Requires DOCKERHUB_USERNAME and DOCKERHUB_TOKEN repo secrets
+      - name: Log in to Docker Hub
+        uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4
+        with:
+          registry: docker.io
+          username: ${{ secrets.DOCKERHUB_USERNAME }}
+          password: ${{ secrets.DOCKERHUB_TOKEN }}
 
       - name: Get short SHA
         id: sha
@@ -78,11 +89,36 @@ jobs:
           tags: |
             ghcr.io/${{ github.repository }}:edge
             ghcr.io/${{ github.repository }}:edge-${{ steps.sha.outputs.short }}
+            docker.io/${{ secrets.DOCKERHUB_USERNAME }}/ffo-bot:edge
+            docker.io/${{ secrets.DOCKERHUB_USERNAME }}/ffo-bot:edge-${{ steps.sha.outputs.short }}
           build-args: |
             FFO_BOT_VERSION=edge-${{ steps.sha.outputs.short }}
+            IMAGE_SOURCE=${{ github.server_url }}/${{ github.repository }}
           labels: |
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
           cache-from: type=gha
           cache-to: type=gha,mode=max
           platforms: linux/amd64,linux/arm64
+          sbom: true
+
+  trivy-scan:
+    needs: build-and-push
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    permissions:
+      contents: read
+      security-events: write
+
+    steps:
+      - name: Run Trivy vulnerability scanner
+        uses: aquasecurity/trivy-action@0.34.0
+        with:
+          image-ref: ghcr.io/${{ github.repository }}:edge
+          format: sarif
+          output: trivy-results.sarif
+
+      - name: Upload Trivy results
+        uses: github/codeql-action/upload-sarif@v3
+        with:
+          sarif_file: trivy-results.sarif

@@ -1,5 +1,5 @@
 from collections import defaultdict
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import discord
 from mafic import Player, Track
@@ -23,12 +23,13 @@ def _format_duration(ms: int) -> str:
 def _get_queue(bot: "FFOBot", guild_id: int) -> list[Track]:
     if not hasattr(bot, "_music_queues"):
         bot._music_queues = defaultdict(list)
-    return bot._music_queues[guild_id]
+    return cast(list[Track], bot._music_queues[guild_id])
 
 
 def _clear_queue(bot: "FFOBot", guild_id: int) -> None:
-    if hasattr(bot, "_music_queues") and guild_id in bot._music_queues:
-        del bot._music_queues[guild_id]
+    queues = getattr(bot, "_music_queues", None)
+    if queues is not None and guild_id in queues:
+        del queues[guild_id]
 
 
 def _music_embed(title: str, description: str) -> discord.Embed:

@@ -69,12 +69,16 @@ class MinecraftRCONClient:
     async def _run_rcon(self, command: str) -> str:
         if not self._is_configured():
             raise MinecraftRCONError("Minecraft RCON not configured")
+        host = self._settings.minecraft_rcon_host
+        password = self._settings.minecraft_rcon_password
+        if not host or not password:
+            raise MinecraftRCONError("Minecraft RCON not configured")
 
         def _sync_command() -> str:
             return _rcon_command(
-                self._settings.minecraft_rcon_host,
+                host,
                 self._settings.minecraft_rcon_port,
-                self._settings.minecraft_rcon_password,
+                password,
                 command,
             )
 

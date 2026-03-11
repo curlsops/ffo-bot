@@ -20,9 +20,10 @@ RUN pip install --user --no-cache-dir --no-warn-script-location -r requirements.
 FROM python:3.14-slim
 
 ARG FFO_BOT_VERSION=unknown
+ARG IMAGE_SOURCE="https://github.com/MrCurlsTTV/ffo-bot"
 ENV FFO_BOT_VERSION=$FFO_BOT_VERSION
 
-LABEL org.opencontainers.image.source="https://github.com/MrCurlsTTV/ffo-bot"
+LABEL org.opencontainers.image.source="${IMAGE_SOURCE}"
 LABEL org.opencontainers.image.description="FFO Discord Bot"
 LABEL org.opencontainers.image.licenses="MIT"
 
@@ -47,9 +48,9 @@ COPY --from=builder --chown=discord:discord /root/.local /home/discord/.local
 COPY --chown=discord:discord bot/ ./bot/
 COPY --chown=discord:discord database/ ./database/
 COPY --chown=discord:discord config/ ./config/
-COPY --chown=discord:discord main.py smoke_test.py .
+COPY --chown=discord:discord main.py .
+COPY --chown=discord:discord scripts/entrypoint.sh scripts/smoke_test.py .
 COPY --chown=discord:discord alembic.ini .
-COPY --chown=discord:discord entrypoint.sh .
 RUN chmod +x entrypoint.sh
 
 # Switch to non-root user

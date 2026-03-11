@@ -174,7 +174,7 @@ class ReactionHandler(commands.Cog):
         cache_key = f"reaction_role:{server_id}:{message_id}:{emoji}"
         cached = self.bot.cache.get(cache_key) if self.bot.cache else None
         if cached is not None:
-            return None if cached == -1 else cached
+            return None if cached == -1 else int(cached)
         try:
             async with self.bot.db_pool.acquire() as conn:
                 role_id = await conn.fetchval(
@@ -187,7 +187,7 @@ class ReactionHandler(commands.Cog):
                 self.bot.cache.set(
                     cache_key, role_id if role_id is not None else -1, ttl=Constants.CACHE_TTL
                 )
-            return role_id
+            return int(role_id) if role_id is not None else None
         except Exception as e:
             logger.error("Error fetching reaction role: %s", e)
             return None

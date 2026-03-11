@@ -50,8 +50,8 @@ def _track_to_search_query(item: dict) -> str | None:
     if not title:
         return None
     if artist_name:
-        return html.unescape(f"{artist_name} - {title}".strip())[:200]
-    return html.unescape(title.strip())[:200]
+        return str(html.unescape(f"{artist_name} - {title}".strip())[:200])
+    return str(html.unescape(str(title).strip())[:200])
 
 
 async def _fetch_tracks_from_api(session: aiohttp.ClientSession, path: str) -> list[str] | None:

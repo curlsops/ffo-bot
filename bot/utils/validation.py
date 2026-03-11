@@ -1,5 +1,5 @@
 import re
-from typing import Any
+from typing import Any, cast
 
 
 class ValidationError(Exception):
@@ -34,7 +34,7 @@ class InputValidator:
             raise ValidationError(f"{field_name} cannot be empty")
         if len(value) > max_length:
             raise ValidationError(f"{field_name} exceeds maximum length of {max_length}")
-        return value
+        return cast(str, value)
 
     @staticmethod
     def validate_command_name(value: str) -> str:

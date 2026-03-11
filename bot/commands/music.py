@@ -2,7 +2,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 import discord
 from discord import app_commands
@@ -185,14 +185,19 @@ class TrackPickerView(discord.ui.View):
         return cb
 
 
-async def _check_voice_pool(i: discord.Interaction) -> tuple[discord.VoiceChannel, object] | None:
+async def _check_voice_pool(
+    i: discord.Interaction,
+) -> tuple[discord.VoiceChannel, discord.VoiceClient | None] | None:
     if not i.user.voice or not i.user.voice.channel:
         await i.followup.send("Join a voice channel first.", ephemeral=True)
         return None
     if not i.client.pool:
         await i.followup.send("Music is not enabled.", ephemeral=True)
         return None
-    return i.user.voice.channel, i.guild.voice_client
+    guild = i.guild
+    if not guild:
+        return None
+    return i.user.voice.channel, guild.voice_client
 
 
 async def _ensure_player(i: discord.Interaction) -> tuple[Player, discord.VoiceChannel] | None:
@@ -494,10 +499,10 @@ class MusicGroup(app_commands.Group):
         await i.followup.send(embed=v._format_page(), view=v, ephemeral=True)
 
 
-def _get_leave_tasks(bot: FFOBot) -> dict[int, asyncio.Task]:
+def _get_leave_tasks(bot: FFOBot) -> dict[int, asyncio.Task[None]]:
     if not hasattr(bot, "_music_leave_tasks"):
         bot._music_leave_tasks = {}
-    return bot._music_leave_tasks
+    return cast(dict[int, asyncio.Task[None]], getattr(bot, "_music_leave_tasks", {}))
 
 
 async def _cancel_leave_task(tasks: dict[int, asyncio.Task], guild_id: int) -> None:

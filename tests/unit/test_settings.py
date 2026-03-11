@@ -82,7 +82,67 @@ class TestSettingsDefaults:
     def test_settings_required_fields(self):
         with tempfile.TemporaryDirectory() as tmpdir:
             with patch.dict(os.environ, {"MEDIA_STORAGE_PATH": tmpdir}, clear=True):
-                with pytest.raises(ValidationError):
+                with pytest.raises((ValidationError, ValueError)):
+                    Settings()
+
+    def test_settings_database_url_from_components(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            env = {
+                "DISCORD_BOT_TOKEN": "t",
+                "DISCORD_PUBLIC_KEY": "k",
+                "MEDIA_STORAGE_PATH": tmpdir,
+                "DB_HOST": "db.example.com",
+                "DB_PORT": "5433",
+                "DB_NAME": "mydb",
+                "DB_USER": "myuser",
+                "DB_PASSWORD": "secret",
+            }
+            with patch.dict(os.environ, env, clear=True):
+                s = Settings()
+                assert s.database_url == "postgresql://myuser:secret@db.example.com:5433/mydb"
+
+    def test_settings_database_url_from_components_password_special_chars(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            env = {
+                "DISCORD_BOT_TOKEN": "t",
+                "DISCORD_PUBLIC_KEY": "k",
+                "MEDIA_STORAGE_PATH": tmpdir,
+                "DB_HOST": "localhost",
+                "DB_NAME": "test",
+                "DB_USER": "u",
+                "DB_PASSWORD": "p@ss:w/rd",
+            }
+            with patch.dict(os.environ, env, clear=True):
+                s = Settings()
+                assert "p%40ss%3Aw%2Frd" in s.database_url
+                assert s.database_url.startswith("postgresql://u:")
+
+    def test_settings_database_url_prefers_explicit_url(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            env = {
+                "DISCORD_BOT_TOKEN": "t",
+                "DISCORD_PUBLIC_KEY": "k",
+                "MEDIA_STORAGE_PATH": tmpdir,
+                "DATABASE_URL": "postgresql://explicit:url@host/db",
+                "DB_HOST": "ignored",
+                "DB_NAME": "ignored",
+                "DB_USER": "ignored",
+            }
+            with patch.dict(os.environ, env, clear=True):
+                s = Settings()
+                assert s.database_url == "postgresql://explicit:url@host/db"
+
+    def test_settings_database_url_incomplete_components_raises(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            env = {
+                "DISCORD_BOT_TOKEN": "t",
+                "DISCORD_PUBLIC_KEY": "k",
+                "MEDIA_STORAGE_PATH": tmpdir,
+                "DB_HOST": "localhost",
+                "DB_NAME": "test",
+            }
+            with patch.dict(os.environ, env, clear=True):
+                with pytest.raises(ValueError, match="DATABASE_URL or all of"):
                     Settings()
 
     @pytest.mark.parametrize("level", ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"])

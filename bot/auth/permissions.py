@@ -1,6 +1,6 @@
 import logging
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from bot.utils.db import TRANSIENT_DB_ERRORS
 from config.constants import Constants, Role
@@ -23,7 +23,7 @@ class PermissionContext:
 
 
 class PermissionChecker:
-    def __init__(self, db_pool, cache, bot: "Bot" = None):
+    def __init__(self, db_pool, cache, bot: "Bot | None" = None):
         self.db_pool = db_pool
         self.cache = cache
         self.bot = bot
@@ -37,7 +37,7 @@ class PermissionChecker:
         member = guild.get_member(user_id)
         if not member:
             return False
-        return member.guild_permissions.administrator
+        return bool(member.guild_permissions.administrator)
 
     async def check_role(self, ctx: PermissionContext, required_role: Role) -> bool:
         if self._is_discord_admin(ctx.server_id, ctx.user_id):
@@ -60,7 +60,7 @@ class PermissionChecker:
         cache_key = f"cmd_perm:{ctx.server_id}:{ctx.user_id}:{ctx.command_name}"
         cached = self.cache.get(cache_key)
         if cached is not None:
-            return cached
+            return bool(cached)
 
         try:
             async with self.db_pool.acquire() as conn:
@@ -79,13 +79,13 @@ class PermissionChecker:
             return False
 
         self.cache.set(cache_key, has_permission, ttl=Constants.COMMAND_PERMISSION_CACHE_TTL)
-        return has_permission
+        return bool(has_permission)
 
     async def get_user_role(self, server_id: int, user_id: int) -> Role | None:
         cache_key = f"user_role:{server_id}:{user_id}"
         cached = self.cache.get(cache_key)
         if cached is not None:
-            return cached
+            return cast(Role | None, cached)
 
         role = None
 
@@ -123,7 +123,7 @@ class PermissionChecker:
                         server_id,
                         user_id,
                     )
-                role = Role(role_str) if role_str else None
+                role = Role(cast(str, role_str)) if role_str else None
             except TRANSIENT_DB_ERRORS:
                 pass
 

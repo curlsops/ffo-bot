@@ -92,7 +92,7 @@ class TestValidatePhrasePattern:
 
 
 class TestValidateEmoji:
-    @pytest.mark.parametrize("inp", ["👋", "🎉", "<:custom:123456789>"])
+    @pytest.mark.parametrize("inp", ["👋", "🎉", "😀", "👍", "🔥", "<:custom:123456789>"])
     def test_valid(self, inp):
         assert InputValidator.validate_emoji(inp) == inp
 
@@ -100,10 +100,6 @@ class TestValidateEmoji:
     def test_invalid(self, inp):
         with pytest.raises(ValidationError):
             InputValidator.validate_emoji(inp)
-
-    @pytest.mark.parametrize("inp", ["😀", "👍", "🔥"])
-    def test_valid_unicode_emoji(self, inp):
-        assert InputValidator.validate_emoji(inp) == inp
 
 
 class TestSanitizeSqlParameter:

@@ -20,8 +20,15 @@ class GracefulShutdown:
 
     def setup_signals(self):
         loop = asyncio.get_event_loop()
+
+        def make_handler(s: int):
+            def handler() -> None:
+                asyncio.create_task(self._shutdown(s))
+
+            return handler
+
         for sig in (signal.SIGTERM, signal.SIGINT):
-            loop.add_signal_handler(sig, lambda s=sig: asyncio.create_task(self._shutdown(s)))
+            loop.add_signal_handler(sig, make_handler(sig))
 
     async def _shutdown(self, sig):
         if self.shutdown_initiated:

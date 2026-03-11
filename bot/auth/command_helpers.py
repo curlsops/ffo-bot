@@ -10,7 +10,7 @@ if TYPE_CHECKING:
 
 
 async def require_admin(i: discord.Interaction, cmd: str, bot: "FFOBot") -> bool:
-    if not i.guild_id:
+    if not i.guild_id or not bot.permission_checker:
         return False
     ctx = PermissionContext(server_id=i.guild_id, user_id=i.user.id, command_name=cmd)
     if await bot.permission_checker.check_role(ctx, Role.ADMIN):
@@ -20,7 +20,7 @@ async def require_admin(i: discord.Interaction, cmd: str, bot: "FFOBot") -> bool
 
 
 async def require_mod(i: discord.Interaction, cmd: str, bot: "FFOBot") -> bool:
-    if not i.guild_id:
+    if not i.guild_id or not bot.permission_checker:
         return False
     ctx = PermissionContext(server_id=i.guild_id, user_id=i.user.id, command_name=cmd)
     if await bot.permission_checker.check_role(ctx, Role.MODERATOR):
@@ -30,7 +30,7 @@ async def require_mod(i: discord.Interaction, cmd: str, bot: "FFOBot") -> bool:
 
 
 async def require_super_admin(i: discord.Interaction, cmd: str, bot: "FFOBot") -> bool:
-    if not i.guild_id:
+    if not i.guild_id or not bot.permission_checker:
         return False
     ctx = PermissionContext(server_id=i.guild_id, user_id=i.user.id, command_name=cmd)
     if await bot.permission_checker.check_role(ctx, Role.SUPER_ADMIN):

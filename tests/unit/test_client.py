@@ -558,6 +558,22 @@ class TestFFOBotDrainQueue:
 
 class TestFFOBotSetupHook:
     @pytest.mark.asyncio
+    async def test_setup_hook_raises_when_no_database_url(self, mock_settings):
+        from bot.client import FFOBot
+
+        mock_settings.database_url = None
+        bot = FFOBot(mock_settings)
+        with pytest.raises(ValueError, match="Database URL not configured"):
+            await bot.setup_hook()
+
+    @pytest.mark.asyncio
+    async def test_register_server_returns_when_db_pool_none(self, bot):
+        bot.db_pool = None
+        guild = MagicMock(id=1, name="Test")
+        await bot._register_server(guild)
+        # No exception, early return
+
+    @pytest.mark.asyncio
     async def test_setup_hook_initializes_resources(self, bot):
         patches = [
             patch(

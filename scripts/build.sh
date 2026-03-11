@@ -3,6 +3,8 @@
 
 set -e
 
+cd "$(dirname "$0")/.."
+
 echo "🤖 FFO Discord Bot - Build and Test"
 echo "===================================="
 
@@ -39,6 +41,8 @@ if [ "$1" = "--check" ] || [ "$1" = "-c" ]; then
     black --check bot/ config/ database/ main.py
     echo "- isort"
     isort --check-only bot/ config/ database/ main.py
+    echo "- mypy"
+    mypy bot/ config/ database/ main.py
     echo "✓ All linters passed"
 else
     echo "Formatting code..."
@@ -48,15 +52,16 @@ else
     black bot/ config/ database/ main.py
     echo "✓ Code formatted"
     echo ""
-    echo "Running flake8 check..."
+    echo "Running flake8 and mypy checks..."
     flake8 bot/ config/ database/ main.py --count --statistics
-    echo "✓ Flake8 passed"
+    mypy bot/ config/ database/ main.py
+    echo "✓ Linters passed"
 fi
 
 # Run tests (full suite including Docker RCON integration tests)
 echo ""
 echo "Running tests (full suite including Docker RCON)..."
-pytest tests/ -v --cov=bot --cov=config --cov=database --cov-report=term --cov-report=html -m "slow or not slow"
+pytest tests/ -v --cov=bot --cov=config --cov=database --cov-report=term --cov-report=html --cov-fail-under=100 -m "slow or not slow"
 
 echo ""
 echo "✓ All tests passed"

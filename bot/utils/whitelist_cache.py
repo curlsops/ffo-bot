@@ -1,5 +1,5 @@
 import logging
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, cast
 
 from bot.services.minecraft_rcon import parse_whitelist_list_response
 from config.constants import Constants
@@ -23,7 +23,7 @@ async def get_cached_usernames(
     if cache:
         cached = cache.get(CACHE_KEY_WHITELIST.format(server_id=server_id))
         if cached is not None:
-            return cached
+            return cast(list[str], cached)
     try:
         async with db_pool.acquire() as conn:
             rows = await conn.fetch(

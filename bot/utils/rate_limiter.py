@@ -49,7 +49,7 @@ class RateLimiter:
         now = datetime.now(UTC)
         new_tokens = min(capacity, tokens + ((now - last_refill).total_seconds() * refill_rate))
         buckets[key] = (new_tokens, now)
-        return new_tokens >= 1.0
+        return bool(new_tokens >= 1.0)
 
     def _consume_token(self, buckets: dict, key: int):
         tokens, last_refill = buckets[key]

@@ -4,6 +4,7 @@
     "config:recommended",
     "docker:enableMajor",
     "helpers:pinGitHubActionDigests",
+    ":enablePreCommit",
     ":dependencyDashboard",
     ":disableRateLimiting",
     ":semanticCommits",
@@ -11,6 +12,7 @@
   dependencyDashboard: true,
   dependencyDashboardTitle: "Renovate Dashboard 🤖",
   schedule: ["every weekend"],
+  lockFileMaintenance: { enabled: true },
   automerge: true,
   automergeType: "pr",
   automergeStrategy: "squash",
@@ -50,7 +52,7 @@
       minimumReleaseAge: "0 days",
       prPriority: 10,
     },
-    // GitHub Actions
+    // GitHub Actions (includes paths-filter)
     {
       matchManagers: ["github-actions"],
       semanticCommitType: "ci",
@@ -61,12 +63,40 @@
       automerge: true,
       minimumReleaseAge: "3 days",
     },
+    // pyenv (.python-version)
+    {
+      matchManagers: ["pyenv"],
+      semanticCommitType: "chore",
+      semanticCommitScope: "python",
+      commitMessageTopic: "Python {{depName}}",
+      addLabels: ["renovate/python", "area/deps"],
+      matchUpdateTypes: ["minor", "patch"],
+      automerge: true,
+      minimumReleaseAge: "7 days",
+    },
+    // pre-commit
+    {
+      matchManagers: ["pre-commit"],
+      semanticCommitType: "chore",
+      semanticCommitScope: "pre-commit",
+      commitMessageTopic: "hook {{depName}}",
+      addLabels: ["renovate/pre-commit", "area/ci"],
+      matchUpdateTypes: ["minor", "patch"],
+      automerge: true,
+      minimumReleaseAge: "3 days",
+    },
     // Docker
     {
       matchDatasources: ["docker"],
       semanticCommitScope: "docker",
       commitMessageTopic: "image {{depName}}",
       addLabels: ["renovate/docker", "area/docker"],
+    },
+    {
+      matchDatasources: ["docker"],
+      matchPackageNames: ["python", "postgres"],
+      groupName: "docker-base",
+      minimumReleaseAge: "7 days",
     },
     // Update types
     { matchUpdateTypes: ["major"], automerge: false, labels: ["type/major"], semanticCommitType: "feat", commitMessagePrefix: "{{semanticCommitType}}({{semanticCommitScope}})!:", commitMessageExtra: "( {{currentVersion}} ➔ {{newVersion}} )" },
