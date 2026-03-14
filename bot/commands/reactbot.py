@@ -210,7 +210,7 @@ class ReactBotCommands(commands.Cog):
                         )
                     if not emoji_obj.is_usable():
                         return False, f"❌ Emoji {emoji_str} is not usable by the bot."
-                except ValueError:
+                except ValueError:  # invalid emoji format
                     pass
         return True, ""
 

@@ -26,7 +26,7 @@ def _extract_role_ids_from_config(cfg) -> dict[Role, int]:
         if val := cfg.get(key):
             try:
                 result[role] = int(val)
-            except (TypeError, ValueError):
+            except (TypeError, ValueError):  # skip invalid role ID
                 pass
     return result
 

@@ -28,7 +28,7 @@ class ModerationHandler(commands.Cog):
             try:
                 ban = await guild.fetch_ban(user)
                 reason = ban.reason or reason
-            except discord.NotFound:
+            except discord.NotFound:  # no ban record (race)
                 pass
             try:
                 async for entry in guild.audit_logs(limit=5, action=discord.AuditLogAction.ban):

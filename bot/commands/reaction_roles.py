@@ -245,7 +245,10 @@ def _reactionrole_command(cog: "ReactionRoleCommands"):
                     try:
                         msg = await channel.fetch_message(message_id)
                         await msg.clear_reaction(emoji)
-                    except (discord.NotFound, discord.HTTPException):
+                    except (
+                        discord.NotFound,
+                        discord.HTTPException,
+                    ):  # message deleted or reaction gone
                         pass
 
                 await interaction.followup.send(

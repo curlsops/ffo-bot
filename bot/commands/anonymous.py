@@ -161,7 +161,7 @@ def _anonymous_command(cog: "AnonymousCommands"):
                     try:
                         msg = await channel.fetch_message(row["message_id"])
                         await msg.delete()
-                    except discord.NotFound:
+                    except discord.NotFound:  # message already deleted
                         pass
                     except discord.HTTPException as e:
                         logger.warning("Failed to delete anonymous post message: %s", e)

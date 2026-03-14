@@ -51,7 +51,7 @@ def _get_url_host(query: str) -> str:
         return ""
     try:
         return (urlparse(query).hostname or "").lower()
-    except Exception:
+    except (ValueError, TypeError):  # urlparse can raise on invalid input
         return ""
 
 

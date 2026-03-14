@@ -395,7 +395,7 @@ async def _giveaway_reroll(
                         inline=False,
                     )
                 await msg.edit(embed=embed)
-            except discord.NotFound:
+            except discord.NotFound:  # message already deleted
                 pass
 
             if new_winners:
@@ -471,7 +471,7 @@ class GiveawayCommands(commands.Cog):
             m = re.match(r"<#(\d+)>", parts[1].strip())
             if m:
                 return {"count": count, "channel_id": int(m.group(1))}
-        except ValueError:
+        except ValueError:  # invalid int or format
             pass
         return None
 
