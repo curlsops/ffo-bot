@@ -1,7 +1,7 @@
 import logging
 from collections.abc import Awaitable, Callable
 from functools import wraps
-from typing import TYPE_CHECKING, Any
+from typing import TYPE_CHECKING, Any, cast
 
 import discord
 
@@ -63,10 +63,10 @@ async def send_error(i: discord.Interaction, msg: str) -> None:
 def _get_interaction(args: tuple[Any, ...], kwargs: dict[str, Any]) -> discord.Interaction:
     interaction = kwargs.get("interaction")
     if interaction and hasattr(interaction, "response") and hasattr(interaction, "followup"):
-        return interaction
+        return cast(discord.Interaction, interaction)
     for arg in args:
         if hasattr(arg, "response") and hasattr(arg, "followup"):
-            return arg
+            return cast(discord.Interaction, arg)
     raise ValueError("Command interaction argument not found.")
 
 

@@ -25,10 +25,8 @@ class TestMigrationMetadataStyle:
         for module in modules:
             assert hasattr(module, "revision")
             assert hasattr(module, "down_revision")
-            assert hasattr(module, "branch_labels")
-            assert hasattr(module, "depends_on")
-            assert module.branch_labels is None
-            assert module.depends_on is None
+            assert hasattr(module, "__all__")
+            assert module.__all__ == [module.revision, module.down_revision]
 
     def test_revision_chain_is_unchanged_for_latest_steps(self):
         migration_010 = _load_migration("010_servers_config_jsonb.py", "migration_010_chain")

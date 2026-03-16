@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import bot
+import bot.utils.channel_config
 import config
 import database
 from bot.auth.permissions import PermissionChecker
@@ -35,11 +36,6 @@ from bot.services.tidal import (
 )
 from bot.tasks.giveaway_manager import GiveawayManager
 from bot.tasks.status_rotator import StatusRotator
-from bot.utils.channel_config import (
-    get_quotebook_channel_id,
-    get_whitelist_channel_id,
-    set_whitelist_channel,
-)
 from bot.utils.collector import wait_for_message, wait_for_reaction
 from bot.utils.cooldown import CommandCooldown, with_cooldown
 from bot.utils.db import TRANSIENT_DB_ERRORS, cached_or_fallback

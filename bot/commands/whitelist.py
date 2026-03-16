@@ -102,12 +102,6 @@ class WhitelistCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
         self.whitelist_cmd = _whitelist_command(self)
-        self._operation_handlers = {
-            "add": self._handle_add,
-            "list": self._handle_list,
-            "remove": self._handle_remove,
-            "sync": self._handle_sync,
-        }
 
     async def dispatch_whitelist(
         self,
@@ -158,11 +152,14 @@ class WhitelistCommands(commands.Cog):
             return
         if not await require_rcon(interaction, self.bot):
             return
-        handler = self._operation_handlers[op]
-        if op in {"add", "remove"}:
-            await handler(interaction, username)
-            return
-        await handler(interaction)
+        if op == "add":
+            await self._handle_add(interaction, username)
+        elif op == "remove":
+            await self._handle_remove(interaction, username)
+        elif op == "list":
+            await self._handle_list(interaction)
+        else:
+            await self._handle_sync(interaction)
 
     async def _handle_channel_set(
         self, interaction: discord.Interaction, channel: discord.TextChannel | None

@@ -9,14 +9,13 @@ This migration remains in-chain for upgrade paths from older schemas where
 `servers.config` may still be JSON.
 """
 
-from typing import Sequence, Union
+from typing import Union
 
 from alembic import op
 
 revision: str = "010_servers_config_jsonb"
 down_revision: Union[str, None] = "009_anonymous_post_channels"
-branch_labels: Union[str, Sequence[str], None] = None
-depends_on: Union[str, Sequence[str], None] = None
+__all__ = [revision, down_revision]
 
 
 def upgrade() -> None:
