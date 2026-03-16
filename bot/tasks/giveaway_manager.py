@@ -7,9 +7,13 @@ from discord.ext import commands, tasks
 
 from bot.auth.permissions import PermissionContext
 from bot.commands.giveaway import CACHE_GIVEAWAY_MESSAGE_ID
+from bot.services.giveaway_service import (
+    build_end_announcement,
+    build_ended_embed,
+    select_winners,
+)
 from bot.utils.db import TRANSIENT_DB_ERRORS
-from bot.utils.discord_helpers import discord_timestamp, get_or_fetch_channel
-from bot.utils.giveaway_selection import select_weighted_winners
+from bot.utils.discord_helpers import get_or_fetch_channel
 from bot.views.giveaway import GIVEAWAY_COLUMNS
 from config.constants import Role
 
@@ -155,13 +159,10 @@ class GiveawayManager(commands.Cog):
                 pass
 
             if winners:
-                mentions = " ".join(f"<@{w}>" for w in winners)
-                await channel.send(
-                    f"🎉 Congratulations {mentions}! You won **{giveaway['prize']}**!"
-                )
+                await channel.send(build_end_announcement(giveaway["prize"], winners))
                 await self._create_prize_thread(channel, giveaway, winners)
             else:
-                await channel.send(f"No entries for **{giveaway['prize']}**. No winners.")
+                await channel.send(build_end_announcement(giveaway["prize"], winners))
 
             if self.bot.notifier:
                 try:
@@ -217,41 +218,10 @@ class GiveawayManager(commands.Cog):
             logger.warning("Could not create prize thread for giveaway %s: %s", giveaway["id"], e)
 
     def _select_winners(self, entries: list, count: int) -> list:
-        return select_weighted_winners(entries, count)
+        return select_winners(entries, count)
 
     def _build_ended_embed(self, giveaway, winners: list, entry_count: int) -> discord.Embed:
-        ended_at = giveaway["ended_at"]
-        ts_full = discord_timestamp(ended_at, "F")
-
-        lines = [
-            f"**{giveaway['prize']}**",
-            "",
-            f"**Ended:** {ts_full}",
-            f"**Hosted by:** <@{giveaway['host_id']}>",
-        ]
-        if giveaway.get("donor_id"):
-            lines.append(f"**Donated by:** <@{giveaway['donor_id']}>")
-        description = "\n".join(lines)
-
-        embed = discord.Embed(
-            title="🎉 GIVEAWAY ENDED 🎉",
-            description=description,
-            color=discord.Color.dark_grey(),
-            timestamp=ended_at,
-        )
-        if winners:
-            embed.add_field(
-                name="Winners", value="\n".join(f"<@{w}>" for w in winners), inline=False
-            )
-        else:
-            embed.add_field(name="Winners", value="No valid entries", inline=False)
-        entry_word = "entry" if entry_count == 1 else "entries"
-        winner_word = "winner" if len(winners) == 1 else "winners"
-        footer = f"{entry_count} {entry_word}"
-        if winners:
-            footer = f"{len(winners)} {winner_word} • {footer}"
-        embed.set_footer(text=footer)
-        return embed
+        return build_ended_embed(giveaway, winners, entry_count)
 
 
 async def setup(bot: commands.Bot):

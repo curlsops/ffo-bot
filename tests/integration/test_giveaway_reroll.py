@@ -5,6 +5,7 @@ import pytest
 from discord import app_commands
 
 from bot.commands.giveaway import GiveawayCommands
+from tests.helpers import assert_followup_contains
 
 _OP_REROLL = app_commands.Choice(name="Reroll", value="reroll")
 _OP_START = app_commands.Choice(name="Start", value="start")
@@ -66,7 +67,7 @@ async def test_reroll_success():
 
     conn.execute.assert_awaited()
     i.followup.send.assert_awaited()
-    assert "Rerolled" in str(i.followup.send.call_args)
+    assert_followup_contains(i, "Rerolled")
 
 
 @pytest.mark.asyncio
@@ -79,7 +80,7 @@ async def test_reroll_not_found():
     i = make_interaction()
     await cog.giveaway_cmd.callback(i, operation=_OP_REROLL, message_id="123456789012345678")
 
-    assert "not found" in str(i.followup.send.call_args)
+    assert_followup_contains(i, "not found")
 
 
 @pytest.mark.asyncio
@@ -97,7 +98,7 @@ async def test_reroll_still_active():
     i = make_interaction()
     await cog.giveaway_cmd.callback(i, operation=_OP_REROLL, message_id="123456789012345678")
 
-    assert "still active" in str(i.followup.send.call_args)
+    assert_followup_contains(i, "still active")
 
 
 @pytest.mark.asyncio
@@ -110,7 +111,7 @@ async def test_reroll_invalid_message_id():
     i = make_interaction()
     await cog.giveaway_cmd.callback(i, operation=_OP_REROLL, message_id="not-a-valid-id")
 
-    assert "Invalid message ID" in str(i.followup.send.call_args)
+    assert_followup_contains(i, "Invalid message ID")
     conn.fetchrow.assert_not_awaited()
 
 

@@ -9,9 +9,13 @@ from discord import app_commands
 from discord.ext import commands
 
 from bot.auth.command_helpers import require_admin, send_error
+from bot.services.giveaway_service import (
+    build_embed,
+    build_reroll_announcement,
+    select_winners,
+)
 from bot.utils.autocomplete import cached_autocomplete
-from bot.utils.giveaway_selection import select_weighted_winners
-from bot.views.giveaway import GIVEAWAY_COLUMNS, GiveawayView, build_embed
+from bot.views.giveaway import GIVEAWAY_COLUMNS, GiveawayView
 from config.constants import Constants
 
 logger = logging.getLogger(__name__)
@@ -400,12 +404,9 @@ async def _giveaway_reroll(
                 pass
 
             if new_winners:
-                mentions = " ".join(f"<@{w}>" for w in new_winners)
-                await channel.send(
-                    f"🎉 Reroll! New winners for **{giveaway['prize']}**: {mentions}"
-                )
+                await channel.send(build_reroll_announcement(giveaway["prize"], new_winners))
             else:
-                await channel.send(f"Reroll for **{giveaway['prize']}** — no valid entries.")
+                await channel.send(build_reroll_announcement(giveaway["prize"], new_winners))
 
         await interaction.followup.send(
             f"Rerolled! New winner(s): {', '.join(f'<@{w}>' for w in new_winners) if new_winners else 'None'}",
@@ -431,7 +432,7 @@ class GiveawayCommands(commands.Cog):
         return None
 
     def _select_winners(self, entries: list, count: int) -> list:
-        return select_weighted_winners(entries, count)
+        return select_winners(entries, count)
 
     def _parse_roles(self, roles_str: str | None) -> list:
         if not roles_str:

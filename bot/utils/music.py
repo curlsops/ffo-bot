@@ -1,5 +1,6 @@
 from collections import defaultdict, deque
-from typing import TYPE_CHECKING, cast
+from itertools import islice
+from typing import TYPE_CHECKING, Iterable, cast
 
 import discord
 from mafic import Player, Track
@@ -52,7 +53,7 @@ def _ms(v) -> int:
 
 
 def _time_until_track(
-    player: Player | None, current: Track | None, queue: deque[Track], idx: int
+    player: Player | None, current: Track | None, queue: Iterable[Track], idx: int
 ) -> str:
     if idx == 0:
         if not current or not player:
@@ -66,6 +67,6 @@ def _time_until_track(
         if (current and player)
         else 0
     )
-    for i in range(idx - 1):
-        cum += _ms(getattr(queue[i], "length", None))
+    for queued_track in islice(queue, idx - 1):
+        cum += _ms(getattr(queued_track, "length", None))
     return "in " + _format_duration(cum)

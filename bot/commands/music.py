@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, cast
+from collections import deque
+from typing import TYPE_CHECKING, Awaitable, Callable, Sequence, TypeVar, cast
 from urllib.parse import urlparse
 
 import discord
@@ -38,6 +39,9 @@ if TYPE_CHECKING:
     from bot.client import FFOBot
 
 logger = logging.getLogger(__name__)
+
+TIn = TypeVar("TIn")
+TOut = TypeVar("TOut")
 
 QUEUE_PAGE_SIZE = 5
 MAX_QUERY_LEN = 200
@@ -96,6 +100,13 @@ async def _play_next(player: Player) -> bool:
     return True
 
 
+def _pop_queue_index(queue: deque[Track], idx: int) -> Track:
+    queue.rotate(-idx)
+    track = queue.popleft()
+    queue.rotate(idx)
+    return track
+
+
 async def _fetch_one_track(player: Player, query: str) -> Track | None:
     result = await player.fetch_tracks(query, search_type=SearchType.YOUTUBE)
     if result and isinstance(result, list) and result:
@@ -105,14 +116,26 @@ async def _fetch_one_track(player: Player, query: str) -> Track | None:
     return None
 
 
-async def _fetch_playlist_tracks(player: Player, queries: list[str]) -> list[Track]:
-    sem = asyncio.Semaphore(PLAYLIST_FETCH_CONCURRENCY)
+async def _bounded_map_ordered(
+    items: list[TIn],
+    worker: Callable[[TIn], Awaitable[TOut]],
+    concurrency: int,
+) -> list[TOut]:
+    sem = asyncio.Semaphore(concurrency)
 
-    async def bounded_fetch(sq: str) -> Track | None:
+    async def run(item: TIn) -> TOut:
         async with sem:
-            return await _fetch_one_track(player, sq)
+            return await worker(item)
 
-    results = await asyncio.gather(*[bounded_fetch(sq) for sq in queries])
+    return await asyncio.gather(*[run(item) for item in items])
+
+
+async def _fetch_playlist_tracks(player: Player, queries: list[str]) -> list[Track]:
+    results = await _bounded_map_ordered(
+        queries,
+        lambda sq: _fetch_one_track(player, sq),
+        PLAYLIST_FETCH_CONCURRENCY,
+    )
     return [t for t in results if t is not None]
 
 
@@ -151,7 +174,7 @@ async def _resolve_url_tracks(
 
 
 def _music_queue_format_row(
-    row: tuple, player: Player | None, current: Track | None, queue: list[Track]
+    row: tuple, player: Player | None, current: Track | None, queue: Sequence[Track]
 ) -> str:
     t, lbl, idx = row
     link = f"[{t.title}]({t.uri})" if t.uri else t.title
@@ -159,7 +182,7 @@ def _music_queue_format_row(
 
 
 def _MusicQueueView(
-    player: Player | None, current: Track | None, queue: list[Track]
+    player: Player | None, current: Track | None, queue: Sequence[Track]
 ) -> EmbedListPaginatedView:
     rows: list[tuple[Track, str, int]] = ([(current, "Now", 0)] if current else []) + [
         (t, str(i), i) for i, t in enumerate(queue, 1)
@@ -509,10 +532,7 @@ class MusicGroup(app_commands.Group):
                 f"No track at position {position}. Queue has {len(q)} item(s).", ephemeral=True
             )
             return
-        items = list(q)
-        track = items.pop(idx)
-        q.clear()
-        q.extend(items)
+        track = _pop_queue_index(q, idx)
         if p.current:
             q.appendleft(p.current)
             await p.stop()
