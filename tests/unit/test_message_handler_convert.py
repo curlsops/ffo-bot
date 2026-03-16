@@ -36,9 +36,10 @@ async def test_convert_units_replies_when_imperial_detected(handler, message):
     message.reply.assert_awaited_once()
     call_args = message.reply.call_args
     assert call_args.kwargs.get("mention_author") is False
-    reply_text = call_args.args[0]
-    assert "4.54 kg" in reply_text
-    assert "I weigh" in reply_text
+    embed = call_args.kwargs.get("embed")
+    assert embed is not None
+    assert "4.54 kg" in embed.description
+    assert "I weigh" in embed.description
 
 
 @pytest.mark.asyncio

@@ -13,7 +13,6 @@ NAMEMC_PROFILE_URL = "https://namemc.com/profile/{username}"
 
 BATCH_SIZE = 10
 
-# Regex to extract UUID from NameMC profile page meta tags or data attributes
 NAMEMC_UUID_PATTERN = re.compile(r'data-id="([a-f0-9-]{32,36})"', re.IGNORECASE)
 NAMEMC_TITLE_PATTERN = re.compile(r"<title>([^<|]+)", re.IGNORECASE)
 

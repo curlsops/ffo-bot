@@ -572,7 +572,6 @@ class TestFFOBotSetupHook:
         bot.db_pool = None
         guild = MagicMock(id=1, name="Test")
         await bot._register_server(guild)
-        # No exception, early return
 
     @pytest.mark.asyncio
     async def test_setup_hook_initializes_resources(self, bot):

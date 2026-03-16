@@ -36,14 +36,6 @@ def _invalidate_quotebook_cache(cache, server_id: int) -> None:
 def _parse_quotes_from_message(
     message: discord.Message,
 ) -> list[tuple[str, str | None]]:
-    """Extract (quote_text, attribution) pairs from a message.
-
-    Handles formats:
-    - "quote text" - @attribution
-    - @user "quote text" (Discord mention or literal @name)
-    - "quote text" (attribution = message author)
-    - Multiple quotes per message
-    """
     content = message.content or ""
     if not content.strip():
         return []
@@ -60,17 +52,14 @@ def _parse_quotes_from_message(
             seen.add(quote)
             results.append((quote, (attr or "").strip()[:255] or None))
 
-    # Pattern 1: "quote" - @attribution or "quote" -@attribution
     for m in re.finditer(r'"([^"]+)"\s*[-—]\s*@?\s*([^\s\n]*)', content):
         add(m.group(1), m.group(2).strip() if m.group(2) else None)
 
-    # Pattern 2: <@id> "quote" or @name "quote"
     for m in re.finditer(r'(?:<@!?(\d+)>|@([^\s"@]+))\s*"([^"]+)"', content):
         quote = m.group(3)
         attr = mention_map.get(m.group(1), m.group(2)) if m.group(1) else m.group(2)
         add(quote, attr)
 
-    # Pattern 3: Standalone "quote" not yet captured (use author)
     for m in re.finditer(r'"([^"]+)"', content):
         add(m.group(1), author_name)
 
@@ -387,7 +376,6 @@ class QuoteGroup(app_commands.Group):
                         if not quote_text:
                             continue
 
-                        # Avoid duplicates (same quote_text for this server)
                         existing = await conn.fetchval(
                             """
                             SELECT 1 FROM quotebook
@@ -413,10 +401,27 @@ class QuoteGroup(app_commands.Group):
                             auto_approve,
                         )
                         imported += 1
+                        if auto_approve:
+                            text = quote_text
+                            if attribution:
+                                text += f"\n— {attribution}"
+                            embed = discord.Embed(
+                                description=text[:4096],
+                                color=discord.Color.blue(),
+                            )
+                            embed.set_footer(text="📖 Quotebook (imported)")
+                            try:
+                                await channel.send(embed=embed)
+                            except discord.Forbidden:
+                                logger.warning(
+                                    "Cannot post imported quote to channel %s", channel.id
+                                )
 
             _invalidate_quotebook_cache(self.cog.bot.cache, interaction.guild_id)
 
-            msg = f"Imported **{imported}** quotes from {channel.mention}. Approved quotes will now be posted there."
+            msg = f"Imported **{imported}** quotes from {channel.mention}."
+            if auto_approve and imported:
+                msg += " New approved quotes have been posted."
             if skipped:
                 msg += f" Skipped {skipped} duplicates."
             await interaction.followup.send(msg, ephemeral=True)

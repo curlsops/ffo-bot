@@ -234,7 +234,12 @@ class MessageHandler(commands.Cog):
         try:
             converted = detect_and_convert(message.content)
             if converted:
-                await message.reply(converted, mention_author=False)
+                embed = discord.Embed(
+                    description=converted,
+                    color=discord.Color.blue(),
+                )
+                embed.set_footer(text="Converted from imperial to SI")
+                await message.reply(embed=embed, mention_author=False)
         except Exception as e:
             logger.warning("Unit conversion error: %s", e)
 

@@ -75,11 +75,20 @@ class TestModerationTimeout:
         assert "Member Timed Out" in call.args[1]
 
 
+async def _voice_audit_iter(target_id, moderator_id):
+    entry = MagicMock()
+    entry.target = MagicMock()
+    entry.target.id = target_id
+    entry.user = MagicMock()
+    entry.user.id = moderator_id
+    yield entry
+
+
 class TestModerationVoiceState:
     @pytest.mark.asyncio
-    async def test_notifies_on_server_mute(self, handler, bot):
-        member = _member()
-        member.guild.audit_logs = lambda **kw: _empty_async_iter()
+    async def test_notifies_on_server_mute_when_moderator_mutes_other(self, handler, bot):
+        member = _member(user_id=10)
+        member.guild.audit_logs = lambda **kw: _voice_audit_iter(10, 99)
         before_vs = MagicMock()
         before_vs.channel = MagicMock(name="general")
         before_vs.server_mute = False
@@ -92,6 +101,20 @@ class TestModerationVoiceState:
         bot.notifier.notify_moderation.assert_awaited_once()
         assert "Server Muted" in bot.notifier.notify_moderation.call_args.args[1]
 
+    @pytest.mark.asyncio
+    async def test_skips_server_mute_when_self_mute(self, handler, bot):
+        member = _member(user_id=10)
+        member.guild.audit_logs = lambda **kw: _empty_async_iter()
+        before_vs = MagicMock()
+        before_vs.channel = MagicMock(name="general")
+        before_vs.server_mute = False
+        after_vs = MagicMock()
+        after_vs.channel = before_vs.channel
+        after_vs.server_mute = True
+        after_vs.server_deaf = False
+        await handler.on_voice_state_update(member, before_vs, after_vs)
+        bot.notifier.notify_moderation.assert_not_awaited()
+
 
 async def _empty_async_iter():
     for _ in []:
@@ -100,7 +123,33 @@ async def _empty_async_iter():
 
 class TestModerationMessageDelete:
     @pytest.mark.asyncio
-    async def test_notifies_on_message_delete(self, handler, bot):
+    async def test_notifies_on_message_delete_when_moderator_deletes(self, handler, bot):
+        msg = MagicMock()
+        msg.guild.id = 1
+        msg.channel.id = 2
+        msg.author.id = 10
+        msg.author.bot = False
+        msg.content = "deleted text"
+        msg.attachments = []
+
+        async def audit_iter():
+            entry = MagicMock()
+            entry.extra = MagicMock()
+            entry.extra.channel = MagicMock()
+            entry.extra.channel.id = 2
+            entry.user = MagicMock()
+            entry.user.id = 99
+            yield entry
+
+        msg.guild.audit_logs = lambda **kw: audit_iter()
+        await handler.on_message_delete(msg)
+        bot.notifier.notify_moderation.assert_awaited_once()
+        call = bot.notifier.notify_moderation.call_args
+        assert call.args[1] == "Message Deleted"
+        assert "deleted text" in str(call.kwargs.get("extra", ""))
+
+    @pytest.mark.asyncio
+    async def test_skips_message_delete_when_self_delete(self, handler, bot):
         msg = MagicMock()
         msg.guild.id = 1
         msg.channel.id = 2
@@ -110,10 +159,7 @@ class TestModerationMessageDelete:
         msg.attachments = []
         msg.guild.audit_logs = lambda **kw: _empty_async_iter()
         await handler.on_message_delete(msg)
-        bot.notifier.notify_moderation.assert_awaited_once()
-        call = bot.notifier.notify_moderation.call_args
-        assert "Message Deleted" in call.args[1]
-        assert "deleted text" in str(call.kwargs.get("extra", ""))
+        bot.notifier.notify_moderation.assert_not_awaited()
 
     @pytest.mark.asyncio
     async def test_skips_bot_messages(self, handler, bot):
