@@ -1,4 +1,3 @@
-from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
@@ -36,7 +35,7 @@ def _db_ctx(conn):
 
 
 @pytest.mark.asyncio
-async def test_greroll_success():
+async def test_reroll_success():
     giveaway = {
         "id": 1,
         "is_active": False,
@@ -71,7 +70,7 @@ async def test_greroll_success():
 
 
 @pytest.mark.asyncio
-async def test_greroll_not_found():
+async def test_reroll_not_found():
     conn = AsyncMock(fetchrow=AsyncMock(return_value=None))
     bot = make_bot()
     bot.db_pool = _db_ctx(conn)
@@ -84,7 +83,7 @@ async def test_greroll_not_found():
 
 
 @pytest.mark.asyncio
-async def test_greroll_still_active():
+async def test_reroll_still_active():
     giveaway = {
         "id": 1,
         "is_active": True,
@@ -102,7 +101,7 @@ async def test_greroll_still_active():
 
 
 @pytest.mark.asyncio
-async def test_greroll_invalid_message_id():
+async def test_reroll_invalid_message_id():
     conn = AsyncMock()
     bot = make_bot()
     bot.db_pool = _db_ctx(conn)
