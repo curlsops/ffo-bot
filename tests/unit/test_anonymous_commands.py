@@ -8,7 +8,9 @@ from bot.commands.anonymous import (
     AnonymousCommands,
     AnonymousPostButtonView,
     AnonymousPostModal,
+    _prepare_anonymous_submission,
     _process_anonymous_submission,
+    _truncate_for_discord,
 )
 
 
@@ -103,6 +105,22 @@ def test_process_submission_anonymizes(mock_bot):
     assert err is None
     assert "Bob" not in anonymized
     assert "My name is" in anonymized
+
+
+def test_prepare_submission_returns_channel(mock_bot):
+    channel = MagicMock(spec=discord.TextChannel)
+    mock_bot.get_channel.return_value = channel
+    err, anonymized, returned_channel = _prepare_anonymous_submission("Hello world", 1, mock_bot)
+    assert err is None
+    assert anonymized == "Hello world"
+    assert returned_channel is channel
+
+
+def test_truncate_for_discord_truncates_when_needed():
+    msg = "x" * 3000
+    truncated = _truncate_for_discord(msg)
+    assert len(truncated) == 2000
+    assert truncated.endswith("...")
 
 
 @pytest.mark.asyncio

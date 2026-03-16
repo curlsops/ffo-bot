@@ -7,7 +7,7 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from bot.auth.command_helpers import require_admin
+from bot.auth.command_helpers import execute_command, require_admin
 from bot.utils.discord_helpers import discord_timestamp
 
 logger = logging.getLogger(__name__)
@@ -68,6 +68,20 @@ async def _close_reaction_poll_after(
         logger.warning("Failed to close reaction poll: %s", e)
 
 
+async def _poll_permission_check(
+    self,
+    interaction: discord.Interaction,
+    question: str,
+    options: str,
+    duration: str = "1d",
+    multi: bool = False,
+    channel: discord.TextChannel | None = None,
+) -> bool:
+    if channel is None:
+        return True
+    return await require_admin(interaction, "poll", self.bot)
+
+
 class PollCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
@@ -106,6 +120,13 @@ class PollCommands(commands.Cog):
         channel="Post to this channel (Admin only; omit to post in current channel)",
     )
     @app_commands.autocomplete(duration=_poll_duration_autocomplete)
+    @execute_command(
+        permission_check=_poll_permission_check,
+        error_message="Error creating poll.",
+        use_send_error=False,
+        logger=logger,
+        log_prefix="Poll error",
+    )
     async def poll(
         self,
         interaction: discord.Interaction,
@@ -115,76 +136,69 @@ class PollCommands(commands.Cog):
         multi: bool = False,
         channel: discord.TextChannel | None = None,
     ):
-        await interaction.response.defer(ephemeral=True)
-        try:
-            target = channel or interaction.channel
-            if channel is not None and not await require_admin(interaction, "poll", self.bot):
+        target = channel or interaction.channel
+
+        if len(question) > 300:
+            await interaction.followup.send(
+                "Question too long (max 300 characters).", ephemeral=True
+            )
+            return
+
+        raw_opts = [o.strip() for o in options.split(",") if o.strip()]
+        if len(raw_opts) < 2:
+            await interaction.followup.send(
+                "Need at least 2 options (comma-separated).", ephemeral=True
+            )
+            return
+
+        use_long = len(raw_opts) > 10
+        if use_long:
+            opts = [o[:100] for o in raw_opts][:20]
+        else:
+            opts = [o[:55] for o in raw_opts][:10]
+
+        if use_long:
+            delta = _parse_duration(duration)
+            if not delta or delta.total_seconds() < 3600:
+                await interaction.followup.send(
+                    "Invalid duration. Use 1h, 6h, 1d, 3d, or 7d.", ephemeral=True
+                )
                 return
 
-            if len(question) > 300:
+            emojis = self._create_long_poll_emojis()[: len(opts)]
+            lines = [f"{emojis[i]} {opts[i]}" for i in range(len(opts))]
+            ends_at = datetime.now(timezone.utc) + delta
+            embed = discord.Embed(
+                title=f"📊 {question}",
+                description="\n".join(lines) + "\n\n*React to vote*",
+                color=discord.Color.blue(),
+                timestamp=ends_at,
+            )
+            embed.set_footer(text=f"Ends {discord_timestamp(ends_at, 'R')}")
+            msg = await target.send(embed=embed)
+            for emoji in emojis:
+                await msg.add_reaction(emoji)
+            asyncio.create_task(
+                _close_reaction_poll_after(target, msg.id, delta, opts, emojis, question)
+            )
+            await interaction.followup.send(
+                f"Poll created with {len(opts)} options (reaction-based). React to vote.",
+                ephemeral=True,
+            )
+        else:
+            delta = _parse_duration(duration)
+            if not delta or delta.total_seconds() < 3600:
                 await interaction.followup.send(
-                    "Question too long (max 300 characters).", ephemeral=True
+                    "Invalid duration. Use 1h, 6h, 1d, 3d, or 7d.", ephemeral=True
                 )
                 return
 
-            raw_opts = [o.strip() for o in options.split(",") if o.strip()]
-            if len(raw_opts) < 2:
-                await interaction.followup.send(
-                    "Need at least 2 options (comma-separated).", ephemeral=True
-                )
-                return
+            poll = discord.Poll(question=question, duration=delta, multiple=multi)
+            for opt in opts:
+                poll.add_answer(text=opt)
 
-            use_long = len(raw_opts) > 10
-            if use_long:
-                opts = [o[:100] for o in raw_opts][:20]
-            else:
-                opts = [o[:55] for o in raw_opts][:10]
-
-            if use_long:
-                delta = _parse_duration(duration)
-                if not delta or delta.total_seconds() < 3600:
-                    await interaction.followup.send(
-                        "Invalid duration. Use 1h, 6h, 1d, 3d, or 7d.", ephemeral=True
-                    )
-                    return
-
-                emojis = self._create_long_poll_emojis()[: len(opts)]
-                lines = [f"{emojis[i]} {opts[i]}" for i in range(len(opts))]
-                ends_at = datetime.now(timezone.utc) + delta
-                embed = discord.Embed(
-                    title=f"📊 {question}",
-                    description="\n".join(lines) + "\n\n*React to vote*",
-                    color=discord.Color.blue(),
-                    timestamp=ends_at,
-                )
-                embed.set_footer(text=f"Ends {discord_timestamp(ends_at, 'R')}")
-                msg = await target.send(embed=embed)
-                for emoji in emojis:
-                    await msg.add_reaction(emoji)
-                asyncio.create_task(
-                    _close_reaction_poll_after(target, msg.id, delta, opts, emojis, question)
-                )
-                await interaction.followup.send(
-                    f"Poll created with {len(opts)} options (reaction-based). React to vote.",
-                    ephemeral=True,
-                )
-            else:
-                delta = _parse_duration(duration)
-                if not delta or delta.total_seconds() < 3600:
-                    await interaction.followup.send(
-                        "Invalid duration. Use 1h, 6h, 1d, 3d, or 7d.", ephemeral=True
-                    )
-                    return
-
-                poll = discord.Poll(question=question, duration=delta, multiple=multi)
-                for opt in opts:
-                    poll.add_answer(text=opt)
-
-                await target.send(poll=poll)
-                await interaction.followup.send("Poll created!", ephemeral=True)
-        except Exception as e:
-            logger.error("Poll error: %s", e, exc_info=True)
-            await interaction.followup.send("Error creating poll.", ephemeral=True)
+            await target.send(poll=poll)
+            await interaction.followup.send("Poll created!", ephemeral=True)
 
 
 async def setup(bot):

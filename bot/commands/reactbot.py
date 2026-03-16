@@ -65,6 +65,115 @@ async def _reactbot_phrase_autocomplete(
     )
 
 
+async def _list_reactbot_phrases(cog: "ReactBotCommands", interaction: discord.Interaction) -> None:
+    try:
+        cache_key = CACHE_REACTBOT_PHRASES.format(server_id=interaction.guild_id)
+        rows = cog.bot.cache.get(cache_key) if cog.bot.cache else None
+        if rows is None:
+            async with cog.bot.db_pool.acquire() as conn:
+                rows = await conn.fetch(
+                    "SELECT phrase, emoji, match_count FROM phrase_reactions WHERE server_id = $1 AND is_active = true ORDER BY match_count DESC",
+                    interaction.guild_id,
+                )
+            rows = [dict(r) for r in rows]
+            if cog.bot.cache:
+                cog.bot.cache.set(cache_key, rows, ttl=Constants.CACHE_TTL)
+        if not rows:
+            await send_error(interaction, "No phrase reactions configured.")
+            return
+
+        def fmt(r):
+            return f"• `{r['phrase']}` → {r['emoji']} ({r['match_count']} matches)"
+
+        view = ListPaginatedView(rows, "**Phrase Reactions:**", fmt)
+        await interaction.followup.send(
+            view._format_page(),
+            view=view,
+            ephemeral=True,
+        )
+    except Exception as e:
+        logger.error("reactbot list error: %s", e, exc_info=True)
+        await send_error(interaction, "Error fetching reactions.")
+
+
+async def _add_reactbot_phrase(
+    cog: "ReactBotCommands",
+    interaction: discord.Interaction,
+    phrase: str | None,
+    emoji: str | None,
+) -> None:
+    if not await require_admin(interaction, "reactbot", cog.bot):
+        return
+    if not phrase or not emoji:
+        await send_error(interaction, "Phrase and emoji required for Add.")
+        return
+    try:
+        phrase = InputValidator.validate_phrase_pattern(phrase)
+        emoji = InputValidator.validate_emoji(emoji)
+        await cog.bot.phrase_matcher.validate_pattern(phrase)
+
+        emoji_valid, emoji_error = await cog._validate_emoji_accessible(interaction, emoji)
+        if not emoji_valid:
+            await send_error(interaction, emoji_error)
+            return
+
+        async with cog.bot.db_pool.acquire() as conn:
+            await conn.execute(
+                "INSERT INTO phrase_reactions (server_id, phrase, emoji, created_by) VALUES ($1, $2, $3, $4)",
+                interaction.guild_id,
+                phrase,
+                emoji,
+                interaction.user.id,
+            )
+        cog.bot.phrase_matcher.invalidate_cache(interaction.guild_id)
+        _invalidate_reactbot_cache(cog.bot.cache, interaction.guild_id)
+        await interaction.followup.send(f"✅ Added: `{phrase}` → {emoji}", ephemeral=True)
+        if cog.bot.metrics:
+            cog.bot.metrics.commands_executed.labels(
+                command_name="reactbot add",
+                server_id=str(interaction.guild_id),
+                status="success",
+            ).inc()
+    except asyncpg.UniqueViolationError:
+        await send_error(
+            interaction,
+            f"This exact phrase + emoji combination already exists: `{phrase}` → {emoji}",
+        )
+    except (ValidationError, RegexValidationError) as e:
+        await send_error(interaction, str(e))
+    except Exception as e:
+        logger.error("reactbot add error: %s", e, exc_info=True)
+        await send_error(interaction, "Error processing command.")
+
+
+async def _remove_reactbot_phrase(
+    cog: "ReactBotCommands",
+    interaction: discord.Interaction,
+    phrase: str | None,
+) -> None:
+    if not await require_admin(interaction, "reactbot", cog.bot):
+        return
+    if not phrase:
+        await send_error(interaction, "Phrase required for Remove.")
+        return
+    try:
+        async with cog.bot.db_pool.acquire() as conn:
+            result = await conn.execute(
+                "UPDATE phrase_reactions SET is_active = false WHERE server_id = $1 AND phrase = $2 AND is_active = true",
+                interaction.guild_id,
+                phrase,
+            )
+        if result == "UPDATE 0":
+            await send_error(interaction, f"Not found: `{phrase}`")
+            return
+        cog.bot.phrase_matcher.invalidate_cache(interaction.guild_id)
+        _invalidate_reactbot_cache(cog.bot.cache, interaction.guild_id)
+        await interaction.followup.send(f"✅ Removed: `{phrase}`", ephemeral=True)
+    except Exception as e:
+        logger.error("reactbot remove error: %s", e, exc_info=True)
+        await send_error(interaction, "Error processing command.")
+
+
 def _reactbot_command(cog: "ReactBotCommands"):
     @app_commands.command(
         name="reactbot",
@@ -86,105 +195,14 @@ def _reactbot_command(cog: "ReactBotCommands"):
         emoji: str | None = None,
     ):
         await interaction.response.defer(ephemeral=True)
-
-        if operation.value == "list":
-            try:
-                cache_key = CACHE_REACTBOT_PHRASES.format(server_id=interaction.guild_id)
-                rows = cog.bot.cache.get(cache_key) if cog.bot.cache else None
-                if rows is None:
-                    async with cog.bot.db_pool.acquire() as conn:
-                        rows = await conn.fetch(
-                            "SELECT phrase, emoji, match_count FROM phrase_reactions WHERE server_id = $1 AND is_active = true ORDER BY match_count DESC",
-                            interaction.guild_id,
-                        )
-                    rows = [dict(r) for r in rows]
-                    if cog.bot.cache:
-                        cog.bot.cache.set(cache_key, rows, ttl=Constants.CACHE_TTL)
-                if not rows:
-                    await send_error(interaction, "No phrase reactions configured.")
-                    return
-
-                def fmt(r):
-                    return f"• `{r['phrase']}` → {r['emoji']} ({r['match_count']} matches)"
-
-                view = ListPaginatedView(rows, "**Phrase Reactions:**", fmt)
-                await interaction.followup.send(
-                    view._format_page(),
-                    view=view,
-                    ephemeral=True,
-                )
-            except Exception as e:
-                logger.error("reactbot list error: %s", e, exc_info=True)
-                await send_error(interaction, "Error fetching reactions.")
-            return
-
-        if operation.value == "add":
-            if not await require_admin(interaction, "reactbot", cog.bot):
-                return
-            if not phrase or not emoji:
-                await send_error(interaction, "Phrase and emoji required for Add.")
-                return
-            try:
-                phrase = InputValidator.validate_phrase_pattern(phrase)
-                emoji = InputValidator.validate_emoji(emoji)
-                await cog.bot.phrase_matcher.validate_pattern(phrase)
-
-                emoji_valid, emoji_error = await cog._validate_emoji_accessible(interaction, emoji)
-                if not emoji_valid:
-                    await send_error(interaction, emoji_error)
-                    return
-
-                async with cog.bot.db_pool.acquire() as conn:
-                    await conn.execute(
-                        "INSERT INTO phrase_reactions (server_id, phrase, emoji, created_by) VALUES ($1, $2, $3, $4)",
-                        interaction.guild_id,
-                        phrase,
-                        emoji,
-                        interaction.user.id,
-                    )
-                cog.bot.phrase_matcher.invalidate_cache(interaction.guild_id)
-                _invalidate_reactbot_cache(cog.bot.cache, interaction.guild_id)
-                await interaction.followup.send(f"✅ Added: `{phrase}` → {emoji}", ephemeral=True)
-                if cog.bot.metrics:
-                    cog.bot.metrics.commands_executed.labels(
-                        command_name="reactbot add",
-                        server_id=str(interaction.guild_id),
-                        status="success",
-                    ).inc()
-            except asyncpg.UniqueViolationError:
-                await send_error(
-                    interaction,
-                    f"This exact phrase + emoji combination already exists: `{phrase}` → {emoji}",
-                )
-            except (ValidationError, RegexValidationError) as e:
-                await send_error(interaction, str(e))
-            except Exception as e:
-                logger.error("reactbot add error: %s", e, exc_info=True)
-                await send_error(interaction, "Error processing command.")
-            return
-
-        if operation.value == "remove":
-            if not await require_admin(interaction, "reactbot", cog.bot):
-                return
-            if not phrase:
-                await send_error(interaction, "Phrase required for Remove.")
-                return
-            try:
-                async with cog.bot.db_pool.acquire() as conn:
-                    result = await conn.execute(
-                        "UPDATE phrase_reactions SET is_active = false WHERE server_id = $1 AND phrase = $2 AND is_active = true",
-                        interaction.guild_id,
-                        phrase,
-                    )
-                if result == "UPDATE 0":
-                    await send_error(interaction, f"Not found: `{phrase}`")
-                    return
-                cog.bot.phrase_matcher.invalidate_cache(interaction.guild_id)
-                _invalidate_reactbot_cache(cog.bot.cache, interaction.guild_id)
-                await interaction.followup.send(f"✅ Removed: `{phrase}`", ephemeral=True)
-            except Exception as e:
-                logger.error("reactbot remove error: %s", e, exc_info=True)
-                await send_error(interaction, "Error processing command.")
+        handlers = {
+            "list": lambda: _list_reactbot_phrases(cog, interaction),
+            "add": lambda: _add_reactbot_phrase(cog, interaction, phrase, emoji),
+            "remove": lambda: _remove_reactbot_phrase(cog, interaction, phrase),
+        }
+        handler = handlers.get(operation.value)
+        if handler is not None:
+            await handler()
 
     return reactbot_cmd
 

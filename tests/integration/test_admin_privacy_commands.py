@@ -5,6 +5,7 @@ import pytest
 
 from bot.commands.admin import AdminCommands
 from bot.commands.privacy import PrivacyCommands
+from tests.helpers import assert_followup_contains
 
 
 def _i(guild=True):
@@ -171,4 +172,4 @@ class TestPrivacy:
         i = _i()
         cog = PrivacyCommands(bot)
         await cog.privacy_cmd.callback(i, operation=self._op(cmd))
-        assert "error" in str(i.followup.send.call_args).lower()
+        assert_followup_contains(i, "error")
