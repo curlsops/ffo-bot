@@ -10,9 +10,9 @@ from config.settings import Settings
 
 def make_env(tmpdir, **overrides):
     base = {
-        "DISCORD_BOT_TOKEN": "test_token",
-        "DISCORD_PUBLIC_KEY": "test_key",
-        "DATABASE_URL": "postgresql://test:test@localhost/test",
+        "DISCORD_BOT_TOKEN": "t",
+        "DISCORD_PUBLIC_KEY": "k",
+        "DATABASE_URL": "postgresql://u:p@localhost/db",
         "MEDIA_STORAGE_PATH": tmpdir,
     }
     base.update(overrides)
@@ -20,15 +20,22 @@ def make_env(tmpdir, **overrides):
 
 
 class TestSettingsValidation:
-    def test_settings_log_level_validation_valid(self):
+    @pytest.mark.parametrize(
+        "level,expected",
+        [
+            ("DEBUG", "DEBUG"),
+            ("INFO", "INFO"),
+            ("WARNING", "WARNING"),
+            ("ERROR", "ERROR"),
+            ("CRITICAL", "CRITICAL"),
+            ("debug", "DEBUG"),
+            ("info", "INFO"),
+        ],
+    )
+    def test_settings_log_level_validation_valid(self, level, expected):
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch.dict(os.environ, make_env(tmpdir, LOG_LEVEL="DEBUG"), clear=True):
-                assert Settings().log_level == "DEBUG"
-
-    def test_settings_log_level_validation_case_insensitive(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with patch.dict(os.environ, make_env(tmpdir, LOG_LEVEL="debug"), clear=True):
-                assert Settings().log_level == "DEBUG"
+            with patch.dict(os.environ, make_env(tmpdir, LOG_LEVEL=level), clear=True):
+                assert Settings().log_level == expected
 
     def test_settings_log_level_validation_invalid(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -36,15 +43,14 @@ class TestSettingsValidation:
                 with pytest.raises(ValidationError):
                     Settings()
 
-    def test_settings_log_format_validation_valid(self):
+    @pytest.mark.parametrize(
+        "fmt,expected",
+        [("json", "json"), ("text", "text"), ("JSON", "json"), ("TEXT", "text")],
+    )
+    def test_settings_log_format_validation_valid(self, fmt, expected):
         with tempfile.TemporaryDirectory() as tmpdir:
-            with patch.dict(os.environ, make_env(tmpdir, LOG_FORMAT="json"), clear=True):
-                assert Settings().log_format == "json"
-
-    def test_settings_log_format_validation_text(self):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with patch.dict(os.environ, make_env(tmpdir, LOG_FORMAT="TEXT"), clear=True):
-                assert Settings().log_format == "text"
+            with patch.dict(os.environ, make_env(tmpdir, LOG_FORMAT=fmt), clear=True):
+                assert Settings().log_format == expected
 
     def test_settings_log_format_validation_invalid(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -61,23 +67,44 @@ class TestSettingsValidation:
 
 
 class TestSettingsDefaults:
-    def test_settings_default_values(self):
+    @pytest.mark.parametrize(
+        "field,expected",
+        [
+            ("environment", "production"),
+            ("db_port", 5432),
+            ("db_pool_min_size", 5),
+            ("db_pool_max_size", 20),
+            ("cache_max_size", 10000),
+            ("cache_default_ttl", 86400),
+            ("rate_limit_user_capacity", 10),
+            ("rate_limit_server_capacity", 100),
+            ("log_level", "INFO"),
+            ("log_format", "json"),
+            ("health_check_port", 8080),
+            ("health_check_host", "0.0.0.0"),
+            ("shutdown_timeout_seconds", 30),
+            ("sync_commands_on_boot", True),
+            ("clear_commands_on_boot", True),
+            ("media_max_file_size", 104857600),
+            ("feature_media_download", True),
+            ("feature_reaction_roles", True),
+            ("feature_giveaways", True),
+            ("feature_quotebook", True),
+            ("feature_faq", True),
+            ("feature_notify_moderation", True),
+            ("feature_rotating_status", False),
+            ("feature_voice_transcription", False),
+            ("feature_conversion", False),
+            ("feature_minecraft_whitelist", False),
+            ("feature_anonymous_post", False),
+            ("feature_music", False),
+        ],
+    )
+    def test_settings_default_values(self, field, expected):
         with tempfile.TemporaryDirectory() as tmpdir:
             with patch.dict(os.environ, make_env(tmpdir), clear=True):
                 settings = Settings()
-                assert settings.environment == "production"
-                assert settings.db_pool_min_size == 5
-                assert settings.db_pool_max_size == 20
-                assert settings.cache_max_size == 10000
-                assert settings.cache_default_ttl == 86400
-                assert settings.rate_limit_user_capacity == 10
-                assert settings.rate_limit_server_capacity == 100
-                assert settings.log_level == "INFO"
-                assert settings.log_format == "json"
-                assert settings.health_check_port == 8080
-                assert settings.shutdown_timeout_seconds == 30
-                assert settings.feature_media_download is True
-                assert settings.feature_reaction_roles is True
+                assert getattr(settings, field) == expected
 
     def test_settings_required_fields(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -85,21 +112,38 @@ class TestSettingsDefaults:
                 with pytest.raises((ValidationError, ValueError)):
                     Settings()
 
-    def test_settings_database_url_from_components(self):
+    @pytest.mark.parametrize("port", [5432, 5433, 3306])
+    def test_settings_database_url_from_components(self, port):
         with tempfile.TemporaryDirectory() as tmpdir:
             env = {
                 "DISCORD_BOT_TOKEN": "t",
                 "DISCORD_PUBLIC_KEY": "k",
                 "MEDIA_STORAGE_PATH": tmpdir,
                 "DB_HOST": "db.example.com",
-                "DB_PORT": "5433",
+                "DB_PORT": str(port),
                 "DB_NAME": "mydb",
                 "DB_USER": "myuser",
                 "DB_PASSWORD": "secret",
             }
             with patch.dict(os.environ, env, clear=True):
                 s = Settings()
-                assert s.database_url == "postgresql://myuser:secret@db.example.com:5433/mydb"
+                assert s.database_url == (f"postgresql://myuser:secret@db.example.com:{port}/mydb")
+
+    @pytest.mark.parametrize("host", ["localhost", "db.example.com", "127.0.0.1"])
+    def test_settings_database_url_from_components_host_variants(self, host):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            env = {
+                "DISCORD_BOT_TOKEN": "t",
+                "DISCORD_PUBLIC_KEY": "k",
+                "MEDIA_STORAGE_PATH": tmpdir,
+                "DB_HOST": host,
+                "DB_NAME": "mydb",
+                "DB_USER": "myuser",
+                "DB_PASSWORD": "secret",
+            }
+            with patch.dict(os.environ, env, clear=True):
+                s = Settings()
+                assert host in s.database_url
 
     def test_settings_database_url_from_components_password_special_chars(self):
         with tempfile.TemporaryDirectory() as tmpdir:
@@ -144,15 +188,3 @@ class TestSettingsDefaults:
             with patch.dict(os.environ, env, clear=True):
                 with pytest.raises(ValueError, match="DATABASE_URL or all of"):
                     Settings()
-
-    @pytest.mark.parametrize("level", ["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"])
-    def test_settings_valid_log_levels(self, level):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with patch.dict(os.environ, make_env(tmpdir, LOG_LEVEL=level), clear=True):
-                assert Settings().log_level == level
-
-    @pytest.mark.parametrize("fmt", ["json", "text"])
-    def test_settings_valid_log_formats(self, fmt):
-        with tempfile.TemporaryDirectory() as tmpdir:
-            with patch.dict(os.environ, make_env(tmpdir, LOG_FORMAT=fmt), clear=True):
-                assert Settings().log_format == fmt

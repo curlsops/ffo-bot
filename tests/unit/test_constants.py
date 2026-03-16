@@ -1,16 +1,22 @@
+import pytest
+
 from config.constants import AuditAction, Constants, FileType, Role
 
 
 class TestRole:
-    def test_role_values(self):
-        assert Role.SUPER_ADMIN.value == "super_admin"
-        assert Role.ADMIN.value == "admin"
-        assert Role.MODERATOR.value == "moderator"
-
-    def test_role_hierarchy(self):
-        assert Role.SUPER_ADMIN.hierarchy == 3
-        assert Role.ADMIN.hierarchy == 2
-        assert Role.MODERATOR.hierarchy == 1
+    @pytest.mark.parametrize(
+        "role,value,hierarchy",
+        [
+            (Role.SUPER_ADMIN, "super_admin", 3),
+            (Role.ADMIN, "admin", 2),
+            (Role.MODERATOR, "moderator", 1),
+        ],
+    )
+    def test_role_values_and_hierarchy(self, role, value, hierarchy):
+        assert role.value == value
+        assert role.hierarchy == hierarchy
+        assert isinstance(role.value, str)
+        assert role.hierarchy >= 1
 
     def test_role_hierarchy_ordering(self):
         assert Role.SUPER_ADMIN.hierarchy > Role.ADMIN.hierarchy
@@ -18,62 +24,94 @@ class TestRole:
 
 
 class TestFileType:
-    def test_file_type_values(self):
-        assert FileType.IMAGE.value == "image"
-        assert FileType.VIDEO.value == "video"
-        assert FileType.GIF.value == "gif"
+    @pytest.mark.parametrize(
+        "file_type,expected",
+        [
+            (FileType.IMAGE, "image"),
+            (FileType.VIDEO, "video"),
+            (FileType.GIF, "gif"),
+        ],
+    )
+    def test_file_type_values(self, file_type, expected):
+        assert file_type.value == expected
+        assert file_type.value in ("image", "video", "gif")
 
 
 class TestAuditAction:
-    def test_audit_action_values(self):
-        assert AuditAction.PERMISSION_GRANTED.value == "permission_granted"
-        assert AuditAction.PERMISSION_REVOKED.value == "permission_revoked"
-        assert AuditAction.PERMISSION_DENIED.value == "permission_denied"
-        assert AuditAction.PHRASE_ADDED.value == "phrase_added"
-        assert AuditAction.PHRASE_REMOVED.value == "phrase_removed"
-        assert AuditAction.ROLE_CONFIGURED.value == "role_configured"
-        assert AuditAction.COMMAND_EXECUTED.value == "command_executed"
-        assert AuditAction.CONFIG_CHANGED.value == "config_changed"
+    @pytest.mark.parametrize(
+        "action,expected",
+        [
+            (AuditAction.PERMISSION_GRANTED, "permission_granted"),
+            (AuditAction.PERMISSION_REVOKED, "permission_revoked"),
+            (AuditAction.PERMISSION_DENIED, "permission_denied"),
+            (AuditAction.PHRASE_ADDED, "phrase_added"),
+            (AuditAction.PHRASE_REMOVED, "phrase_removed"),
+            (AuditAction.ROLE_CONFIGURED, "role_configured"),
+            (AuditAction.COMMAND_EXECUTED, "command_executed"),
+            (AuditAction.CONFIG_CHANGED, "config_changed"),
+        ],
+    )
+    def test_audit_action_values(self, action, expected):
+        assert action.value == expected
+        assert isinstance(action.value, str)
+        assert action.value
 
 
 class TestConstants:
-    def test_regex_constants(self):
-        assert Constants.REGEX_TIMEOUT_SECONDS == 0.5
-        assert Constants.MAX_PATTERN_LENGTH == 500
+    @pytest.mark.parametrize(
+        "attr,expected",
+        [
+            ("DISCORD_MESSAGE_LIMIT", 2000),
+            ("REGEX_TIMEOUT_SECONDS", 0.5),
+            ("MAX_PATTERN_LENGTH", 500),
+            ("MAX_PHRASE_LENGTH", 500),
+            ("MAX_COMMAND_NAME_LENGTH", 100),
+            ("MAX_NOTES_LENGTH", 1000),
+            ("MEDIA_CHUNK_SIZE", 8192),
+            ("MEDIA_DOWNLOAD_TIMEOUT", 300),
+            ("MESSAGE_RETENTION_DAYS", 365),
+            ("AUDIT_LOG_RETENTION_DAYS", 730),
+            ("CACHE_TTL", 86400),
+            ("PERMISSION_CACHE_TTL", 86400),
+            ("PHRASE_PATTERN_CACHE_TTL", 86400),
+            ("USER_ROLE_CACHE_TTL", 86400),
+            ("COMMAND_PERMISSION_CACHE_TTL", 86400),
+        ],
+    )
+    def test_constant_value(self, attr, expected):
+        assert getattr(Constants, attr) == expected
 
-    def test_input_validation_constants(self):
-        assert Constants.MAX_PHRASE_LENGTH == 500
-        assert Constants.MAX_COMMAND_NAME_LENGTH == 100
-        assert Constants.MAX_NOTES_LENGTH == 1000
+    @pytest.mark.parametrize(
+        "attr,expected_type",
+        [
+            ("MAX_PHRASE_LENGTH", int),
+            ("MAX_COMMAND_NAME_LENGTH", int),
+            ("MAX_NOTES_LENGTH", int),
+            ("CACHE_TTL", (int, float)),
+            ("PERMISSION_CACHE_TTL", (int, float)),
+            ("PHRASE_PATTERN_CACHE_TTL", (int, float)),
+            ("USER_ROLE_CACHE_TTL", (int, float)),
+            ("COMMAND_PERMISSION_CACHE_TTL", (int, float)),
+        ],
+    )
+    def test_numeric_constants_have_expected_type(self, attr, expected_type):
+        assert isinstance(getattr(Constants, attr), expected_type)
 
-    def test_media_download_constants(self):
-        assert Constants.MEDIA_CHUNK_SIZE == 8192
-        assert Constants.MEDIA_DOWNLOAD_TIMEOUT == 300
-
-    def test_database_retention_constants(self):
-        assert Constants.MESSAGE_RETENTION_DAYS == 365
-        assert Constants.AUDIT_LOG_RETENTION_DAYS == 730
-
-    def test_cache_ttl_constants(self):
-        assert Constants.CACHE_TTL == 86400
-        assert Constants.PERMISSION_CACHE_TTL == 86400
-        assert Constants.PHRASE_PATTERN_CACHE_TTL == 86400
-        assert Constants.USER_ROLE_CACHE_TTL == 86400
-        assert Constants.COMMAND_PERMISSION_CACHE_TTL == 86400
-
-    def test_regex_timeout_positive(self):
-        assert Constants.REGEX_TIMEOUT_SECONDS > 0
-
-    def test_max_pattern_length_positive(self):
-        assert Constants.MAX_PATTERN_LENGTH > 0
-
-    def test_media_chunk_size_positive(self):
-        assert Constants.MEDIA_CHUNK_SIZE > 0
-
-    def test_retention_days_positive(self):
-        assert Constants.MESSAGE_RETENTION_DAYS > 0
-        assert Constants.AUDIT_LOG_RETENTION_DAYS > 0
-
-    def test_cache_ttl_positive(self):
-        assert Constants.PERMISSION_CACHE_TTL > 0
-        assert Constants.COMMAND_PERMISSION_CACHE_TTL > 0
+    @pytest.mark.parametrize(
+        "attr",
+        [
+            "REGEX_TIMEOUT_SECONDS",
+            "MAX_PATTERN_LENGTH",
+            "MEDIA_CHUNK_SIZE",
+            "MEDIA_DOWNLOAD_TIMEOUT",
+            "MESSAGE_RETENTION_DAYS",
+            "AUDIT_LOG_RETENTION_DAYS",
+            "CACHE_TTL",
+            "PERMISSION_CACHE_TTL",
+            "PHRASE_PATTERN_CACHE_TTL",
+            "USER_ROLE_CACHE_TTL",
+            "COMMAND_PERMISSION_CACHE_TTL",
+        ],
+    )
+    def test_constants_are_positive(self, attr):
+        assert getattr(Constants, attr) > 0

@@ -46,6 +46,8 @@ class TestFormatUuid:
             ("069a79f444e94726a5befca90e38aaf5", "069a79f4-44e9-4726-a5be-fca90e38aaf5"),
             ("00000000000000000000000000000000", "00000000-0000-0000-0000-000000000000"),
             ("ffffffffffffffffffffffffffffffff", "ffffffff-ffff-ffff-ffff-ffffffffffff"),
+            ("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+            ("0123456789abcdef0123456789abcdef", "01234567-89ab-cdef-0123-456789abcdef"),
         ],
     )
     def test_format_uuid_variants(self, raw, expected):
@@ -59,13 +61,9 @@ class TestGetProfileFromMojang:
         ctx = MagicMock(
             __aenter__=AsyncMock(return_value=resp), __aexit__=AsyncMock(return_value=None)
         )
-
-        with patch("bot.services.mojang.aiohttp.ClientSession") as mock_cls:
-            mock_session = MagicMock()
-            mock_session.get.return_value = ctx
-            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-
+        mock_session = MagicMock()
+        mock_session.get.return_value = ctx
+        with patch("bot.services.mojang.get_session", return_value=mock_session):
             result = await _get_profile_from_mojang("Steve")
             assert result == ("069a79f4-44e9-4726-a5be-fca90e38aaf5", "Steve")
 
@@ -75,13 +73,9 @@ class TestGetProfileFromMojang:
         ctx = MagicMock(
             __aenter__=AsyncMock(return_value=resp), __aexit__=AsyncMock(return_value=None)
         )
-
-        with patch("bot.services.mojang.aiohttp.ClientSession") as mock_cls:
-            mock_session = MagicMock()
-            mock_session.get.return_value = ctx
-            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-
+        mock_session = MagicMock()
+        mock_session.get.return_value = ctx
+        with patch("bot.services.mojang.get_session", return_value=mock_session):
             result = await _get_profile_from_mojang("NonexistentUser")
             assert result is None
 
@@ -97,13 +91,9 @@ class TestGetProfileFromMojang:
         ctx2 = MagicMock(
             __aenter__=AsyncMock(return_value=resp2), __aexit__=AsyncMock(return_value=None)
         )
-
-        with patch("bot.services.mojang.aiohttp.ClientSession") as mock_cls:
-            mock_session = MagicMock()
-            mock_session.get.side_effect = [ctx1, ctx2]
-            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-
+        mock_session = MagicMock()
+        mock_session.get.side_effect = [ctx1, ctx2]
+        with patch("bot.services.mojang.get_session", return_value=mock_session):
             result = await _get_profile_from_mojang("TestUser")
             assert result is not None
             assert mock_session.get.call_count == 2
@@ -120,13 +110,9 @@ class TestGetProfileFromMojang:
         ctx2 = MagicMock(
             __aenter__=AsyncMock(return_value=resp2), __aexit__=AsyncMock(return_value=None)
         )
-
-        with patch("bot.services.mojang.aiohttp.ClientSession") as mock_cls:
-            mock_session = MagicMock()
-            mock_session.get.side_effect = [ctx1, ctx2]
-            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-
+        mock_session = MagicMock()
+        mock_session.get.side_effect = [ctx1, ctx2]
+        with patch("bot.services.mojang.get_session", return_value=mock_session):
             result = await _get_profile_from_mojang("TestUser")
             assert result is not None
 
@@ -136,24 +122,20 @@ class TestGetProfileFromMojang:
         ctx = MagicMock(
             __aenter__=AsyncMock(return_value=resp), __aexit__=AsyncMock(return_value=None)
         )
-
-        with patch("bot.services.mojang.aiohttp.ClientSession") as mock_cls:
-            mock_session = MagicMock()
-            mock_session.get.return_value = ctx
-            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-
+        mock_session = MagicMock()
+        mock_session.get.return_value = ctx
+        with patch("bot.services.mojang.get_session", return_value=mock_session):
             result = await _get_profile_from_mojang("TestUser")
             assert result is None
 
     @pytest.mark.asyncio
     async def test_client_error_returns_none(self):
-        with patch("bot.services.mojang.aiohttp.ClientSession") as mock_cls:
-            mock_session = MagicMock()
-            mock_session.get.side_effect = aiohttp.ClientError("Connection failed")
-            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-
+        mock_session = MagicMock()
+        mock_session.get.return_value = MagicMock(
+            __aenter__=AsyncMock(side_effect=aiohttp.ClientError("Connection failed")),
+            __aexit__=AsyncMock(return_value=None),
+        )
+        with patch("bot.services.mojang.get_session", return_value=mock_session):
             result = await _get_profile_from_mojang("TestUser")
             assert result is None
 
@@ -163,13 +145,9 @@ class TestGetProfileFromMojang:
         ctx = MagicMock(
             __aenter__=AsyncMock(return_value=resp), __aexit__=AsyncMock(return_value=None)
         )
-
-        with patch("bot.services.mojang.aiohttp.ClientSession") as mock_cls:
-            mock_session = MagicMock()
-            mock_session.get.return_value = ctx
-            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-
+        mock_session = MagicMock()
+        mock_session.get.return_value = ctx
+        with patch("bot.services.mojang.get_session", return_value=mock_session):
             result = await _get_profile_from_mojang("OddUser")
             assert result is None
 
@@ -181,13 +159,9 @@ class TestGetProfileFromMojang:
         ctx = MagicMock(
             __aenter__=AsyncMock(return_value=resp), __aexit__=AsyncMock(return_value=None)
         )
-
-        with patch("bot.services.mojang.aiohttp.ClientSession") as mock_cls:
-            mock_session = MagicMock()
-            mock_session.get.return_value = ctx
-            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-
+        mock_session = MagicMock()
+        mock_session.get.return_value = ctx
+        with patch("bot.services.mojang.get_session", return_value=mock_session):
             result = await _get_profile_from_mojang("Steve")
             assert result == ("069a79f4-44e9-4726-a5be-fca90e38aaf5", "Steve")
 
@@ -200,13 +174,9 @@ class TestGetProfileFromNameMC:
         ctx = MagicMock(
             __aenter__=AsyncMock(return_value=resp), __aexit__=AsyncMock(return_value=None)
         )
-
-        with patch("bot.services.mojang.aiohttp.ClientSession") as mock_cls:
-            mock_session = MagicMock()
-            mock_session.get.return_value = ctx
-            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-
+        mock_session = MagicMock()
+        mock_session.get.return_value = ctx
+        with patch("bot.services.mojang.get_session", return_value=mock_session):
             result = await _get_profile_from_namemc("Steve")
             assert result == ("069a79f4-44e9-4726-a5be-fca90e38aaf5", "Steve")
 
@@ -217,13 +187,9 @@ class TestGetProfileFromNameMC:
         ctx = MagicMock(
             __aenter__=AsyncMock(return_value=resp), __aexit__=AsyncMock(return_value=None)
         )
-
-        with patch("bot.services.mojang.aiohttp.ClientSession") as mock_cls:
-            mock_session = MagicMock()
-            mock_session.get.return_value = ctx
-            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-
+        mock_session = MagicMock()
+        mock_session.get.return_value = ctx
+        with patch("bot.services.mojang.get_session", return_value=mock_session):
             result = await _get_profile_from_namemc("NonexistentUser")
             assert result is None
 
@@ -233,24 +199,20 @@ class TestGetProfileFromNameMC:
         ctx = MagicMock(
             __aenter__=AsyncMock(return_value=resp), __aexit__=AsyncMock(return_value=None)
         )
-
-        with patch("bot.services.mojang.aiohttp.ClientSession") as mock_cls:
-            mock_session = MagicMock()
-            mock_session.get.return_value = ctx
-            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-
+        mock_session = MagicMock()
+        mock_session.get.return_value = ctx
+        with patch("bot.services.mojang.get_session", return_value=mock_session):
             result = await _get_profile_from_namemc("NonexistentUser")
             assert result is None
 
     @pytest.mark.asyncio
     async def test_client_error_returns_none(self):
-        with patch("bot.services.mojang.aiohttp.ClientSession") as mock_cls:
-            mock_session = MagicMock()
-            mock_session.get.side_effect = aiohttp.ClientError("Connection failed")
-            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-
+        mock_session = MagicMock()
+        mock_session.get.return_value = MagicMock(
+            __aenter__=AsyncMock(side_effect=aiohttp.ClientError("Connection failed")),
+            __aexit__=AsyncMock(return_value=None),
+        )
+        with patch("bot.services.mojang.get_session", return_value=mock_session):
             result = await _get_profile_from_namemc("TestUser")
             assert result is None
 
@@ -261,13 +223,9 @@ class TestGetProfileFromNameMC:
         ctx = MagicMock(
             __aenter__=AsyncMock(return_value=resp), __aexit__=AsyncMock(return_value=None)
         )
-
-        with patch("bot.services.mojang.aiohttp.ClientSession") as mock_cls:
-            mock_session = MagicMock()
-            mock_session.get.return_value = ctx
-            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-
+        mock_session = MagicMock()
+        mock_session.get.return_value = ctx
+        with patch("bot.services.mojang.get_session", return_value=mock_session):
             result = await _get_profile_from_namemc("Steve")
             assert result == (None, "Steve")
 
@@ -278,13 +236,9 @@ class TestGetProfileFromNameMC:
         ctx = MagicMock(
             __aenter__=AsyncMock(return_value=resp), __aexit__=AsyncMock(return_value=None)
         )
-
-        with patch("bot.services.mojang.aiohttp.ClientSession") as mock_cls:
-            mock_session = MagicMock()
-            mock_session.get.return_value = ctx
-            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-
+        mock_session = MagicMock()
+        mock_session.get.return_value = ctx
+        with patch("bot.services.mojang.get_session", return_value=mock_session):
             result = await _get_profile_from_namemc("TestUser")
             assert result is None
 
@@ -393,13 +347,9 @@ class TestBatchLookup:
         ctx = MagicMock(
             __aenter__=AsyncMock(return_value=resp), __aexit__=AsyncMock(return_value=None)
         )
-
-        with patch("bot.services.mojang.aiohttp.ClientSession") as mock_cls:
-            mock_session = MagicMock()
-            mock_session.post.return_value = ctx
-            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-
+        mock_session = MagicMock()
+        mock_session.post.return_value = ctx
+        with patch("bot.services.mojang.get_session", return_value=mock_session):
             result = await _batch_lookup(["Steve", "Alex"])
             assert "steve" in result
             assert "alex" in result
@@ -418,25 +368,21 @@ class TestBatchLookup:
         ctx2 = MagicMock(
             __aenter__=AsyncMock(return_value=resp2), __aexit__=AsyncMock(return_value=None)
         )
-
-        with patch("bot.services.mojang.aiohttp.ClientSession") as mock_cls:
-            mock_session = MagicMock()
-            mock_session.post.side_effect = [ctx1, ctx2]
-            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-
+        mock_session = MagicMock()
+        mock_session.post.side_effect = [ctx1, ctx2]
+        with patch("bot.services.mojang.get_session", return_value=mock_session):
             result = await _batch_lookup(["Steve"])
             assert "steve" in result
             assert mock_session.post.call_count == 2
 
     @pytest.mark.asyncio
     async def test_batch_lookup_client_error_returns_empty(self):
-        with patch("bot.services.mojang.aiohttp.ClientSession") as mock_cls:
-            mock_session = MagicMock()
-            mock_session.post.side_effect = aiohttp.ClientError("Connection failed")
-            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-
+        mock_session = MagicMock()
+        mock_session.post.return_value = MagicMock(
+            __aenter__=AsyncMock(side_effect=aiohttp.ClientError("Connection failed")),
+            __aexit__=AsyncMock(return_value=None),
+        )
+        with patch("bot.services.mojang.get_session", return_value=mock_session):
             result = await _batch_lookup(["Steve"])
             assert result == {}
 
@@ -446,13 +392,9 @@ class TestBatchLookup:
         ctx = MagicMock(
             __aenter__=AsyncMock(return_value=resp), __aexit__=AsyncMock(return_value=None)
         )
-
-        with patch("bot.services.mojang.aiohttp.ClientSession") as mock_cls:
-            mock_session = MagicMock()
-            mock_session.post.return_value = ctx
-            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-
+        mock_session = MagicMock()
+        mock_session.post.return_value = ctx
+        with patch("bot.services.mojang.get_session", return_value=mock_session):
             result = await _batch_lookup(["Steve"])
             assert result == {}
 
@@ -470,13 +412,9 @@ class TestBatchLookup:
         ctx = MagicMock(
             __aenter__=AsyncMock(return_value=resp), __aexit__=AsyncMock(return_value=None)
         )
-
-        with patch("bot.services.mojang.aiohttp.ClientSession") as mock_cls:
-            mock_session = MagicMock()
-            mock_session.post.return_value = ctx
-            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-
+        mock_session = MagicMock()
+        mock_session.post.return_value = ctx
+        with patch("bot.services.mojang.get_session", return_value=mock_session):
             result = await _batch_lookup(["Steve", "NoUuid", "NoName", "MissingId"])
             assert len(result) == 1
             assert "steve" in result

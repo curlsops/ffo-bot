@@ -41,7 +41,7 @@ async def test_cached_autocomplete_fetches_and_caches():
     result = await cached_autocomplete(i, "", "key:{server_id}", fetch, to_choices, ttl=60)
     assert len(result) == 2
     bot.cache.set.assert_called_once()
-    assert "123" in str(bot.cache.set.call_args[0][0])
+    assert bot.cache.set.call_args.args[0] == "key:123"
 
 
 @pytest.mark.asyncio

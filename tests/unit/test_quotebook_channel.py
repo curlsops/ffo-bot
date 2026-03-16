@@ -131,8 +131,9 @@ async def test_set_quotebook_channel_with_id():
     result = await set_quotebook_channel(pool, 123, 999)
     assert result is True
     conn.execute.assert_called_once()
-    call_args = conn.execute.call_args[0]
-    assert 999 in call_args or "999" in str(call_args)
+    call_args = conn.execute.call_args
+    assert call_args.args[1] == {"quotebook_channel_id": 999}
+    assert call_args.args[2] == 123
 
 
 @pytest.mark.asyncio
@@ -143,19 +144,21 @@ async def test_set_quotebook_channel_clear():
     result = await set_quotebook_channel(pool, 123, None)
     assert result is True
     conn.execute.assert_called_once()
-    assert "quotebook_channel_id" in conn.execute.call_args[0][0]
+    call_args = conn.execute.call_args
+    assert call_args.args[1] == "quotebook_channel_id"
+    assert call_args.args[2] == 123
 
 
 @pytest.mark.asyncio
 async def test_set_quotebook_channel_exception_returns_false(caplog):
-    caplog.set_level(logging.WARNING, logger="bot.utils.quotebook_channel")
+    caplog.set_level(logging.WARNING, logger="bot.utils.channel_config")
     conn = AsyncMock()
     conn.execute.side_effect = Exception("DB error")
     pool = make_pool(conn)
 
     result = await set_quotebook_channel(pool, 123, 999)
     assert result is False
-    assert "Failed to set quotebook channel" in caplog.text
+    assert "Failed to set" in caplog.text
 
 
 @pytest.mark.asyncio

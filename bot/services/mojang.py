@@ -3,6 +3,11 @@ import re
 
 import aiohttp
 
+from bot.utils.http_session import get_session as _get_session
+from bot.utils.http_session import session_scope
+
+get_session = _get_session
+
 logger = logging.getLogger(__name__)
 
 PROFILE_URL = "https://api.minecraftservices.com/minecraft/profile/lookup/name/{username}"
@@ -24,58 +29,70 @@ def _format_uuid(uuid_raw: str) -> str:
     return str(uuid_raw)
 
 
+class _MojangRetry(Exception):
+    pass
+
+
 async def _get_profile_from_mojang(username: str) -> tuple[str, str] | None:
     for url_template in (PROFILE_URL, FALLBACK_URL):
         url = url_template.format(username=username)
         try:
-            async with aiohttp.ClientSession() as session:
+            async with session_scope(session=get_session()) as session:
                 async with session.get(url) as resp:
-                    if resp.status == 200:
-                        data = await resp.json()
-                        uuid_raw = data.get("id") or data.get("uuid")
-                        name = data.get("name", username)
-                        if uuid_raw:
-                            return (_format_uuid(uuid_raw), name)
-                        return None
-                    if resp.status == 404:
-                        return None
-                    if resp.status in (403, 429):
-                        logger.debug("Mojang API %s for %s, trying fallback", resp.status, username)
-                        continue
-                    logger.warning("Mojang API unexpected status %s for %s", resp.status, username)
-                    return None
+                    return await _parse_mojang_resp(resp, username)
+        except _MojangRetry:
+            continue
         except aiohttp.ClientError as e:
             logger.debug("Mojang API request failed for %s: %s", username, e)
             continue
     return None
 
 
+async def _parse_mojang_resp(resp, username: str) -> tuple[str, str] | None:
+    if resp.status == 200:
+        data = await resp.json()
+        uuid_raw = data.get("id") or data.get("uuid")
+        name = data.get("name", username)
+        if uuid_raw:
+            return (_format_uuid(uuid_raw), name)
+        return None
+    if resp.status == 404:
+        return None
+    if resp.status in (403, 429):
+        logger.debug("Mojang API %s for %s, trying fallback", resp.status, username)
+        raise _MojangRetry()
+    logger.warning("Mojang API unexpected status %s for %s", resp.status, username)
+    return None
+
+
 async def _get_profile_from_namemc(username: str) -> tuple[str | None, str] | None:
     url = NAMEMC_PROFILE_URL.format(username=username)
+    timeout = aiohttp.ClientTimeout(total=10)
+    headers = {"User-Agent": "Mozilla/5.0 (compatible; FFOBot/1.0)"}
     try:
-        async with aiohttp.ClientSession() as session:
-            async with session.get(
-                url,
-                timeout=aiohttp.ClientTimeout(total=10),
-                headers={"User-Agent": "Mozilla/5.0 (compatible; FFOBot/1.0)"},
-            ) as resp:
+        async with session_scope(session=get_session()) as session:
+            async with session.get(url, timeout=timeout, headers=headers) as resp:
                 if resp.status != 200:
                     return None
                 html = await resp.text()
-                if "Profile Not Found" in html or "This page does not exist" in html:
-                    return None
-                uuid_match = NAMEMC_UUID_PATTERN.search(html)
-                title_match = NAMEMC_TITLE_PATTERN.search(html)
-                if uuid_match:
-                    uuid_raw = uuid_match.group(1)
-                    name = title_match.group(1).strip() if title_match else username
-                    return (_format_uuid(uuid_raw), name)
-                if title_match and title_match.group(1).strip().lower() != "namemc":
-                    return (None, title_match.group(1).strip())
-                return None
+                return _parse_namemc_html(html, username)
     except aiohttp.ClientError as e:
         logger.debug("NameMC request failed for %s: %s", username, e)
         return None
+
+
+def _parse_namemc_html(html: str, username: str) -> tuple[str | None, str] | None:
+    if "Profile Not Found" in html or "This page does not exist" in html:
+        return None
+    uuid_match = NAMEMC_UUID_PATTERN.search(html)
+    title_match = NAMEMC_TITLE_PATTERN.search(html)
+    if uuid_match:
+        uuid_raw = uuid_match.group(1)
+        name = title_match.group(1).strip() if title_match else username
+        return (_format_uuid(uuid_raw), name)
+    if title_match and title_match.group(1).strip().lower() != "namemc":
+        return (None, title_match.group(1).strip())
+    return None
 
 
 async def get_profile(username: str) -> tuple[str, str] | None:
@@ -116,15 +133,14 @@ async def get_profiles_batch(usernames: list[str]) -> dict[str, tuple[str, str]]
 
 async def _batch_lookup(usernames: list[str]) -> dict[str, tuple[str, str]]:
     results: dict[str, tuple[str, str]] = {}
+    timeout = aiohttp.ClientTimeout(total=15)
+    headers = {"Content-Type": "application/json"}
 
     for url in (BATCH_URL, BATCH_FALLBACK_URL):
         try:
-            async with aiohttp.ClientSession() as session:
+            async with session_scope(timeout=timeout, session=get_session()) as session:
                 async with session.post(
-                    url,
-                    json=usernames,
-                    headers={"Content-Type": "application/json"},
-                    timeout=aiohttp.ClientTimeout(total=15),
+                    url, json=usernames, headers=headers, timeout=timeout
                 ) as resp:
                     if resp.status == 200:
                         data = await resp.json()
@@ -138,6 +154,7 @@ async def _batch_lookup(usernames: list[str]) -> dict[str, tuple[str, str]]:
                         logger.debug("Batch API %s, trying fallback", resp.status)
                         continue
                     logger.warning("Batch API unexpected status %s", resp.status)
+                    continue
         except aiohttp.ClientError as e:  # pragma: no branch
             logger.debug("Batch API request failed: %s", e)
             continue

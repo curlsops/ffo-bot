@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-import bot
+import bot.utils.channel_config
 import config
 import database
 from bot.auth.permissions import PermissionChecker
@@ -53,7 +53,6 @@ from bot.utils.whitelist_cache import (
     remove_from_cache,
     sync_from_rcon,
 )
-from bot.utils.whitelist_channel import get_whitelist_channel_id, set_whitelist_channel
 from config.settings import Settings
 from database.connection import DatabasePool
 

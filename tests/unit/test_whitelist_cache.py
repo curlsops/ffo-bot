@@ -233,7 +233,8 @@ async def test_sync_from_rcon_with_fetch_uuid():
     assert result is True
     conn.execute.assert_awaited_once()
     conn.executemany.assert_awaited_once()
-    assert "069a79f4-44e9-4726-a5be-fca90e38aaf5" in str(conn.executemany.call_args)
+    rows = conn.executemany.call_args.args[1]
+    assert any(row[2] == "069a79f4-44e9-4726-a5be-fca90e38aaf5" for row in rows)
 
 
 @pytest.mark.asyncio
@@ -274,9 +275,10 @@ async def test_sync_from_rcon_with_batch_fetch():
     assert result is True
     conn.execute.assert_awaited_once()
     conn.executemany.assert_awaited_once()
-    exec_args = str(conn.executemany.call_args)
-    assert "069a79f4-44e9-4726-a5be-fca90e38aaf5" in exec_args
-    assert "11111111-2222-3333-4444-555555555555" in exec_args
+    rows = conn.executemany.call_args.args[1]
+    uuids = {row[2] for row in rows}
+    assert "069a79f4-44e9-4726-a5be-fca90e38aaf5" in uuids
+    assert "11111111-2222-3333-4444-555555555555" in uuids
 
 
 @pytest.mark.asyncio

@@ -59,8 +59,11 @@ async def test_set_server_role_add():
     result = await set_server_role(pool, 123, Role.ADMIN, 999)
     assert result is True
     conn.execute.assert_awaited_once()
-    call_args = str(conn.execute.call_args)
-    assert "999" in call_args or "admin_role_id" in call_args
+    sql, server_id, server_name, merge = conn.execute.call_args.args
+    assert "INSERT INTO servers" in sql and "ON CONFLICT" in sql
+    assert server_id == 123
+    assert server_name == "Unknown"
+    assert merge == {"admin_role_id": 999}
 
 
 @pytest.mark.asyncio

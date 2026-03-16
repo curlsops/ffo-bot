@@ -1,5 +1,6 @@
-from collections import defaultdict
-from typing import TYPE_CHECKING, cast
+from collections import defaultdict, deque
+from itertools import islice
+from typing import TYPE_CHECKING, Iterable, cast
 
 import discord
 from mafic import Player, Track
@@ -20,10 +21,10 @@ def _format_duration(ms: int) -> str:
     return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
 
 
-def _get_queue(bot: "FFOBot", guild_id: int) -> list[Track]:
+def _get_queue(bot: "FFOBot", guild_id: int) -> deque[Track]:
     if not hasattr(bot, "_music_queues"):
-        bot._music_queues = defaultdict(list)
-    return cast(list[Track], bot._music_queues[guild_id])
+        bot._music_queues = defaultdict(lambda: deque())
+    return cast(deque[Track], bot._music_queues[guild_id])
 
 
 def _clear_queue(bot: "FFOBot", guild_id: int) -> None:
@@ -52,7 +53,7 @@ def _ms(v) -> int:
 
 
 def _time_until_track(
-    player: Player | None, current: Track | None, queue: list[Track], idx: int
+    player: Player | None, current: Track | None, queue: Iterable[Track], idx: int
 ) -> str:
     if idx == 0:
         if not current or not player:
@@ -66,6 +67,6 @@ def _time_until_track(
         if (current and player)
         else 0
     )
-    for i in range(idx - 1):
-        cum += _ms(getattr(queue[i], "length", None))
+    for queued_track in islice(queue, idx - 1):
+        cum += _ms(getattr(queued_track, "length", None))
     return "in " + _format_duration(cum)

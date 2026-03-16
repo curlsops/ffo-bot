@@ -5,6 +5,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from bot.commands.polls import PollCommands, _close_reaction_poll_after, _parse_duration
+from tests.helpers import assert_followup_contains
 
 
 @pytest.fixture
@@ -87,19 +88,19 @@ class TestPollCommands:
     async def test_poll_question_too_long(self, cog):
         i = _interaction()
         await cog.poll.callback(cog, i, "X" * 301, "Yes,No", "1d")
-        assert "Question too long" in str(i.followup.send.call_args)
+        assert_followup_contains(i, "Question too long")
 
     @pytest.mark.asyncio
     async def test_poll_too_few_options(self, cog):
         i = _interaction()
         await cog.poll.callback(cog, i, "Question?", "OnlyOne", "1d")
-        assert "at least 2 options" in str(i.followup.send.call_args)
+        assert_followup_contains(i, "at least 2 options")
 
     @pytest.mark.asyncio
     async def test_poll_invalid_duration(self, cog):
         i = _interaction()
         await cog.poll.callback(cog, i, "Question?", "Yes,No", "invalid")
-        assert "Invalid duration" in str(i.followup.send.call_args)
+        assert_followup_contains(i, "Invalid duration")
 
     @pytest.mark.asyncio
     async def test_poll_channel_param_requires_admin(self, cog):
@@ -152,7 +153,7 @@ class TestPollCommands:
         i = _interaction()
         i.channel.send = AsyncMock(side_effect=Exception("Permission denied"))
         await cog.poll.callback(cog, i, "Question?", "Yes,No", "1d")
-        assert "Error creating poll" in str(i.followup.send.call_args)
+        assert_followup_contains(i, "Error creating poll")
 
 
 class TestPollLongFormat:
@@ -176,13 +177,13 @@ class TestPollLongFormat:
     async def test_poll_too_few_options(self, cog):
         i = _interaction()
         await cog.poll.callback(cog, i, "Q?", "OnlyOne", "1d")
-        assert "at least 2 options" in str(i.followup.send.call_args)
+        assert_followup_contains(i, "at least 2 options")
 
     @pytest.mark.asyncio
     async def test_poll_question_too_long(self, cog):
         i = _interaction()
         await cog.poll.callback(cog, i, "X" * 301, "A,B", "1d")
-        assert "Question too long" in str(i.followup.send.call_args)
+        assert_followup_contains(i, "Question too long")
 
     @pytest.mark.asyncio
     async def test_poll_long_format_everyone_can_create(self, cog):
@@ -198,7 +199,7 @@ class TestPollLongFormat:
         i.channel.send = AsyncMock(return_value=MagicMock(add_reaction=AsyncMock()))
         opts = ",".join(f"X{i}" for i in range(11))
         await cog.poll.callback(cog, i, "Q?", opts, "invalid")
-        assert "Invalid duration" in str(i.followup.send.call_args)
+        assert_followup_contains(i, "Invalid duration")
 
     @pytest.mark.asyncio
     async def test_poll_long_embed_has_ends_footer(self, cog):

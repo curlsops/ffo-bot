@@ -1,4 +1,5 @@
 import asyncio
+from collections import deque
 from contextlib import contextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -7,13 +8,16 @@ from mafic import SearchType
 from mafic.errors import PlayerNotConnected
 
 from bot.commands.music import (
+    PLAYLIST_FETCH_CONCURRENCY,
     MusicCommands,
     MusicGroup,
     _clear_queue,
+    _fetch_playlist_tracks,
     _format_duration,
     _get_queue,
     _other_members_in_channel,
     _play_next,
+    _pop_queue_index,
 )
 from bot.utils.music import _ms, _music_embed, _time_until_track, _track_label
 
@@ -58,7 +62,7 @@ def _play_ctx(cog, tracks=None, fetch_side_effect=None, current=None, play_raise
     i = _interaction(cog.bot, voice_channel=ch)
     i.guild.voice_client = p
     if queue is not None:
-        cog.bot._music_queues = {GUILD_ID: queue}
+        cog.bot._music_queues = {GUILD_ID: deque(queue) if not isinstance(queue, deque) else queue}
     return i, p
 
 
@@ -150,17 +154,31 @@ class TestQueueHelpers:
         if hasattr(mock_bot, "_music_queues"):
             del mock_bot._music_queues
         q = _get_queue(mock_bot, 123)
-        assert q == [] and 123 in mock_bot._music_queues
+        assert q == deque() and 123 in mock_bot._music_queues
 
     def test_clear_queue(self, mock_bot):
-        mock_bot._music_queues = {1: [MagicMock()]}
+        mock_bot._music_queues = {1: deque([MagicMock()])}
         _clear_queue(mock_bot, 1)
         assert 1 not in mock_bot._music_queues
 
     def test_clear_queue_not_present_no_op(self, mock_bot):
-        mock_bot._music_queues = {1: []}
+        mock_bot._music_queues = {1: deque()}
         _clear_queue(mock_bot, 2)
         assert 1 in mock_bot._music_queues
+
+    @pytest.mark.parametrize(
+        "idx,expected_title,remaining",
+        [
+            (0, "A", ["B", "C"]),
+            (1, "B", ["A", "C"]),
+            (2, "C", ["A", "B"]),
+        ],
+    )
+    def test_pop_queue_index_preserves_order(self, idx, expected_title, remaining):
+        queue = deque(MagicMock(title=t) for t in ("A", "B", "C"))
+        popped = _pop_queue_index(queue, idx)
+        assert popped.title == expected_title
+        assert [t.title for t in queue] == remaining
 
 
 class TestPlayNext:
@@ -175,15 +193,82 @@ class TestPlayNext:
     async def test_play_next(self, mock_bot, queue, expected, called):
         track = queue[0] if queue else None
         player = MagicMock(guild=MagicMock(id=GUILD_ID), client=mock_bot)
-        mock_bot._music_queues = {GUILD_ID: queue}
+        mock_bot._music_queues = {GUILD_ID: deque(queue)}
         player.play = AsyncMock()
         result = await _play_next(player)
         assert result is expected
         if called:
             player.play.assert_called_once_with(track)
-            assert mock_bot._music_queues[GUILD_ID] == []
+            assert mock_bot._music_queues[GUILD_ID] == deque()
         else:
             player.play.assert_not_called()
+
+
+class TestPlaylistTrackFetch:
+    @pytest.mark.asyncio
+    async def test_fetch_playlist_tracks_preserves_query_order(self):
+        player = MagicMock()
+        query_delays = {"q1": 0.03, "q2": 0.0, "q3": 0.01}
+
+        async def fake_fetch_one_track(_player, query):
+            await asyncio.sleep(query_delays[query])
+            return MagicMock(title=f"{query}-title")
+
+        with patch("bot.commands.music._fetch_one_track", side_effect=fake_fetch_one_track):
+            tracks = await _fetch_playlist_tracks(player, ["q1", "q2", "q3"])
+
+        assert [t.title for t in tracks] == ["q1-title", "q2-title", "q3-title"]
+
+    @pytest.mark.asyncio
+    async def test_fetch_playlist_tracks_filters_missing_results(self):
+        player = MagicMock()
+
+        async def fake_fetch_one_track(_player, query):
+            if query == "missing":
+                return None
+            return MagicMock(title=query)
+
+        with patch("bot.commands.music._fetch_one_track", side_effect=fake_fetch_one_track):
+            tracks = await _fetch_playlist_tracks(player, ["first", "missing", "third"])
+
+        assert [t.title for t in tracks] == ["first", "third"]
+
+    @pytest.mark.asyncio
+    async def test_fetch_playlist_tracks_propagates_fetch_errors(self):
+        player = MagicMock()
+
+        async def fake_fetch_one_track(_player, query):
+            if query == "boom":
+                raise RuntimeError("fetch failed")
+            return MagicMock(title=query)
+
+        with patch("bot.commands.music._fetch_one_track", side_effect=fake_fetch_one_track):
+            with pytest.raises(RuntimeError, match="fetch failed"):
+                await _fetch_playlist_tracks(player, ["ok", "boom", "later"])
+
+    @pytest.mark.asyncio
+    async def test_fetch_playlist_tracks_respects_concurrency_limit(self):
+        player = MagicMock()
+        active = 0
+        max_active = 0
+        lock = asyncio.Lock()
+        queries = [f"q{i}" for i in range(PLAYLIST_FETCH_CONCURRENCY + 3)]
+
+        async def fake_fetch_one_track(_player, query):
+            nonlocal active, max_active
+            async with lock:
+                active += 1
+                max_active = max(max_active, active)
+            await asyncio.sleep(0.02)
+            async with lock:
+                active -= 1
+            return MagicMock(title=query)
+
+        with patch("bot.commands.music._fetch_one_track", side_effect=fake_fetch_one_track):
+            tracks = await _fetch_playlist_tracks(player, queries)
+
+        assert len(tracks) == len(queries)
+        assert max_active <= PLAYLIST_FETCH_CONCURRENCY
 
 
 class TestMusicJoin:
@@ -427,7 +512,7 @@ class TestMusicStop:
     async def test_stop(self, cog, members, preserve, substr):
         ch = _channel(members=members)
         player = MagicMock(channel=ch, stop=AsyncMock(), disconnect=AsyncMock())
-        cog.bot._music_queues = {GUILD_ID: [MagicMock(title="Queued")]}
+        cog.bot._music_queues = {GUILD_ID: deque([MagicMock(title="Queued")])}
         i = _interaction(cog.bot, voice_channel=MagicMock())
         i.guild.voice_client = player
         with _patch_player():
@@ -461,7 +546,7 @@ class TestMusicAdmin:
         ],
     )
     async def test_clear_queue(self, cog, queue_len, substr):
-        cog.bot._music_queues = {GUILD_ID: [MagicMock()] * queue_len}
+        cog.bot._music_queues = {GUILD_ID: deque([MagicMock()] * queue_len)}
         i = _interaction(cog.bot)
         await cog.music_group.clear_queue.callback(cog.music_group, i)
         if queue_len:
@@ -492,7 +577,7 @@ class TestMusicQueue:
     )
     async def test_queue(self, cog, has_player, check):
         i = _interaction(cog.bot)
-        cog.bot._music_queues = {GUILD_ID: []}
+        cog.bot._music_queues = {GUILD_ID: deque()}
         i.guild.voice_client = (
             MagicMock(current=MagicMock(title="Test Song", uri="x", length=180000), position=0)
             if has_player

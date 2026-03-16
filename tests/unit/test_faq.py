@@ -3,17 +3,17 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from bot.commands.faq import FAQCommands
-from tests.helpers import assert_followup_contains, mock_db_ctx, mock_interaction
+from tests.helpers import (
+    assert_followup_contains,
+    build_faq_bot,
+    mock_db_ctx,
+    mock_interaction,
+)
 
 
 @pytest.fixture
 def mock_bot():
-    bot = MagicMock()
-    bot.cache = None
-    bot.notifier = None
-    bot.permission_checker.check_role = AsyncMock(return_value=True)
-    bot.db_pool.acquire = MagicMock()
-    return bot
+    return build_faq_bot()
 
 
 @pytest.fixture

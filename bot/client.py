@@ -15,6 +15,7 @@ from bot.auth.permissions import PermissionChecker
 from bot.cache.memory import InMemoryCache
 from bot.processors.phrase_matcher import PhraseMatcher
 from bot.utils.health import HealthCheckServer
+from bot.utils.http_session import close_session, create_session, set_session
 from bot.utils.interaction import send_ephemeral
 from bot.utils.metrics import BotMetrics
 from bot.utils.notifier import AdminNotifier
@@ -101,6 +102,7 @@ class FFOBot(commands.Bot):
         self._lavalink_node_created = False
         self._shutdown_event = asyncio.Event()
         self._health_server: web.AppRunner | None = None
+        self._message_handler_tasks: set[asyncio.Task] = set()
 
     async def setup_hook(self):
         logger.info("Initializing...")
@@ -126,6 +128,7 @@ class FFOBot(commands.Bot):
             default_ttl=self.settings.cache_default_ttl,
             max_memory_bytes=max_memory_bytes,
         )
+        set_session(create_session())
 
         self.phrase_matcher = PhraseMatcher(self.db_pool, self.cache)
 
@@ -238,15 +241,16 @@ class FFOBot(commands.Bot):
             self.add_view(CloseGiveawayThreadView(host_id=0))
 
             async with self.db_pool.acquire() as conn:
-                active = await conn.fetch(
-                    "SELECT id, message_id FROM giveaways WHERE is_active = true AND message_id IS NOT NULL"
-                )
+                active = await conn.fetch("""
+                    SELECT g.id, g.message_id, COUNT(ge.user_id)::int AS entry_count
+                    FROM giveaways g
+                    LEFT JOIN giveaway_entries ge ON ge.giveaway_id = g.id
+                    WHERE g.is_active = true AND g.message_id IS NOT NULL
+                    GROUP BY g.id, g.message_id
+                    """)
                 for row in active:
-                    count = await conn.fetchval(
-                        "SELECT COUNT(*) FROM giveaway_entries WHERE giveaway_id = $1", row["id"]
-                    )
                     self.add_view(
-                        GiveawayView(row["id"], self, entry_count=count or 0),
+                        GiveawayView(row["id"], self, entry_count=row["entry_count"] or 0),
                         message_id=row["message_id"],
                     )
 
@@ -268,19 +272,23 @@ class FFOBot(commands.Bot):
                 logger.warning("Lavalink connection failed, music disabled: %s", e)
                 self.pool = None
 
-        await self._connection.http.bulk_upsert_global_commands(self.application_id, [])
-        if self.guilds:
-            await asyncio.gather(*[self._register_server(g) for g in self.guilds])
-        for guild in self.guilds:
-            await self._connection.http.bulk_upsert_guild_commands(
-                self.application_id, guild.id, []
-            )
-            self.tree.copy_global_to(guild=guild)
-            await self.tree.sync(guild=guild)
-        if self.guilds:
-            logger.info("Synced slash commands to %d guild(s)", len(self.guilds))
-        else:
-            await self.tree.sync()
+        if getattr(self.settings, "sync_commands_on_boot", True):
+            clear_commands_on_boot = getattr(self.settings, "clear_commands_on_boot", True)
+            if clear_commands_on_boot:
+                await self._connection.http.bulk_upsert_global_commands(self.application_id, [])
+            if self.guilds:
+                await asyncio.gather(*[self._register_server(g) for g in self.guilds])
+            for guild in self.guilds:
+                if clear_commands_on_boot:
+                    await self._connection.http.bulk_upsert_guild_commands(
+                        self.application_id, guild.id, []
+                    )
+                self.tree.copy_global_to(guild=guild)
+                await self.tree.sync(guild=guild)
+            if self.guilds:
+                logger.info("Synced slash commands to %d guild(s)", len(self.guilds))
+            else:
+                await self.tree.sync()
 
         if self.metrics:
             self.metrics.set_guild_count(len(self.guilds))
@@ -353,6 +361,7 @@ class FFOBot(commands.Bot):
 
         if self._health_server:
             await self._health_server.cleanup()
+        await close_session()
         if self.media_downloader:
             await self.media_downloader.close()  # type: ignore[attr-defined]
         if self.db_pool:
@@ -366,9 +375,7 @@ class FFOBot(commands.Bot):
         logger.info("Shutdown complete")
 
     async def _drain_message_queue(self):
-        pending = [
-            t for t in asyncio.all_tasks() if not t.done() and "on_message" in str(t.get_coro())
-        ]
+        pending = list(self._message_handler_tasks)
         if pending:
             await asyncio.gather(*pending, return_exceptions=True)
 

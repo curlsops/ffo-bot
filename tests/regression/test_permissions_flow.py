@@ -36,6 +36,9 @@ async def test_set_server_role_upserts_when_server_missing():
     conn.execute = AsyncMock()
     pool = _pool(conn)
     assert await set_server_role(pool, 123, Role.MODERATOR, 999, server_name="Test") is True
-    call_str = str(conn.execute.call_args)
-    assert "INSERT" in call_str and "ON CONFLICT" in call_str
-    assert "999" in call_str or "moderator_role_id" in call_str
+    conn.execute.assert_awaited_once()
+    sql, server_id, server_name, merge = conn.execute.call_args.args
+    assert "INSERT INTO servers" in sql and "ON CONFLICT" in sql
+    assert server_id == 123
+    assert server_name == "Test"
+    assert merge == {"moderator_role_id": 999}

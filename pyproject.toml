@@ -12,7 +12,7 @@ keywords = ["discord", "bot", "python", "asyncio"]
 classifiers = [
     "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
-    "License :: OSI Approved :: MIT License",
+    "License :: Free for non-commercial use",
     "Programming Language :: Python :: 3.12",
     "Programming Language :: Python :: 3.13",
     "Programming Language :: Python :: 3.14",
@@ -23,9 +23,14 @@ Homepage = "https://github.com/MrCurlsTTV/ffo-bot"
 Repository = "https://github.com/MrCurlsTTV/ffo-bot"
 Issues = "https://github.com/MrCurlsTTV/ffo-bot/issues"
 
+[project.optional-dependencies]
+anonymous = [
+    "spacy>=3.7.0,<4.0.0",
+]
+
 [tool.black]
 line-length = 100
-target-version = ['py311']
+target-version = ['py312']
 include = '\.pyi?$'
 extend-exclude = '''
 /(

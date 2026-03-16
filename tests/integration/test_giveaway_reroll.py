@@ -1,4 +1,3 @@
-from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from unittest.mock import AsyncMock, MagicMock
 
@@ -6,6 +5,7 @@ import pytest
 from discord import app_commands
 
 from bot.commands.giveaway import GiveawayCommands
+from tests.helpers import assert_followup_contains
 
 _OP_REROLL = app_commands.Choice(name="Reroll", value="reroll")
 _OP_START = app_commands.Choice(name="Start", value="start")
@@ -36,7 +36,7 @@ def _db_ctx(conn):
 
 
 @pytest.mark.asyncio
-async def test_greroll_success():
+async def test_reroll_success():
     giveaway = {
         "id": 1,
         "is_active": False,
@@ -67,11 +67,11 @@ async def test_greroll_success():
 
     conn.execute.assert_awaited()
     i.followup.send.assert_awaited()
-    assert "Rerolled" in str(i.followup.send.call_args)
+    assert_followup_contains(i, "Rerolled")
 
 
 @pytest.mark.asyncio
-async def test_greroll_not_found():
+async def test_reroll_not_found():
     conn = AsyncMock(fetchrow=AsyncMock(return_value=None))
     bot = make_bot()
     bot.db_pool = _db_ctx(conn)
@@ -80,11 +80,11 @@ async def test_greroll_not_found():
     i = make_interaction()
     await cog.giveaway_cmd.callback(i, operation=_OP_REROLL, message_id="123456789012345678")
 
-    assert "not found" in str(i.followup.send.call_args)
+    assert_followup_contains(i, "not found")
 
 
 @pytest.mark.asyncio
-async def test_greroll_still_active():
+async def test_reroll_still_active():
     giveaway = {
         "id": 1,
         "is_active": True,
@@ -98,11 +98,11 @@ async def test_greroll_still_active():
     i = make_interaction()
     await cog.giveaway_cmd.callback(i, operation=_OP_REROLL, message_id="123456789012345678")
 
-    assert "still active" in str(i.followup.send.call_args)
+    assert_followup_contains(i, "still active")
 
 
 @pytest.mark.asyncio
-async def test_greroll_invalid_message_id():
+async def test_reroll_invalid_message_id():
     conn = AsyncMock()
     bot = make_bot()
     bot.db_pool = _db_ctx(conn)
@@ -111,7 +111,7 @@ async def test_greroll_invalid_message_id():
     i = make_interaction()
     await cog.giveaway_cmd.callback(i, operation=_OP_REROLL, message_id="not-a-valid-id")
 
-    assert "Invalid message ID" in str(i.followup.send.call_args)
+    assert_followup_contains(i, "Invalid message ID")
     conn.fetchrow.assert_not_awaited()
 
 

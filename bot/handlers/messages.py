@@ -1,16 +1,28 @@
 import asyncio
 import logging
-from typing import cast
+from typing import Awaitable, cast
 
+import asyncpg
 import discord
 from discord.ext import commands
 
+from bot.commands.whitelist import WHITELIST_APPROVE_EMOJI, WHITELIST_REJECT_EMOJI
+from bot.processors.media_downloader import MediaAttachment
+from bot.processors.unit_converter import detect_and_convert
+from bot.services.mojang import get_profile
 from bot.utils.pagination import truncate_for_discord
 from bot.utils.server_config import get_servers_config
 from bot.utils.user_preferences import OPT_OUT_CACHE_KEY
+from bot.utils.whitelist_channel import get_whitelist_channel_id
 from config.constants import Constants
 
 logger = logging.getLogger(__name__)
+
+MOJANG_CACHE_TTL = 300
+MOJANG_CACHE_KEY = "mojang:profile:{username}"
+_MOJANG_NOT_FOUND = object()
+MESSAGE_HANDLER_MAX_CONCURRENCY = 3
+MESSAGE_HANDLER_DB_HEAVY_CONCURRENCY = 1
 
 
 class MessageHandler(commands.Cog):
@@ -22,25 +34,38 @@ class MessageHandler(commands.Cog):
         if message.author.bot or not message.guild or self.bot.is_shutting_down():
             return
 
+        task = asyncio.current_task()
+        if task and not task.done():
+            self.bot._message_handler_tasks.add(task)
+        try:
+            await self._handle_message(message)
+        finally:
+            if task:
+                self.bot._message_handler_tasks.discard(task)
+
+    async def _handle_message(self, message: discord.Message):
         if self.bot.metrics:
             self.bot.metrics.messages_processed.labels(server_id=str(message.guild.id)).inc()
 
         if await self._check_user_opt_out(message.guild.id, message.author.id):
             return
 
+        operations: list[tuple[bool, Awaitable[None]]] = []
         if message.content and self.bot.phrase_matcher:
-            await self._process_phrase_matching(message)
+            operations.append((True, self._process_phrase_matching(message)))
 
         if message.attachments and self.bot.media_downloader:
             if await self._is_monitored_channel(message.guild.id, message.channel.id):
-                await self._download_media(message)
+                operations.append((True, self._download_media(message)))
 
         vt = getattr(self.bot, "voice_transcriber", None)
         if message.attachments and vt and vt.enabled:
-            await self._transcribe_voice_messages(message)
+            operations.append((False, self._transcribe_voice_messages(message)))
 
         if message.content and getattr(self.bot.settings, "feature_conversion", False):
-            await self._convert_units(message)
+            operations.append((False, self._convert_units(message)))
+
+        await self._run_bounded_operations(operations)
 
         if getattr(self.bot.settings, "feature_minecraft_whitelist", False):
             await self._process_whitelist_channel(message)
@@ -74,36 +99,22 @@ class MessageHandler(commands.Cog):
             current_ours = {str(r.emoji) for r in msg.reactions if r.me}
             to_add = should_have - current_ours
             to_remove = current_ours - should_have
+            phrase_ids_by_emoji = self._phrase_ids_by_emoji(matches)
 
             for emoji in to_remove:
-                try:
-                    await msg.remove_reaction(emoji, self.bot.user)
-                except discord.HTTPException as e:
-                    logger.warning("Failed to remove reaction %s: %s", emoji, e)
+                await self._try_remove_reaction(msg, emoji)
 
             logged: list[tuple[int, int, int, int, str, str]] = []
             for emoji in to_add:
-                try:
-                    await msg.add_reaction(emoji)
-                    for phrase_id, matched_emoji in matches:
-                        if matched_emoji == emoji:
-                            if self.bot.metrics:
-                                self.bot.metrics.phrase_matches.labels(
-                                    server_id=str(message.guild.id),
-                                    phrase_id=phrase_id,
-                                ).inc()
-                            logged.append(
-                                (
-                                    message.guild.id,
-                                    message.id,
-                                    message.channel.id,
-                                    message.author.id,
-                                    phrase_id,
-                                    emoji,
-                                )
-                            )
-                except discord.HTTPException as e:
-                    logger.warning("Failed to add reaction %s: %s", emoji, e)
+                if not await self._try_add_reaction(msg, emoji):
+                    continue
+                for phrase_id in phrase_ids_by_emoji.get(emoji, []):
+                    self._record_phrase_match(
+                        source_message=message,
+                        phrase_id=phrase_id,
+                        emoji=emoji,
+                        logged_rows=logged,
+                    )
             if logged:
                 await self._log_phrase_matches_batch(logged)
         except Exception as e:
@@ -112,10 +123,6 @@ class MessageHandler(commands.Cog):
                 self.bot.metrics.errors_total.labels(error_type="phrase_matching").inc()
 
     async def _process_whitelist_channel(self, message: discord.Message):
-        from bot.commands.whitelist import WHITELIST_APPROVE_EMOJI, WHITELIST_REJECT_EMOJI
-        from bot.services.mojang import get_profile
-        from bot.utils.whitelist_channel import get_whitelist_channel_id
-
         if not message.guild or not message.content:
             return
         channel_id = await get_whitelist_channel_id(
@@ -132,7 +139,7 @@ class MessageHandler(commands.Cog):
             return
 
         username = content
-        profile = await get_profile(username)
+        profile = await self._get_mojang_profile_cached(username)
         if profile:
             uuid_val, _ = profile
             try:
@@ -154,7 +161,7 @@ class MessageHandler(commands.Cog):
                     )
             except discord.HTTPException as e:
                 logger.warning("Failed to add whitelist reactions: %s", e)
-            except Exception as e:
+            except asyncpg.PostgresError as e:
                 logger.error("Whitelist pending insert error: %s", e, exc_info=True)
         else:
             await message.reply(
@@ -166,24 +173,14 @@ class MessageHandler(commands.Cog):
             matches = await self.bot.phrase_matcher.match_phrases(message.content, message.guild.id)
             logged: list[tuple[int, int, int, int, str, str]] = []
             for phrase_id, emoji in matches:
-                try:
-                    await message.add_reaction(emoji)
-                    if self.bot.metrics:
-                        self.bot.metrics.phrase_matches.labels(
-                            server_id=str(message.guild.id), phrase_id=phrase_id
-                        ).inc()
-                    logged.append(
-                        (
-                            message.guild.id,
-                            message.id,
-                            message.channel.id,
-                            message.author.id,
-                            phrase_id,
-                            emoji,
-                        )
-                    )
-                except discord.HTTPException as e:
-                    logger.warning("Failed to add reaction %s: %s", emoji, e)
+                if not await self._try_add_reaction(message, emoji):
+                    continue
+                self._record_phrase_match(
+                    source_message=message,
+                    phrase_id=phrase_id,
+                    emoji=emoji,
+                    logged_rows=logged,
+                )
             if logged:
                 await self._log_phrase_matches_batch(logged)
         except Exception as e:
@@ -191,9 +188,82 @@ class MessageHandler(commands.Cog):
             if self.bot.metrics:
                 self.bot.metrics.errors_total.labels(error_type="phrase_matching").inc()
 
-    async def _download_media(self, message: discord.Message):
-        from bot.processors.media_downloader import MediaAttachment
+    async def _run_bounded_operations(self, operations: list[tuple[bool, Awaitable[None]]]):
+        if not operations:
+            return
 
+        run_semaphore = asyncio.Semaphore(MESSAGE_HANDLER_MAX_CONCURRENCY)
+        db_heavy_semaphore = asyncio.Semaphore(MESSAGE_HANDLER_DB_HEAVY_CONCURRENCY)
+
+        async def run_one(is_db_heavy: bool, operation):
+            async with run_semaphore:
+                if is_db_heavy:
+                    async with db_heavy_semaphore:
+                        _ = await operation
+                else:
+                    _ = await operation
+
+        await asyncio.gather(
+            *(run_one(is_db_heavy, operation) for is_db_heavy, operation in operations)
+        )
+
+    @staticmethod
+    def _phrase_ids_by_emoji(matches: list[tuple[str, str]]) -> dict[str, list[str]]:
+        grouped: dict[str, list[str]] = {}
+        for phrase_id, emoji in matches:
+            grouped.setdefault(emoji, []).append(phrase_id)
+        return grouped
+
+    async def _try_add_reaction(self, message: discord.Message, emoji: str) -> bool:
+        try:
+            await message.add_reaction(emoji)
+            return True
+        except discord.HTTPException as e:
+            logger.warning("Failed to add reaction %s: %s", emoji, e)
+            return False
+
+    async def _try_remove_reaction(self, message: discord.Message, emoji: str):
+        try:
+            await message.remove_reaction(emoji, self.bot.user)
+        except discord.HTTPException as e:
+            logger.warning("Failed to remove reaction %s: %s", emoji, e)
+
+    def _record_phrase_match(
+        self,
+        source_message: discord.Message,
+        phrase_id: str,
+        emoji: str,
+        logged_rows: list[tuple[int, int, int, int, str, str]],
+    ):
+        if self.bot.metrics:
+            self.bot.metrics.phrase_matches.labels(
+                server_id=str(source_message.guild.id), phrase_id=phrase_id
+            ).inc()
+        logged_rows.append(
+            (
+                source_message.guild.id,
+                source_message.id,
+                source_message.channel.id,
+                source_message.author.id,
+                phrase_id,
+                emoji,
+            )
+        )
+
+    async def _get_mojang_profile_cached(self, username: str):
+        key = MOJANG_CACHE_KEY.format(username=username.lower())
+        if self.bot.cache:
+            cached = self.bot.cache.get(key)
+            if cached is not None:
+                return None if cached is _MOJANG_NOT_FOUND else cached
+        profile = await get_profile(username)
+        if self.bot.cache:
+            self.bot.cache.set(
+                key, _MOJANG_NOT_FOUND if profile is None else profile, ttl=MOJANG_CACHE_TTL
+            )
+        return profile
+
+    async def _download_media(self, message: discord.Message):
         try:
             attachments = [
                 MediaAttachment(
@@ -257,12 +327,10 @@ class MessageHandler(commands.Cog):
                     """,
                     phrase_ids,
                 )
-        except Exception as e:
+        except asyncpg.PostgresError as e:
             logger.error("Failed to log phrase matches: %s", e)
 
     async def _convert_units(self, message: discord.Message):
-        from bot.processors.unit_converter import detect_and_convert
-
         try:
             converted = detect_and_convert(message.content)
             if converted:
@@ -326,7 +394,10 @@ class MessageHandler(commands.Cog):
             if self.bot.cache:
                 self.bot.cache.set(cache_key, result, ttl=Constants.CACHE_TTL)
             return result
-        except Exception:
+        except asyncpg.PostgresError as e:
+            logger.debug(
+                "_check_user_opt_out failed server_id=%s user_id=%s: %s", server_id, user_id, e
+            )
             return False
 
 

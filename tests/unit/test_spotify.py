@@ -1,3 +1,4 @@
+import time
 from contextlib import contextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -67,13 +68,16 @@ def _mock_session(post_resp=None, get_resp=None, post_raises=None, get_raises=No
 
 @contextmanager
 def _patch_client_session(session=None, raise_on_enter=None):
-    with patch("bot.services.spotify.aiohttp.ClientSession") as mock_cls:
-        if raise_on_enter is not None:
-            mock_cls.return_value.__aenter__ = AsyncMock(side_effect=raise_on_enter)
-        else:
-            mock_cls.return_value.__aenter__ = AsyncMock(return_value=session)
-        mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-        yield mock_cls
+    if raise_on_enter is not None:
+        session = MagicMock()
+        session.get = MagicMock(
+            return_value=MagicMock(
+                __aenter__=AsyncMock(side_effect=raise_on_enter),
+                __aexit__=AsyncMock(return_value=None),
+            )
+        )
+    with patch("bot.services.spotify.get_session", return_value=session):
+        yield
 
 
 class TestSpotifyTrackPattern:
@@ -237,6 +241,23 @@ class TestSpotifyPlaylistToSearchQueries:
         with _patch_client_session(session):
             result = await _get_spotify_token(*CREDS)
         assert result is None
+
+    @pytest.mark.asyncio
+    async def test_get_spotify_token_returns_cache_inside_lock(self):
+        spotify_module._SPOTIFY_TOKEN_CACHE = None
+        token_before_lock = "prefilled"
+
+        class _LockThatPrefillsCache:
+            async def __aenter__(self):
+                spotify_module._SPOTIFY_TOKEN_CACHE = (token_before_lock, time.monotonic())
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return None
+
+        with patch.object(spotify_module, "_SPOTIFY_TOKEN_LOCK", _LockThatPrefillsCache()):
+            result = await _get_spotify_token(*CREDS)
+
+        assert result == token_before_lock
 
     @pytest.mark.asyncio
     async def test_token_post_non_200_returns_none(self):

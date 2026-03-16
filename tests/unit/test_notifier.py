@@ -5,6 +5,7 @@ import discord
 import pytest
 
 from bot.utils.notifier import AdminNotifier
+from tests.helpers import mock_db_ctx
 
 
 @pytest.fixture
@@ -20,10 +21,7 @@ def notifier(bot):
 
 
 def _db_ctx(conn):
-    ctx = MagicMock()
-    ctx.__aenter__ = AsyncMock(return_value=conn)
-    ctx.__aexit__ = AsyncMock(return_value=False)
-    return ctx
+    return mock_db_ctx(conn)
 
 
 def _conn_with_config(config):
@@ -39,6 +37,10 @@ def _setup_channel(bot, config=None):
     channel = AsyncMock(spec=discord.TextChannel)
     bot.get_channel.return_value = channel
     return channel
+
+
+def _embed_field_text(embed):
+    return " | ".join(f"{field.name}:{field.value}" for field in embed.fields)
 
 
 class TestGetNotifyChannelId:
@@ -201,8 +203,9 @@ class TestGiveawayNotifications:
     async def test_ended(self, notifier, bot, winners, expected_text):
         channel = _setup_channel(bot)
         await notifier.notify_giveaway_ended(999, "Prize", winners, 10)
-        fields = str([f.value for f in channel.send.call_args[1]["embed"].fields])
-        assert expected_text in fields
+        embed = channel.send.call_args.kwargs["embed"]
+        values = [f.value for f in embed.fields]
+        assert any(expected_text in value for value in values)
 
 
 class TestErrorNotifications:
@@ -216,7 +219,7 @@ class TestErrorNotifications:
     async def test_with_user_and_channel(self, notifier, bot):
         channel = _setup_channel(bot)
         await notifier.notify_error(999, Exception("err"), "ctx", user_id=111, channel_id=222)
-        fields = str(channel.send.call_args[1]["embed"].fields)
+        fields = _embed_field_text(channel.send.call_args.kwargs["embed"])
         assert "<@111>" in fields and "<#222>" in fields
 
     @pytest.mark.asyncio
@@ -271,7 +274,7 @@ class TestWhitelistNotifications:
         embed = channel.send.call_args[1]["embed"]
         assert embed.title == "Whitelist"
         assert "Add" in embed.description
-        fields = str(embed.fields)
+        fields = _embed_field_text(embed)
         assert "<@111>" in fields and "Steve" in fields
 
     @pytest.mark.asyncio
@@ -280,7 +283,7 @@ class TestWhitelistNotifications:
         await notifier.notify_whitelist(999, "Channel Set", 111, channel_id=222)
         embed = channel.send.call_args[1]["embed"]
         assert "Channel Set" in embed.description
-        assert "<#222>" in str(embed.fields)
+        assert "<#222>" in _embed_field_text(embed)
 
 
 class TestPermissionNotifications:
@@ -290,7 +293,7 @@ class TestPermissionNotifications:
         await notifier.notify_permission_changed(
             999, "Set role", "admin", target_id=111, changed_by_id=222, discord_role=333
         )
-        fields = str(channel.send.call_args[1]["embed"].fields)
+        fields = _embed_field_text(channel.send.call_args.kwargs["embed"])
         assert "<@111>" in fields and "<@222>" in fields and "<@&333>" in fields
 
     @pytest.mark.asyncio
@@ -299,7 +302,7 @@ class TestPermissionNotifications:
         await notifier.notify_permission_changed(
             999, "Set role", "admin", target_id=None, changed_by_id=222, discord_role=None
         )
-        fields = str(channel.send.call_args[1]["embed"].fields)
+        fields = _embed_field_text(channel.send.call_args.kwargs["embed"])
         assert "Cleared" in fields
 
     @pytest.mark.asyncio
@@ -308,7 +311,7 @@ class TestPermissionNotifications:
         await notifier.notify_permission_changed(
             999, "Removed", "admin", target_id=111, changed_by_id=222, discord_role=None
         )
-        fields = str(channel.send.call_args[1]["embed"].fields)
+        fields = _embed_field_text(channel.send.call_args.kwargs["embed"])
         assert "<@111>" in fields and "<@222>" in fields
         assert "Cleared" not in fields and "<@&" not in fields
 
@@ -320,7 +323,7 @@ class TestReactionRoleNotifications:
         await notifier.notify_reaction_role_setup(999, "Added", "👍", 111, 222, 333, 444)
         embed = channel.send.call_args[1]["embed"]
         assert embed.title == "Reaction Role"
-        assert "👍" in embed.description and "Jump" in str(embed.fields)
+        assert "👍" in embed.description and "Jump" in _embed_field_text(embed)
 
 
 class TestFaqNotifications:
@@ -365,7 +368,7 @@ class TestBotAddedNotifications:
         embed = channel.send.call_args[1]["embed"]
         assert embed.title == "Bot Added to Server"
         assert "New Server" in embed.description
-        assert "50" in str(embed.fields)
+        assert "50" in _embed_field_text(embed)
 
 
 class TestModerationNotifications:
@@ -375,7 +378,7 @@ class TestModerationNotifications:
         await notifier.notify_moderation(
             999, "Kicked", 111, moderator_id=222, reason="Spam", extra="3 strikes"
         )
-        fields = str(channel.send.call_args[1]["embed"].fields)
+        fields = _embed_field_text(channel.send.call_args.kwargs["embed"])
         assert "<@111>" in fields and "<@222>" in fields
         assert "Spam" in fields and "3 strikes" in fields
 

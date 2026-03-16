@@ -1,0 +1,25 @@
+name: Python Format
+description: Run black and isort in check or fix mode.
+inputs:
+  targets:
+    description: Space-separated paths to format or check.
+    required: false
+    default: bot/ config/ database/ main.py
+  check-only:
+    description: Run tools in check mode without modifying files.
+    required: false
+    default: "true"
+runs:
+  using: composite
+  steps:
+    - name: Run black and isort
+      shell: bash
+      run: |
+        set -euo pipefail
+        if [[ "${{ inputs.check-only }}" == "true" ]]; then
+          black --check ${{ inputs.targets }}
+          isort --check-only ${{ inputs.targets }}
+        else
+          black ${{ inputs.targets }}
+          isort ${{ inputs.targets }}
+        fi

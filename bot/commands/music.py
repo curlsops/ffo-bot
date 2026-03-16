@@ -2,7 +2,8 @@ from __future__ import annotations
 
 import asyncio
 import logging
-from typing import TYPE_CHECKING, cast
+from collections import deque
+from typing import TYPE_CHECKING, Awaitable, Callable, Sequence, TypeVar, cast
 from urllib.parse import urlparse
 
 import discord
@@ -39,10 +40,14 @@ if TYPE_CHECKING:
 
 logger = logging.getLogger(__name__)
 
+TIn = TypeVar("TIn")
+TOut = TypeVar("TOut")
+
 QUEUE_PAGE_SIZE = 5
 MAX_QUERY_LEN = 200
 IDLE_LEAVE_SECONDS = 30
 TRACK_PICKER_MAX = 5
+PLAYLIST_FETCH_CONCURRENCY = 5
 CONNECTION_FAILED_MSG = "Music connection failed. Try /music leave then /music join again."
 
 
@@ -86,24 +91,52 @@ async def _play_next(player: Player) -> bool:
     queue = _get_queue(player.client, player.guild.id)
     if not queue:
         return False
-    track = queue.pop(0)
+    track = queue.popleft()
     try:
         await player.play(track)
     except PlayerNotConnected:
-        queue.insert(0, track)
+        queue.appendleft(track)
         return False
     return True
 
 
+def _pop_queue_index(queue: deque[Track], idx: int) -> Track:
+    queue.rotate(-idx)
+    track = queue.popleft()
+    queue.rotate(idx)
+    return track
+
+
+async def _fetch_one_track(player: Player, query: str) -> Track | None:
+    result = await player.fetch_tracks(query, search_type=SearchType.YOUTUBE)
+    if result and isinstance(result, list) and result:
+        return result[0]
+    if result and not isinstance(result, list) and result.tracks:
+        return result.tracks[0]
+    return None
+
+
+async def _bounded_map_ordered(
+    items: list[TIn],
+    worker: Callable[[TIn], Awaitable[TOut]],
+    concurrency: int,
+) -> list[TOut]:
+    sem = asyncio.Semaphore(concurrency)
+
+    async def run(item: TIn) -> TOut:
+        async with sem:
+            return await worker(item)
+
+    return await asyncio.gather(*[run(item) for item in items])
+
+
 async def _fetch_playlist_tracks(player: Player, queries: list[str]) -> list[Track]:
-    tracks: list[Track] = []
-    for sq in queries:
-        result = await player.fetch_tracks(sq, search_type=SearchType.YOUTUBE)
-        if result and isinstance(result, list) and result:
-            tracks.append(result[0])
-        elif result and not isinstance(result, list) and result.tracks:
-            tracks.append(result.tracks[0])
-    return tracks
+    results = await _bounded_map_ordered(
+        queries,
+        lambda sq: _fetch_one_track(player, sq),
+        PLAYLIST_FETCH_CONCURRENCY,
+    )
+    return [t for t in results if t is not None]
 
 
 async def _resolve_url_tracks(
@@ -141,7 +174,7 @@ async def _resolve_url_tracks(
 
 
 def _music_queue_format_row(
-    row: tuple, player: Player | None, current: Track | None, queue: list[Track]
+    row: tuple, player: Player | None, current: Track | None, queue: Sequence[Track]
 ) -> str:
     t, lbl, idx = row
     link = f"[{t.title}]({t.uri})" if t.uri else t.title
@@ -149,7 +182,7 @@ def _music_queue_format_row(
 
 
 def _MusicQueueView(
-    player: Player | None, current: Track | None, queue: list[Track]
+    player: Player | None, current: Track | None, queue: Sequence[Track]
 ) -> EmbedListPaginatedView:
     rows: list[tuple[Track, str, int]] = ([(current, "Now", 0)] if current else []) + [
         (t, str(i), i) for i, t in enumerate(queue, 1)
@@ -339,7 +372,8 @@ class MusicGroup(app_commands.Group):
         if player.current:
             count = len(tracks)
             if force_next:
-                queue[:0] = tracks
+                for t in reversed(tracks):
+                    queue.appendleft(t)
                 start_pos = 1
             else:
                 start_pos = len(queue) + 1
@@ -498,14 +532,14 @@ class MusicGroup(app_commands.Group):
                 f"No track at position {position}. Queue has {len(q)} item(s).", ephemeral=True
             )
             return
-        track = q.pop(idx)
+        track = _pop_queue_index(q, idx)
         if p.current:
-            q.insert(0, p.current)
+            q.appendleft(p.current)
             await p.stop()
         try:
             await p.play(track)
         except PlayerNotConnected:
-            q.insert(0, track)
+            q.appendleft(track)
             await i.followup.send(CONNECTION_FAILED_MSG, ephemeral=True)
             return
         await i.followup.send(embed=_music_embed("🎵 Force Playing", f"▶️ **{track.title}**"))

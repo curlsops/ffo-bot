@@ -7,7 +7,11 @@ from pathlib import Path
 import aiofiles
 import aiohttp
 
+from bot.utils.http_session import get_session
+
 logger = logging.getLogger(__name__)
+
+MEDIA_TIMEOUT = aiohttp.ClientTimeout(total=300)
 
 
 @dataclass
@@ -27,12 +31,19 @@ class MediaDownloader:
         self.storage_base = Path(storage_base_path)
         self.metrics = metrics
         self.session: aiohttp.ClientSession | None = None
+        self._use_shared = False
 
     async def initialize(self):
-        self.session = aiohttp.ClientSession(timeout=aiohttp.ClientTimeout(total=300))
+        session = get_session()
+        if session:
+            self.session = None
+            self._use_shared = True
+        else:
+            self.session = aiohttp.ClientSession(timeout=MEDIA_TIMEOUT)
+            self._use_shared = False
 
     async def close(self):
-        if self.session:
+        if self.session and not self._use_shared:
             await self.session.close()
 
     async def download_media(
@@ -43,7 +54,7 @@ class MediaDownloader:
         uploader_id: int,
         attachments: list[MediaAttachment],
     ):
-        if not self.session:
+        if self.session is None and not self._use_shared:
             await self.initialize()
 
         for att in attachments:
@@ -124,11 +135,13 @@ class MediaDownloader:
         return path
 
     async def _download_file(self, url: str, destination: Path) -> str:
-        if not self.session:
+        session = get_session() if self._use_shared else self.session
+        if not session:
             await self.initialize()
-        assert self.session is not None
+            session = get_session() if self._use_shared else self.session
+        assert session is not None
         sha256 = hashlib.sha256()
-        async with self.session.get(url) as response:
+        async with session.get(url, timeout=MEDIA_TIMEOUT) as response:
             response.raise_for_status()
             async with aiofiles.open(destination, "wb") as f:
                 async for chunk in response.content.iter_chunked(self.CHUNK_SIZE):

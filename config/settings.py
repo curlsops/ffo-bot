@@ -82,6 +82,14 @@ class Settings(BaseSettings):
     )
 
     shutdown_timeout_seconds: int = Field(default=30, description="Graceful shutdown timeout")
+    sync_commands_on_boot: bool = Field(
+        default=True,
+        description="Full slash command sync on every boot. Set false to skip (use when commands rarely change).",
+    )
+    clear_commands_on_boot: bool = Field(
+        default=True,
+        description="Clear global/guild slash commands before sync on boot. Set false to skip clears and do sync-only.",
+    )
 
     feature_media_download: bool = Field(default=True, description="Enable media download")
     feature_reaction_roles: bool = Field(default=True, description="Enable reaction roles")

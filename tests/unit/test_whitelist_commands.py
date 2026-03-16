@@ -4,25 +4,17 @@ import pytest
 from discord import app_commands
 
 from bot.commands.whitelist import OPERATION_CHOICES, WhitelistCommands, _validate_username
-from tests.helpers import assert_followup_contains, invoke, mock_db_pool, mock_interaction
+from tests.helpers import (
+    assert_followup_contains,
+    build_whitelist_bot,
+    invoke,
+    mock_db_pool,
+    mock_interaction,
+)
 
 
 def _whitelist_bot():
-    bot = MagicMock()
-    bot.cache = None
-    bot.notifier = MagicMock()
-    bot.notifier.notify_whitelist = AsyncMock()
-    bot.settings = MagicMock(feature_notify_moderation=True)
-    bot.permission_checker.check_role = AsyncMock(return_value=True)
-    bot._register_server = AsyncMock()
-    bot.minecraft_rcon = MagicMock()
-    bot.minecraft_rcon._is_configured = MagicMock(return_value=True)
-    bot.minecraft_rcon.whitelist_add = AsyncMock(return_value="Added")
-    bot.minecraft_rcon.whitelist_remove = AsyncMock(return_value="Removed")
-    bot.minecraft_rcon.whitelist_list = AsyncMock(return_value="Steve, Alex")
-    bot.minecraft_rcon.whitelist_on = AsyncMock(return_value="Whitelist is now turned on")
-    bot.minecraft_rcon.whitelist_off = AsyncMock(return_value="Whitelist is now turned off")
-    return bot
+    return build_whitelist_bot()
 
 
 def _op_choice(value: str) -> app_commands.Choice[str]:
@@ -191,6 +183,38 @@ class TestSetWhitelistChannel:
                 channel=channel,
             )
             assert_followup_contains(i, "set", case_sensitive=False)
+
+    @pytest.mark.asyncio
+    async def test_channel_param_takes_precedence_over_operation(self):
+        with (
+            patch(
+                "bot.commands.whitelist.get_whitelist_channel_id",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch(
+                "bot.commands.whitelist.set_whitelist_channel",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+        ):
+            bot = _whitelist_bot()
+            bot.db_pool, _ = mock_db_pool()
+            cog = WhitelistCommands(bot)
+            i = mock_interaction(user_id=2)
+            i.guild = MagicMock()
+            channel = MagicMock(id=999)
+            await invoke(
+                cog,
+                "whitelist_cmd",
+                None,
+                i,
+                operation=_op_choice("add"),
+                username="Steve",
+                channel=channel,
+            )
+            bot.minecraft_rcon.whitelist_add.assert_not_awaited()
+            assert_followup_contains(i, "channel set", case_sensitive=False)
 
     @pytest.mark.asyncio
     async def test_channel_cmd_same_as_current(self):
@@ -498,3 +522,23 @@ class TestWhitelistSync:
             username=None,
         )
         assert_followup_contains(i, "not configured", case_sensitive=False)
+
+
+class TestWhitelistDispatch:
+    @pytest.mark.asyncio
+    async def test_unknown_operation_returns_error(self):
+        bot = _whitelist_bot()
+        bot.db_pool, _ = mock_db_pool()
+        cog = WhitelistCommands(bot)
+        i = mock_interaction(user_id=2)
+        i.guild = MagicMock()
+        await invoke(
+            cog,
+            "whitelist_cmd",
+            None,
+            i,
+            operation=app_commands.Choice(name="Unknown", value="unknown"),
+            username=None,
+            channel=None,
+        )
+        assert_followup_contains(i, "Unknown operation.")

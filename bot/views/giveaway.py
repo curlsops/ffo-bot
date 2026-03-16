@@ -1,13 +1,15 @@
+import asyncio
 import logging
 import uuid
-from datetime import datetime
 
 import discord
 
+from bot.services.giveaway_service import build_embed
 from bot.utils.db import cached_or_fallback
 from bot.utils.pagination import ListPaginatedView
 
 logger = logging.getLogger(__name__)
+EMBED_REFRESH_DEBOUNCE_SECONDS = 0.35
 
 GIVEAWAY_COLUMNS = (
     "id, server_id, channel_id, message_id, host_id, donor_id, prize, winners_count, "
@@ -15,50 +17,6 @@ GIVEAWAY_COLUMNS = (
     "bonus_roles, message_req, no_donor_win, no_defaults, ping, extra_text, image_url, "
     "is_active, created_at, updated_at"
 )
-
-
-def _discord_timestamp(dt: datetime, fmt: str = "R") -> str:
-    return f"<t:{int(dt.timestamp())}:{fmt}>"
-
-
-def build_embed(giveaway, entry_count: int, ended: bool = False) -> discord.Embed:
-    ends_at = giveaway.get("ended_at") or giveaway["ends_at"]
-    ts_rel = _discord_timestamp(ends_at, "R")
-    ts_full = _discord_timestamp(ends_at, "F")
-
-    lines = [
-        f"**{giveaway['prize']}**",
-        "Click join button below to enter!" if not ended else "",
-        f"**Ends:** {ts_rel} ({ts_full})" if not ended else f"**Ended:** {ts_full}",
-        f"**Hosted by:** <@{giveaway['host_id']}>",
-    ]
-    if giveaway.get("donor_id"):
-        lines.append(f"**Donated by:** <@{giveaway['donor_id']}>")
-    if giveaway.get("extra_text"):
-        lines.append("")
-        lines.append(giveaway["extra_text"])
-    description = "\n".join(line for line in lines if line).strip()
-
-    embed = discord.Embed(
-        title="🎉 GIVEAWAY ENDED 🎉" if ended else "🎉 GIVEAWAY 🎉",
-        description=description,
-        color=discord.Color.dark_grey() if ended else discord.Color.gold(),
-        timestamp=ends_at if ended else None,
-    )
-    w = giveaway.get("winners_count") or 1
-    winner_word = "winner" if w == 1 else "winners"
-    entry_word = "entry" if entry_count == 1 else "entries"
-    if ended:
-        footer = f"{entry_count} {entry_word}"
-        if w:  # pragma: no branch - w is always >= 1 due to "or 1" above
-            footer = f"{w} {winner_word} • {footer}"
-    else:
-        ends_str = ends_at.strftime("%b %d at %H:%M")
-        footer = f"{w} {winner_word} | Ends {ends_str}"
-    embed.set_footer(text=footer)
-    if giveaway.get("image_url"):
-        embed.set_image(url=giveaway["image_url"])
-    return embed
 
 
 def _win_probability(user_entries: int, total_entries: int, winners_count: int) -> float:
@@ -158,17 +116,12 @@ class AlreadyJoinedView(discord.ui.View):
             channel = interaction.channel
             if not channel:
                 return
-            msg = await channel.fetch_message(self.message_id)
-            async with self.bot.db_pool.acquire() as conn:
-                count = await conn.fetchval(
-                    "SELECT COUNT(*) FROM giveaway_entries WHERE giveaway_id = $1", self.giveaway_id
-                )
-                giveaway = await conn.fetchrow(
-                    "SELECT " + GIVEAWAY_COLUMNS + " FROM giveaways WHERE id = $1", self.giveaway_id
-                )
-            if giveaway:
-                view = GiveawayView(self.giveaway_id, self.bot, entry_count=count or 0)
-                await msg.edit(embed=build_embed(giveaway, count or 0), view=view)
+            await GiveawayView.schedule_embed_refresh(
+                self.bot,
+                self.giveaway_id,
+                channel=channel,
+                message_id=self.message_id,
+            )
         except Exception as e:
             logger.warning("Could not update giveaway embed: %s", e)
 
@@ -220,7 +173,7 @@ class GiveawayView(discord.ui.View):
             if await self._add_entry(giveaway["id"], interaction.user.id, entries):
                 if self.bot.cache:
                     self.bot.cache.delete(f"giveaway:entries:{giveaway['id']}")
-                await self._update_embed(interaction.message, giveaway["id"])
+                await self._schedule_embed_update(interaction.message, giveaway["id"])
                 await interaction.followup.send(
                     "You have successfully joined this giveaway.", ephemeral=True
                 )
@@ -335,6 +288,116 @@ class GiveawayView(discord.ui.View):
                 return False
 
     async def _update_embed(self, message: discord.Message, giveaway_id: uuid.UUID):
+        await self._refresh_embed_now(message, giveaway_id)
+
+    async def _schedule_embed_update(self, message: discord.Message, giveaway_id: uuid.UUID):
+        await self.schedule_embed_refresh(
+            self.bot,
+            giveaway_id,
+            message=message,
+        )
+
+    @staticmethod
+    def _get_refresh_state(bot):
+        state = bot.__dict__.get("_giveaway_embed_refresh_state")
+        if not isinstance(state, dict):
+            state = {"lock": asyncio.Lock(), "jobs": {}}
+            bot.__dict__["_giveaway_embed_refresh_state"] = state
+        return state["lock"], state["jobs"]
+
+    @classmethod
+    async def schedule_embed_refresh(
+        cls,
+        bot,
+        giveaway_id: uuid.UUID,
+        *,
+        message: discord.Message | None = None,
+        channel=None,
+        message_id: int | None = None,
+    ):
+        lock, jobs = cls._get_refresh_state(bot)
+        resolved_message_id = message_id if message_id is not None else getattr(message, "id", None)
+        resolved_channel = channel if channel is not None else getattr(message, "channel", None)
+        async with lock:
+            job = jobs.get(giveaway_id)
+            if not job:
+                job = {
+                    "dirty": True,
+                    "message": message,
+                    "channel": resolved_channel,
+                    "message_id": resolved_message_id,
+                }
+                job["task"] = asyncio.create_task(cls._run_refresh_job(bot, giveaway_id))
+                jobs[giveaway_id] = job
+                return
+            job["dirty"] = True
+            if message is not None:
+                job["message"] = message
+            if resolved_channel is not None:
+                job["channel"] = resolved_channel
+            if resolved_message_id is not None:
+                job["message_id"] = resolved_message_id
+
+    @classmethod
+    async def _run_refresh_job(cls, bot, giveaway_id: uuid.UUID):
+        lock, jobs = cls._get_refresh_state(bot)
+        try:
+            while True:
+                await asyncio.sleep(EMBED_REFRESH_DEBOUNCE_SECONDS)
+                async with lock:
+                    job = jobs.get(giveaway_id)
+                    if not job:
+                        return
+                    job["dirty"] = False
+                    message = job.get("message")
+                    channel = job.get("channel")
+                    message_id = job.get("message_id")
+                await cls._refresh_embed_now_with_fallback(
+                    bot, giveaway_id, message=message, channel=channel, message_id=message_id
+                )
+                async with lock:
+                    job = jobs.get(giveaway_id)
+                    if not job:
+                        return
+                    if job.get("dirty"):
+                        continue
+                    jobs.pop(giveaway_id, None)
+                    return
+        finally:
+            async with lock:
+                jobs.pop(giveaway_id, None)
+
+    @classmethod
+    async def _refresh_embed_now_with_fallback(
+        cls,
+        bot,
+        giveaway_id: uuid.UUID,
+        *,
+        message: discord.Message | None,
+        channel,
+        message_id: int | None,
+    ):
+        target_message = message
+        if target_message is None:
+            if channel is None or message_id is None:
+                return
+            try:
+                target_message = await channel.fetch_message(message_id)
+            except Exception as e:
+                logger.debug("Could not fetch giveaway message for refresh: %s", e)
+                return
+        temp_view = cls(giveaway_id, bot)
+        await temp_view._refresh_embed_now(target_message, giveaway_id)
+
+    @classmethod
+    async def wait_for_scheduled_refreshes(cls, bot):
+        lock, jobs = cls._get_refresh_state(bot)
+        async with lock:
+            tasks = [job.get("task") for job in jobs.values() if job.get("task")]
+        if tasks:
+            await asyncio.gather(*tasks, return_exceptions=True)
+
+    async def _refresh_embed_now(self, message: discord.Message, giveaway_id: uuid.UUID):
         async with self.bot.db_pool.acquire() as conn:
             count = await conn.fetchval(
                 "SELECT COUNT(*) FROM giveaway_entries WHERE giveaway_id = $1", giveaway_id

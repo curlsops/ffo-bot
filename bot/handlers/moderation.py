@@ -1,5 +1,7 @@
 import logging
+from asyncio import Lock
 from datetime import datetime, timezone
+from time import monotonic
 
 import discord
 from discord.ext import commands
@@ -10,6 +12,11 @@ logger = logging.getLogger(__name__)
 class ModerationHandler(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self._audit_logs_cache: dict[
+            tuple[int, discord.AuditLogAction, str, int], tuple[float, list]
+        ] = {}
+        self._audit_logs_locks: dict[tuple[int, discord.AuditLogAction, str, int], Lock] = {}
+        self._audit_logs_ttl_seconds = 1.0
 
     def _should_notify(self, guild_id: int) -> bool:
         return bool(
@@ -17,6 +24,60 @@ class ModerationHandler(commands.Cog):
             and self.bot.settings.feature_notify_moderation
             and guild_id
         )
+
+    async def _get_audit_logs(
+        self,
+        guild: discord.Guild,
+        action: discord.AuditLogAction,
+        cache_scope: str,
+        *,
+        limit: int,
+    ) -> list:
+        key = (guild.id, action, cache_scope, limit)
+        now = monotonic()
+        cached = self._audit_logs_cache.get(key)
+        if cached is not None and cached[0] > now:
+            return cached[1]
+
+        lock = self._audit_logs_locks.setdefault(key, Lock())
+        async with lock:
+            now = monotonic()
+            cached = self._audit_logs_cache.get(key)
+            if cached is not None and cached[0] > now:
+                return cached[1]
+            try:
+                entries = [entry async for entry in guild.audit_logs(limit=limit, action=action)]
+            except discord.Forbidden:  # no audit log permission
+                entries = []
+            self._audit_logs_cache[key] = (now + self._audit_logs_ttl_seconds, entries)
+            self._prune_audit_logs_cache()
+            return entries
+
+    def _prune_audit_logs_cache(self) -> None:
+        if len(self._audit_logs_cache) <= 64:
+            return
+        now = monotonic()
+        expired = [
+            key for key, (expires_at, _) in self._audit_logs_cache.items() if expires_at <= now
+        ]
+        for key in expired:
+            self._audit_logs_cache.pop(key, None)
+            self._audit_logs_locks.pop(key, None)
+
+    async def _find_audit_log_entry(
+        self,
+        guild: discord.Guild,
+        action: discord.AuditLogAction,
+        cache_scope: str,
+        matcher,
+        *,
+        limit: int,
+    ):
+        entries = await self._get_audit_logs(guild, action, cache_scope, limit=limit)
+        for entry in entries:
+            if matcher(entry):
+                return entry
+        return None
 
     @commands.Cog.listener()
     async def on_member_ban(self, guild: discord.Guild, user: discord.User | discord.Member):
@@ -31,18 +92,23 @@ class ModerationHandler(commands.Cog):
             except discord.NotFound:  # no ban record (race)
                 pass
             try:
-                async for entry in guild.audit_logs(limit=5, action=discord.AuditLogAction.ban):
-                    if entry.target and entry.target.id == user.id:
-                        moderator_id = entry.user.id if entry.user else None
-                        if entry.reason:
-                            reason = entry.reason
-                        break
+                entry = await self._find_audit_log_entry(
+                    guild,
+                    discord.AuditLogAction.ban,
+                    f"ban:{user.id}",
+                    lambda e: bool(e.target and e.target.id == user.id),
+                    limit=5,
+                )
+                if entry:
+                    moderator_id = entry.user.id if entry.user else None
+                    if entry.reason:
+                        reason = entry.reason
             except discord.Forbidden:  # no audit log permission
                 pass
             await self.bot.notifier.notify_moderation(
                 guild.id, "Member Banned", user.id, moderator_id, reason=reason
             )
-        except Exception as e:
+        except discord.HTTPException as e:
             logger.warning("moderation notify ban failed: %s", e)
 
     @commands.Cog.listener()
@@ -51,7 +117,7 @@ class ModerationHandler(commands.Cog):
             return
         try:
             await self.bot.notifier.notify_moderation(guild.id, "Member Unbanned", user.id, None)
-        except Exception as e:
+        except discord.HTTPException as e:
             logger.warning("moderation notify unban failed: %s", e)
 
     @commands.Cog.listener()
@@ -59,19 +125,23 @@ class ModerationHandler(commands.Cog):
         if not self._should_notify(member.guild.id):
             return
         try:
-            async for entry in member.guild.audit_logs(limit=5, action=discord.AuditLogAction.kick):
-                if entry.target and entry.target.id == member.id:
-                    await self.bot.notifier.notify_moderation(
-                        member.guild.id,
-                        "Member Kicked",
-                        member.id,
-                        entry.user.id if entry.user else None,
-                        reason=entry.reason,
-                    )
-                    return
-        except discord.Forbidden:  # no audit log permission
-            pass
-        except Exception as e:
+            entry = await self._find_audit_log_entry(
+                member.guild,
+                discord.AuditLogAction.kick,
+                f"kick:{member.id}",
+                lambda e: bool(e.target and e.target.id == member.id),
+                limit=5,
+            )
+            if entry:
+                await self.bot.notifier.notify_moderation(
+                    member.guild.id,
+                    "Member Kicked",
+                    member.id,
+                    entry.user.id if entry.user else None,
+                    reason=entry.reason,
+                )
+                return
+        except discord.HTTPException as e:
             logger.warning("moderation notify kick failed: %s", e)
 
     @commands.Cog.listener()
@@ -87,26 +157,27 @@ class ModerationHandler(commands.Cog):
                 return
             if before.communication_disabled_until != after.communication_disabled_until:
                 await self._notify_timeout_change(before, after)
-        except Exception as e:
+        except discord.HTTPException as e:
             logger.warning("moderation notify member update failed: %s", e)
 
     async def _notify_nickname_change(self, before: discord.Member, after: discord.Member):
-        try:
-            async for entry in before.guild.audit_logs(
-                limit=5, action=discord.AuditLogAction.member_update
-            ):
-                if entry.target and entry.target.id == before.id:
-                    extra = f"`{before.nick or '(none)'}` → `{after.nick or '(none)'}`"
-                    await self.bot.notifier.notify_moderation(
-                        before.guild.id,
-                        "Nickname Changed",
-                        before.id,
-                        entry.user.id if entry.user else None,
-                        extra=extra,
-                    )
-                    return
-        except discord.Forbidden:  # no audit log permission
-            pass
+        entry = await self._find_audit_log_entry(
+            before.guild,
+            discord.AuditLogAction.member_update,
+            f"member_update:{before.id}",
+            lambda e: bool(e.target and e.target.id == before.id),
+            limit=5,
+        )
+        if entry:
+            extra = f"`{before.nick or '(none)'}` → `{after.nick or '(none)'}`"
+            await self.bot.notifier.notify_moderation(
+                before.guild.id,
+                "Nickname Changed",
+                before.id,
+                entry.user.id if entry.user else None,
+                extra=extra,
+            )
+            return
 
     async def _notify_username_change(self, before: discord.Member, after: discord.Member):
         parts = []
@@ -128,16 +199,16 @@ class ModerationHandler(commands.Cog):
     async def _notify_timeout_change(self, before: discord.Member, after: discord.Member):
         moderator_id = None
         reason = None
-        try:
-            async for entry in before.guild.audit_logs(
-                limit=5, action=discord.AuditLogAction.member_update
-            ):
-                if entry.target and entry.target.id == before.id:
-                    moderator_id = entry.user.id if entry.user else None
-                    reason = entry.reason
-                    break
-        except discord.Forbidden:  # no audit log permission
-            pass
+        entry = await self._find_audit_log_entry(
+            before.guild,
+            discord.AuditLogAction.member_update,
+            f"member_update:{before.id}",
+            lambda e: bool(e.target and e.target.id == before.id),
+            limit=5,
+        )
+        if entry:
+            moderator_id = entry.user.id if entry.user else None
+            reason = entry.reason
         if after.communication_disabled_until:
             extra = f"Until <t:{int(after.communication_disabled_until.timestamp())}:F>"
             await self.bot.notifier.notify_moderation(
@@ -180,22 +251,22 @@ class ModerationHandler(commands.Cog):
                     )
             elif before.channel and not after.channel:
                 await self._notify_voice_disconnect(member, before)
-        except Exception as e:
+        except discord.HTTPException as e:
             logger.warning("moderation notify voice state failed: %s", e)
 
     async def _notify_voice_mod_action(
         self, guild: discord.Guild, target_id: int, action: str, channel
     ):
         moderator_id = None
-        try:
-            async for entry in guild.audit_logs(
-                limit=5, action=discord.AuditLogAction.member_update
-            ):
-                if entry.target and entry.target.id == target_id:
-                    moderator_id = entry.user.id if entry.user else None
-                    break
-        except discord.Forbidden:  # no audit log permission
-            pass
+        entry = await self._find_audit_log_entry(
+            guild,
+            discord.AuditLogAction.member_update,
+            f"member_update:{target_id}",
+            lambda e: bool(e.target and e.target.id == target_id),
+            limit=5,
+        )
+        if entry:
+            moderator_id = entry.user.id if entry.user else None
         if moderator_id is None or moderator_id == target_id:
             return
         channel_name = getattr(channel, "name", "?")
@@ -205,29 +276,29 @@ class ModerationHandler(commands.Cog):
         )
 
     async def _notify_voice_disconnect(self, member: discord.Member, before: discord.VoiceState):
-        try:
-            async for entry in member.guild.audit_logs(
-                limit=3, action=discord.AuditLogAction.member_disconnect
-            ):
-                if (
-                    entry.created_at
-                    and (datetime.now(timezone.utc) - entry.created_at).total_seconds() < 5
-                ):
-                    moderator_id = entry.user.id if entry.user else None
-                    if moderator_id is None or moderator_id == member.id:
-                        return
-                    channel_name = before.channel.name if before.channel else "?"
-                    extra = f"From #{channel_name}"
-                    await self.bot.notifier.notify_moderation(
-                        member.guild.id,
-                        "Voice Disconnected",
-                        member.id,
-                        moderator_id,
-                        extra=extra,
-                    )
-                    return
-        except discord.Forbidden:  # no audit log permission
-            pass
+        entry = await self._find_audit_log_entry(
+            member.guild,
+            discord.AuditLogAction.member_disconnect,
+            f"member_disconnect:{member.id}",
+            lambda e: bool(
+                e.created_at and (datetime.now(timezone.utc) - e.created_at).total_seconds() < 5
+            ),
+            limit=3,
+        )
+        if entry:
+            moderator_id = entry.user.id if entry.user else None
+            if moderator_id is None or moderator_id == member.id:
+                return
+            channel_name = before.channel.name if before.channel else "?"
+            extra = f"From #{channel_name}"
+            await self.bot.notifier.notify_moderation(
+                member.guild.id,
+                "Voice Disconnected",
+                member.id,
+                moderator_id,
+                extra=extra,
+            )
+            return
 
     @commands.Cog.listener()
     async def on_message_delete(self, message: discord.Message):
@@ -237,16 +308,18 @@ class ModerationHandler(commands.Cog):
             return
         try:
             moderator_id = None
-            try:
-                async for entry in message.guild.audit_logs(
-                    limit=5, action=discord.AuditLogAction.message_delete
-                ):
-                    ch = getattr(getattr(entry, "extra", None), "channel", None)
-                    if ch and ch.id == message.channel.id:
-                        moderator_id = entry.user.id if entry.user else None
-                        break
-            except discord.Forbidden:  # no audit log permission
-                pass
+            entry = await self._find_audit_log_entry(
+                message.guild,
+                discord.AuditLogAction.message_delete,
+                f"message_delete:{message.channel.id}",
+                lambda e: bool(
+                    (ch := getattr(getattr(e, "extra", None), "channel", None))
+                    and ch.id == message.channel.id
+                ),
+                limit=5,
+            )
+            if entry:
+                moderator_id = entry.user.id if entry.user else None
             if moderator_id is None:
                 return
             author_id = message.author.id if message.author else 0
@@ -263,7 +336,7 @@ class ModerationHandler(commands.Cog):
                 moderator_id,
                 extra=extra,
             )
-        except Exception as e:
+        except discord.HTTPException as e:
             logger.warning("moderation notify message delete failed: %s", e)
 
     @commands.Cog.listener()
@@ -274,14 +347,15 @@ class ModerationHandler(commands.Cog):
             return
         try:
             moderator_id = None
-            try:
-                async for entry in channel.guild.audit_logs(
-                    limit=5, action=discord.AuditLogAction.message_bulk_delete
-                ):
-                    moderator_id = entry.user.id if entry.user else None
-                    break
-            except discord.Forbidden:  # no audit log permission
-                pass
+            entry = await self._find_audit_log_entry(
+                channel.guild,
+                discord.AuditLogAction.message_bulk_delete,
+                f"bulk_delete:{channel.id}",
+                lambda _: True,
+                limit=5,
+            )
+            if entry:
+                moderator_id = entry.user.id if entry.user else None
             extra = f"Channel: <#{channel.id}>\nCount: {len(messages)} messages"
             await self.bot.notifier.notify_moderation(
                 channel.guild.id,
@@ -290,7 +364,7 @@ class ModerationHandler(commands.Cog):
                 moderator_id,
                 extra=extra,
             )
-        except Exception as e:
+        except discord.HTTPException as e:
             logger.warning("moderation notify bulk delete failed: %s", e)
 
 

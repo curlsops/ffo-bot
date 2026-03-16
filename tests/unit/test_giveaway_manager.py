@@ -192,7 +192,7 @@ class TestBuildEndedEmbed:
         embed = manager._build_ended_embed(_giveaway(prize="Test", donor_id=2), winners, entries)
         assert embed.title == "🎉 GIVEAWAY ENDED 🎉"
         if expected_text:
-            assert expected_text in str([f.value for f in embed.fields])
+            assert any(expected_text in field.value for field in embed.fields)
 
     def test_includes_donor(self, manager):
         embed = manager._build_ended_embed(_giveaway(donor_id=555), [100], 5)
@@ -227,7 +227,9 @@ class TestEndGiveaway:
         channel, _ = _channel_with_msg()
         manager.bot.get_channel.return_value = channel
         await manager._end_giveaway(_giveaway())
-        assert "Congratulations" in str(channel.send.call_args)
+        call = channel.send.call_args
+        content = call.kwargs.get("content") or (call.args[0] if call.args else "")
+        assert "Congratulations" in content
 
     @pytest.mark.asyncio
     async def test_notifies_admin(self, manager):
@@ -353,7 +355,9 @@ class TestEndGiveaway:
         await manager._end_giveaway(giveaway)
 
         msg.edit.assert_called_once()
-        assert "Congratulations" in str(channel.send.call_args)
+        call = channel.send.call_args
+        content = call.kwargs.get("content") or (call.args[0] if call.args else "")
+        assert "Congratulations" in content
 
 
 class TestParseHostFromMessage:

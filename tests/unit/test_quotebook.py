@@ -3,15 +3,12 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from bot.commands.quotebook import QuotebookCommands, _parse_quotes_from_message
+from tests.helpers import build_quotebook_bot, mock_db_ctx, mock_interaction
 
 
 @pytest.fixture
 def mock_bot():
-    bot = MagicMock()
-    bot.cache = None
-    bot.permission_checker.check_role = AsyncMock(return_value=True)
-    bot.db_pool.acquire = MagicMock()
-    return bot
+    return build_quotebook_bot()
 
 
 @pytest.fixture
@@ -20,18 +17,16 @@ def cog(mock_bot):
 
 
 def _interaction(guild_id=1, channel_id=2, user_id=3, display_name="TestUser"):
-    i = MagicMock(guild_id=guild_id, channel_id=channel_id)
-    i.user = MagicMock(id=user_id, display_name=display_name, roles=[])
-    i.response.defer = AsyncMock()
-    i.followup.send = AsyncMock()
-    return i
+    return mock_interaction(
+        guild_id=guild_id,
+        channel_id=channel_id,
+        user_id=user_id,
+        user_display_name=display_name,
+    )
 
 
 def _db_ctx(conn):
-    ctx = MagicMock()
-    ctx.__aenter__ = AsyncMock(return_value=conn)
-    ctx.__aexit__ = AsyncMock(return_value=False)
-    return ctx
+    return mock_db_ctx(conn)
 
 
 class TestParseQuotes:

@@ -11,6 +11,10 @@ jobs:
   autofix:
     runs-on: ubuntu-24.04
     timeout-minutes: 10
+    container:
+      image: ghcr.io/${{ github.repository }}-ci:latest
+    permissions:
+      contents: write
 
     steps:
       - name: Generate GitHub App token
@@ -26,19 +30,10 @@ jobs:
           ref: ${{ github.event_name == 'pull_request' && github.head_ref || github.ref }}
           token: ${{ steps.app-token.outputs.token }}
 
-      - name: Set up Python
-        uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
-        with:
-          python-version: "3.14"
-          cache: "pip"
-
-      - name: Install dependencies
-        run: pip install -r requirements-dev.txt
-
       - name: Run formatters
-        run: |
-          black bot/ config/ database/ main.py
-          isort bot/ config/ database/ main.py
+        uses: ./.github/actions/python-format
+        with:
+          check-only: "false"
 
       - name: Check for changes
         id: changes

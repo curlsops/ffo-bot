@@ -1,7 +1,7 @@
 #!/bin/bash
 # Build and test script for local development
 
-set -e
+set -euo pipefail
 
 cd "$(dirname "$0")/.."
 
@@ -26,14 +26,14 @@ source venv/bin/activate
 
 # Install dependencies
 echo "Installing dependencies..."
-pip install --upgrade pip
-pip install -r requirements.txt
-pip install -r requirements-dev.txt
+python -m pip install --upgrade pip
+python -m pip install -r requirements.txt
+python -m pip install -r requirements-dev.txt
 echo "✓ Dependencies installed"
 
 # Run linters and formatters
 echo ""
-if [ "$1" = "--check" ] || [ "$1" = "-c" ]; then
+if [ "${1:-}" = "--check" ] || [ "${1:-}" = "-c" ]; then
     echo "Running linters (check only, use without --check to auto-format)..."
     echo "- flake8"
     flake8 bot/ config/ database/ main.py --count --statistics

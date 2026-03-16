@@ -1,4 +1,7 @@
-from typing import TYPE_CHECKING
+import logging
+from collections.abc import Awaitable, Callable
+from functools import wraps
+from typing import TYPE_CHECKING, Any, cast
 
 import discord
 
@@ -55,3 +58,47 @@ async def require_guild(i: discord.Interaction) -> bool:
 
 async def send_error(i: discord.Interaction, msg: str) -> None:
     await i.followup.send(f"❌ {msg}" if not msg.startswith("❌") else msg, ephemeral=True)
+
+
+def _get_interaction(args: tuple[Any, ...], kwargs: dict[str, Any]) -> discord.Interaction:
+    interaction = kwargs.get("interaction")
+    if interaction and hasattr(interaction, "response") and hasattr(interaction, "followup"):
+        return cast(discord.Interaction, interaction)
+    for arg in args:
+        if hasattr(arg, "response") and hasattr(arg, "followup"):
+            return cast(discord.Interaction, arg)
+    raise ValueError("Command interaction argument not found.")
+
+
+def execute_command(
+    *,
+    defer_ephemeral: bool = True,
+    permission_check: Callable[..., Awaitable[bool]] | None = None,
+    error_message: str = "An error occurred.",
+    use_send_error: bool = True,
+    logger: logging.Logger | None = None,
+    log_prefix: str | None = None,
+):
+    def decorator(func):
+        @wraps(func)
+        async def wrapper(*args, **kwargs):
+            interaction = _get_interaction(args, kwargs)
+            await interaction.response.defer(ephemeral=defer_ephemeral)
+
+            if permission_check and not await permission_check(*args, **kwargs):
+                return
+
+            try:
+                await func(*args, **kwargs)
+            except Exception as e:
+                if logger:
+                    prefix = log_prefix or f"{func.__name__} error"
+                    logger.error("%s: %s", prefix, e, exc_info=True)
+                if use_send_error:
+                    await send_error(interaction, error_message)
+                else:
+                    await interaction.followup.send(error_message, ephemeral=True)
+
+        return wrapper
+
+    return decorator

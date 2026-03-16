@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from bot.commands.polls import PollCommands
+from tests.helpers import assert_followup_contains
 
 
 def make_interaction():
@@ -53,7 +54,7 @@ async def test_poll_validation_too_few_options():
     i = make_interaction()
     await cog.poll.callback(cog, i, "Question?", "OnlyOne", "1d")
     i.channel.send.assert_not_awaited()
-    assert "at least 2 options" in str(i.followup.send.call_args)
+    assert_followup_contains(i, "at least 2 options")
 
 
 @pytest.mark.asyncio
@@ -63,4 +64,4 @@ async def test_poll_validation_invalid_duration():
     i = make_interaction()
     await cog.poll.callback(cog, i, "Question?", "Yes,No", "invalid")
     i.channel.send.assert_not_awaited()
-    assert "Invalid duration" in str(i.followup.send.call_args)
+    assert_followup_contains(i, "Invalid duration")
