@@ -1,3 +1,4 @@
+from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
@@ -25,6 +26,14 @@ def _make_resp(status: int, body: str):
     return resp
 
 
+def _patch_session_scope(mock_session):
+    @asynccontextmanager
+    async def _fake_scope(*args, **kwargs):
+        yield mock_session
+
+    return patch("bot.services.tidal.session_scope", _fake_scope)
+
+
 class TestTidalTrackPattern:
     def test_matches_track_url_with_slug(self):
         assert TIDAL_TRACK_PATTERN.search(TIDAL_TRACK_URL)
@@ -42,7 +51,7 @@ class TestTidalTrackPattern:
 
 class TestTidalUrlToSearchQuery:
     @pytest.mark.asyncio
-    async def test_success_returns_title_shared_session(self):
+    async def test_success_returns_title(self):
         html = f'<meta property="og:title" content="{TIDAL_TRACK_TITLE}">'
         resp = _make_resp(200, html)
         ctx = MagicMock(
@@ -50,23 +59,7 @@ class TestTidalUrlToSearchQuery:
         )
         mock_session = MagicMock()
         mock_session.get.return_value = ctx
-        with patch("bot.services.tidal.get_session", return_value=mock_session):
-            result = await tidal_url_to_search_query(TIDAL_TRACK_URL)
-            assert result == TIDAL_TRACK_TITLE
-
-    @pytest.mark.asyncio
-    async def test_success_returns_title(self):
-        html = f'<meta property="og:title" content="{TIDAL_TRACK_TITLE}">'
-        resp = _make_resp(200, html)
-        ctx = MagicMock(
-            __aenter__=AsyncMock(return_value=resp), __aexit__=AsyncMock(return_value=None)
-        )
-        with patch("bot.services.tidal.aiohttp.ClientSession") as mock_cls:
-            mock_session = MagicMock()
-            mock_session.get.return_value = ctx
-            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-
+        with _patch_session_scope(mock_session):
             result = await tidal_url_to_search_query(TIDAL_TRACK_URL)
             assert result == TIDAL_TRACK_TITLE
 
@@ -77,12 +70,9 @@ class TestTidalUrlToSearchQuery:
         ctx = MagicMock(
             __aenter__=AsyncMock(return_value=resp), __aexit__=AsyncMock(return_value=None)
         )
-        with patch("bot.services.tidal.aiohttp.ClientSession") as mock_cls:
-            mock_session = MagicMock()
-            mock_session.get.return_value = ctx
-            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-
+        mock_session = MagicMock()
+        mock_session.get.return_value = ctx
+        with _patch_session_scope(mock_session):
             result = await tidal_url_to_search_query(TIDAL_TRACK_URL)
             assert result == TIDAL_TRACK_TITLE
 
@@ -93,12 +83,9 @@ class TestTidalUrlToSearchQuery:
         ctx = MagicMock(
             __aenter__=AsyncMock(return_value=resp), __aexit__=AsyncMock(return_value=None)
         )
-        with patch("bot.services.tidal.aiohttp.ClientSession") as mock_cls:
-            mock_session = MagicMock()
-            mock_session.get.return_value = ctx
-            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-
+        mock_session = MagicMock()
+        mock_session.get.return_value = ctx
+        with _patch_session_scope(mock_session):
             result = await tidal_url_to_search_query(TIDAL_TRACK_URL)
             assert result == "Artist - Song"
 
@@ -118,23 +105,20 @@ class TestTidalUrlToSearchQuery:
         ctx = MagicMock(
             __aenter__=AsyncMock(return_value=resp), __aexit__=AsyncMock(return_value=None)
         )
-        with patch("bot.services.tidal.aiohttp.ClientSession") as mock_cls:
-            mock_session = MagicMock()
-            mock_session.get.return_value = ctx
-            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-
+        mock_session = MagicMock()
+        mock_session.get.return_value = ctx
+        with _patch_session_scope(mock_session):
             result = await tidal_url_to_search_query(TIDAL_TRACK_URL)
             assert result is None
 
     @pytest.mark.asyncio
     async def test_client_error_returns_none(self):
-        with patch("bot.services.tidal.aiohttp.ClientSession") as mock_cls:
-            mock_cls.return_value.__aenter__ = AsyncMock(
-                side_effect=aiohttp.ClientError("connection failed")
-            )
-            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-
+        mock_session = MagicMock()
+        mock_session.get.return_value = MagicMock(
+            __aenter__=AsyncMock(side_effect=aiohttp.ClientError("connection failed")),
+            __aexit__=AsyncMock(return_value=None),
+        )
+        with _patch_session_scope(mock_session):
             result = await tidal_url_to_search_query(TIDAL_TRACK_URL)
             assert result is None
 
@@ -143,12 +127,9 @@ class TestTidalUrlToSearchQuery:
         bad_ctx = MagicMock()
         bad_ctx.__aenter__ = AsyncMock(side_effect=aiohttp.ClientError("fetch failed"))
         bad_ctx.__aexit__ = AsyncMock(return_value=None)
-        with patch("bot.services.tidal.aiohttp.ClientSession") as mock_cls:
-            mock_session = MagicMock()
-            mock_session.get.return_value = bad_ctx
-            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-
+        mock_session = MagicMock()
+        mock_session.get.return_value = bad_ctx
+        with _patch_session_scope(mock_session):
             result = await tidal_url_to_search_query(TIDAL_TRACK_URL)
             assert result is None
 
@@ -160,12 +141,9 @@ class TestTidalUrlToSearchQuery:
         ctx = MagicMock(
             __aenter__=AsyncMock(return_value=resp), __aexit__=AsyncMock(return_value=None)
         )
-        with patch("bot.services.tidal.aiohttp.ClientSession") as mock_cls:
-            mock_session = MagicMock()
-            mock_session.get.return_value = ctx
-            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-
+        mock_session = MagicMock()
+        mock_session.get.return_value = ctx
+        with _patch_session_scope(mock_session):
             result = await tidal_url_to_search_query(TIDAL_TRACK_URL)
             assert result == "Fallback Title"
 
@@ -175,12 +153,9 @@ class TestTidalUrlToSearchQuery:
         ctx = MagicMock(
             __aenter__=AsyncMock(return_value=resp), __aexit__=AsyncMock(return_value=None)
         )
-        with patch("bot.services.tidal.aiohttp.ClientSession") as mock_cls:
-            mock_session = MagicMock()
-            mock_session.get.return_value = ctx
-            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-
+        mock_session = MagicMock()
+        mock_session.get.return_value = ctx
+        with _patch_session_scope(mock_session):
             result = await tidal_url_to_search_query(TIDAL_TRACK_URL)
             assert result is None
 
@@ -193,7 +168,7 @@ class TestTidalPlaylistToSearchQueries:
         return resp
 
     @pytest.mark.asyncio
-    async def test_success_returns_search_queries_shared_session(self):
+    async def test_success_returns_search_queries(self):
         items = [
             {"title": "Blood Wolf", "artist": {"name": "Dance Gavin Dance"}},
             {"title": "Reborn", "artist": {"name": "Delta Heavy"}},
@@ -204,29 +179,7 @@ class TestTidalPlaylistToSearchQueries:
         )
         mock_session = MagicMock()
         mock_session.get.return_value = ctx
-        with patch("bot.services.tidal.get_session", return_value=mock_session):
-            result = await tidal_playlist_to_search_queries(TIDAL_PLAYLIST_URL)
-            assert result == [
-                "Dance Gavin Dance - Blood Wolf",
-                "Delta Heavy - Reborn",
-            ]
-
-    @pytest.mark.asyncio
-    async def test_success_returns_search_queries(self):
-        items = [
-            {"title": "Blood Wolf", "artist": {"name": "Dance Gavin Dance"}},
-            {"title": "Reborn", "artist": {"name": "Delta Heavy"}},
-        ]
-        resp = self._make_json_resp(items)
-        ctx = MagicMock(
-            __aenter__=AsyncMock(return_value=resp), __aexit__=AsyncMock(return_value=None)
-        )
-        with patch("bot.services.tidal.aiohttp.ClientSession") as mock_cls:
-            mock_session = MagicMock()
-            mock_session.get.return_value = ctx
-            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-
+        with _patch_session_scope(mock_session):
             result = await tidal_playlist_to_search_queries(TIDAL_PLAYLIST_URL)
             assert result == [
                 "Dance Gavin Dance - Blood Wolf",
@@ -240,12 +193,9 @@ class TestTidalPlaylistToSearchQueries:
         ctx = MagicMock(
             __aenter__=AsyncMock(return_value=resp), __aexit__=AsyncMock(return_value=None)
         )
-        with patch("bot.services.tidal.aiohttp.ClientSession") as mock_cls:
-            mock_session = MagicMock()
-            mock_session.get.return_value = ctx
-            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-
+        mock_session = MagicMock()
+        mock_session.get.return_value = ctx
+        with _patch_session_scope(mock_session):
             result = await tidal_playlist_to_search_queries(TIDAL_PLAYLIST_URL)
             assert result == ["Instrumental"]
 
@@ -259,12 +209,9 @@ class TestTidalPlaylistToSearchQueries:
         ctx = MagicMock(
             __aenter__=AsyncMock(return_value=resp), __aexit__=AsyncMock(return_value=None)
         )
-        with patch("bot.services.tidal.aiohttp.ClientSession") as mock_cls:
-            mock_session = MagicMock()
-            mock_session.get.return_value = ctx
-            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-
+        mock_session = MagicMock()
+        mock_session.get.return_value = ctx
+        with _patch_session_scope(mock_session):
             result = await tidal_playlist_to_search_queries(TIDAL_PLAYLIST_URL)
             assert result == ["Band - Real Song"]
 
@@ -281,12 +228,9 @@ class TestTidalPlaylistToSearchQueries:
             ctx2 = MagicMock(
                 __aenter__=AsyncMock(return_value=resp2), __aexit__=AsyncMock(return_value=None)
             )
-            with patch("bot.services.tidal.aiohttp.ClientSession") as mock_cls:
-                mock_session = MagicMock()
-                mock_session.get.side_effect = [ctx1, ctx2]
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-
+            mock_session = MagicMock()
+            mock_session.get.side_effect = [ctx1, ctx2]
+            with _patch_session_scope(mock_session):
                 result = await tidal_playlist_to_search_queries(TIDAL_PLAYLIST_URL)
                 assert result == ["A - Song0", "A - Song1", "A - Song2", "B - Last"]
 
@@ -298,12 +242,9 @@ class TestTidalPlaylistToSearchQueries:
             ctx = MagicMock(
                 __aenter__=AsyncMock(return_value=resp), __aexit__=AsyncMock(return_value=None)
             )
-            with patch("bot.services.tidal.aiohttp.ClientSession") as mock_cls:
-                mock_session = MagicMock()
-                mock_session.get.return_value = ctx
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-
+            mock_session = MagicMock()
+            mock_session.get.return_value = ctx
+            with _patch_session_scope(mock_session):
                 result = await tidal_playlist_to_search_queries(TIDAL_PLAYLIST_URL)
                 assert result == ["A - Song0", "A - Song1", "A - Song2", "A - Song3", "A - Song4"]
 
@@ -323,12 +264,9 @@ class TestTidalPlaylistToSearchQueries:
             ctx2 = MagicMock(
                 __aenter__=AsyncMock(return_value=resp2), __aexit__=AsyncMock(return_value=None)
             )
-            with patch("bot.services.tidal.aiohttp.ClientSession") as mock_cls:
-                mock_session = MagicMock()
-                mock_session.get.side_effect = [ctx1, ctx2]
-                mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-                mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-
+            mock_session = MagicMock()
+            mock_session.get.side_effect = [ctx1, ctx2]
+            with _patch_session_scope(mock_session):
                 result = await tidal_playlist_to_search_queries(TIDAL_PLAYLIST_URL)
                 assert result == [
                     "A - Song0",
@@ -344,12 +282,9 @@ class TestTidalPlaylistToSearchQueries:
         ctx = MagicMock(
             __aenter__=AsyncMock(return_value=resp), __aexit__=AsyncMock(return_value=None)
         )
-        with patch("bot.services.tidal.aiohttp.ClientSession") as mock_cls:
-            mock_session = MagicMock()
-            mock_session.get.return_value = ctx
-            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-
+        mock_session = MagicMock()
+        mock_session.get.return_value = ctx
+        with _patch_session_scope(mock_session):
             result = await tidal_playlist_to_search_queries(TIDAL_PLAYLIST_URL)
             assert result is None
 
@@ -364,23 +299,20 @@ class TestTidalPlaylistToSearchQueries:
         ctx = MagicMock(
             __aenter__=AsyncMock(return_value=resp), __aexit__=AsyncMock(return_value=None)
         )
-        with patch("bot.services.tidal.aiohttp.ClientSession") as mock_cls:
-            mock_session = MagicMock()
-            mock_session.get.return_value = ctx
-            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-
+        mock_session = MagicMock()
+        mock_session.get.return_value = ctx
+        with _patch_session_scope(mock_session):
             result = await tidal_playlist_to_search_queries(TIDAL_PLAYLIST_URL)
             assert result is None
 
     @pytest.mark.asyncio
     async def test_client_error_returns_none(self):
-        with patch("bot.services.tidal.aiohttp.ClientSession") as mock_cls:
-            mock_cls.return_value.__aenter__ = AsyncMock(
-                side_effect=aiohttp.ClientError("connection failed")
-            )
-            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-
+        mock_session = MagicMock()
+        mock_session.get.return_value = MagicMock(
+            __aenter__=AsyncMock(side_effect=aiohttp.ClientError("connection failed")),
+            __aexit__=AsyncMock(return_value=None),
+        )
+        with _patch_session_scope(mock_session):
             result = await tidal_playlist_to_search_queries(TIDAL_PLAYLIST_URL)
             assert result is None
 
@@ -389,12 +321,9 @@ class TestTidalPlaylistToSearchQueries:
         bad_ctx = MagicMock()
         bad_ctx.__aenter__ = AsyncMock(side_effect=aiohttp.ClientError("fetch failed"))
         bad_ctx.__aexit__ = AsyncMock(return_value=None)
-        with patch("bot.services.tidal.aiohttp.ClientSession") as mock_cls:
-            mock_session = MagicMock()
-            mock_session.get.return_value = bad_ctx
-            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-
+        mock_session = MagicMock()
+        mock_session.get.return_value = bad_ctx
+        with _patch_session_scope(mock_session):
             result = await tidal_playlist_to_search_queries(TIDAL_PLAYLIST_URL)
             assert result is None
 
@@ -407,7 +336,7 @@ class TestTidalMixToSearchQueries:
         return resp
 
     @pytest.mark.asyncio
-    async def test_success_returns_search_queries_shared_session(self):
+    async def test_success_returns_search_queries(self):
         items = [
             {"title": "Song A", "artist": {"name": "Artist A"}},
             {"title": "Song B", "artist": {"name": "Artist B"}},
@@ -418,26 +347,7 @@ class TestTidalMixToSearchQueries:
         )
         mock_session = MagicMock()
         mock_session.get.return_value = ctx
-        with patch("bot.services.tidal.get_session", return_value=mock_session):
-            result = await tidal_mix_to_search_queries(TIDAL_MIX_URL)
-            assert result == ["Artist A - Song A", "Artist B - Song B"]
-
-    @pytest.mark.asyncio
-    async def test_success_returns_search_queries(self):
-        items = [
-            {"title": "Song A", "artist": {"name": "Artist A"}},
-            {"title": "Song B", "artist": {"name": "Artist B"}},
-        ]
-        resp = self._make_json_resp(items)
-        ctx = MagicMock(
-            __aenter__=AsyncMock(return_value=resp), __aexit__=AsyncMock(return_value=None)
-        )
-        with patch("bot.services.tidal.aiohttp.ClientSession") as mock_cls:
-            mock_session = MagicMock()
-            mock_session.get.return_value = ctx
-            mock_cls.return_value.__aenter__ = AsyncMock(return_value=mock_session)
-            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-
+        with _patch_session_scope(mock_session):
             result = await tidal_mix_to_search_queries(TIDAL_MIX_URL)
             assert result == ["Artist A - Song A", "Artist B - Song B"]
 
@@ -448,11 +358,11 @@ class TestTidalMixToSearchQueries:
 
     @pytest.mark.asyncio
     async def test_client_error_returns_none(self):
-        with patch("bot.services.tidal.aiohttp.ClientSession") as mock_cls:
-            mock_cls.return_value.__aenter__ = AsyncMock(
-                side_effect=aiohttp.ClientError("connection failed")
-            )
-            mock_cls.return_value.__aexit__ = AsyncMock(return_value=None)
-
+        mock_session = MagicMock()
+        mock_session.get.return_value = MagicMock(
+            __aenter__=AsyncMock(side_effect=aiohttp.ClientError("connection failed")),
+            __aexit__=AsyncMock(return_value=None),
+        )
+        with _patch_session_scope(mock_session):
             result = await tidal_mix_to_search_queries(TIDAL_MIX_URL)
             assert result is None

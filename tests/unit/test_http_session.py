@@ -95,3 +95,19 @@ async def test_session_scope_temp_non_context_manager_closes_non_awaitable():
         async with session_scope() as active:
             assert active is temp
     temp.close.assert_called_once()
+
+
+@pytest.mark.asyncio
+async def test_session_scope_temp_context_manager_uses_async_with():
+    managed = MagicMock()
+    managed.__aenter__ = AsyncMock(return_value=managed)
+    managed.__aexit__ = AsyncMock(return_value=None)
+
+    with (
+        patch.object(http_session, "_session", None),
+        patch("bot.utils.http_session.create_session", return_value=managed),
+    ):
+        async with session_scope() as active:
+            assert active is managed
+    managed.__aenter__.assert_awaited_once()
+    managed.__aexit__.assert_awaited_once()

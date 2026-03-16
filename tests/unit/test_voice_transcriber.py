@@ -60,18 +60,13 @@ class TestTranscribe:
     async def test_fetch_failure_returns_none(self, vt):
         mock_resp = MagicMock()
         mock_resp.status = 404
-        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
-        mock_resp.__aexit__ = AsyncMock(return_value=None)
-        mock_s = MagicMock(get=MagicMock(return_value=mock_resp))
-        mock_s.__aenter__ = AsyncMock(return_value=mock_s)
-        mock_s.__aexit__ = AsyncMock(return_value=None)
-        with patch("bot.processors.voice_transcriber.get_session", return_value=None):
-            with patch(
-                "bot.utils.http_session.aiohttp.ClientSession",
-                return_value=mock_s,
-            ):
-                result = await vt.transcribe("https://example.com/voice.ogg", "voice.ogg")
-                assert result is None
+        mock_ctx = MagicMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_ctx.__aexit__ = AsyncMock(return_value=None)
+        mock_session = MagicMock(get=MagicMock(return_value=mock_ctx))
+        with patch("bot.processors.voice_transcriber.get_session", return_value=mock_session):
+            result = await vt.transcribe("https://example.com/voice.ogg", "voice.ogg")
+            assert result is None
 
     @pytest.mark.asyncio
     async def test_too_large_returns_none(self, vt):
@@ -79,59 +74,27 @@ class TestTranscribe:
         mock_resp = MagicMock()
         mock_resp.status = 200
         mock_resp.read = AsyncMock(return_value=large_data)
-        mock_resp.__aenter__ = AsyncMock(return_value=mock_resp)
-        mock_resp.__aexit__ = AsyncMock(return_value=None)
-        mock_s = MagicMock(get=MagicMock(return_value=mock_resp))
-        mock_s.__aenter__ = AsyncMock(return_value=mock_s)
-        mock_s.__aexit__ = AsyncMock(return_value=None)
-        with patch("bot.processors.voice_transcriber.get_session", return_value=None):
-            with patch(
-                "bot.utils.http_session.aiohttp.ClientSession",
-                return_value=mock_s,
-            ):
-                result = await vt.transcribe("https://example.com/voice.ogg", "voice.ogg")
-                assert result is None
+        mock_ctx = MagicMock()
+        mock_ctx.__aenter__ = AsyncMock(return_value=mock_resp)
+        mock_ctx.__aexit__ = AsyncMock(return_value=None)
+        mock_session = MagicMock(get=MagicMock(return_value=mock_ctx))
+        with patch("bot.processors.voice_transcriber.get_session", return_value=mock_session):
+            result = await vt.transcribe("https://example.com/voice.ogg", "voice.ogg")
+            assert result is None
 
     @pytest.mark.asyncio
     async def test_api_error_returns_none(self, vt):
         get_resp = MagicMock()
         get_resp.status = 200
         get_resp.read = AsyncMock(return_value=b"fake_audio")
-        get_resp.__aenter__ = AsyncMock(return_value=get_resp)
-        get_resp.__aexit__ = AsyncMock(return_value=None)
-
-        post_resp = MagicMock()
-        post_resp.status = 500
-        post_resp.text = AsyncMock(return_value="API error")
-        post_resp.read = AsyncMock(return_value=b"")
-        post_resp.__aenter__ = AsyncMock(return_value=post_resp)
-        post_resp.__aexit__ = AsyncMock(return_value=None)
-
-        mock_s = MagicMock()
-        mock_s.get.return_value = get_resp
-        mock_s.post.return_value = post_resp
-        mock_s.__aenter__ = AsyncMock(return_value=mock_s)
-        mock_s.__aexit__ = AsyncMock(return_value=None)
-        with patch("bot.processors.voice_transcriber.get_session", return_value=None):
-            with patch(
-                "bot.utils.http_session.aiohttp.ClientSession",
-                return_value=mock_s,
-            ):
-                result = await vt.transcribe("https://example.com/voice.ogg", "voice.ogg")
-                assert result is None
-
-    @pytest.mark.asyncio
-    async def test_transcribe_success_shared_session(self, vt):
-        get_resp = MagicMock()
-        get_resp.status = 200
-        get_resp.read = AsyncMock(return_value=b"fake_audio_data")
         get_ctx = MagicMock()
         get_ctx.__aenter__ = AsyncMock(return_value=get_resp)
         get_ctx.__aexit__ = AsyncMock(return_value=None)
 
         post_resp = MagicMock()
-        post_resp.status = 200
-        post_resp.read = AsyncMock(return_value=b"Hello world")
+        post_resp.status = 500
+        post_resp.text = AsyncMock(return_value="API error")
+        post_resp.read = AsyncMock(return_value=b"")
         post_ctx = MagicMock()
         post_ctx.__aenter__ = AsyncMock(return_value=post_resp)
         post_ctx.__aexit__ = AsyncMock(return_value=None)
@@ -139,10 +102,9 @@ class TestTranscribe:
         mock_session = MagicMock()
         mock_session.get.return_value = get_ctx
         mock_session.post.return_value = post_ctx
-
         with patch("bot.processors.voice_transcriber.get_session", return_value=mock_session):
             result = await vt.transcribe("https://example.com/voice.ogg", "voice.ogg")
-            assert result == "Hello world"
+            assert result is None
 
     @pytest.mark.asyncio
     async def test_transcribe_shared_session_post_error_returns_none(self, vt):
@@ -173,68 +135,54 @@ class TestTranscribe:
         get_resp = MagicMock()
         get_resp.status = 200
         get_resp.read = AsyncMock(return_value=b"fake_audio_data")
-        get_resp.__aenter__ = AsyncMock(return_value=get_resp)
-        get_resp.__aexit__ = AsyncMock(return_value=None)
+        get_ctx = MagicMock()
+        get_ctx.__aenter__ = AsyncMock(return_value=get_resp)
+        get_ctx.__aexit__ = AsyncMock(return_value=None)
 
         post_resp = MagicMock()
         post_resp.status = 200
         post_resp.read = AsyncMock(return_value=b"Hello world")
-        post_resp.__aenter__ = AsyncMock(return_value=post_resp)
-        post_resp.__aexit__ = AsyncMock(return_value=None)
+        post_ctx = MagicMock()
+        post_ctx.__aenter__ = AsyncMock(return_value=post_resp)
+        post_ctx.__aexit__ = AsyncMock(return_value=None)
 
-        mock_s = MagicMock()
-        mock_s.get.return_value = get_resp
-        mock_s.post.return_value = post_resp
-        mock_s.__aenter__ = AsyncMock(return_value=mock_s)
-        mock_s.__aexit__ = AsyncMock(return_value=None)
-        with patch("bot.processors.voice_transcriber.get_session", return_value=None):
-            with patch(
-                "bot.utils.http_session.aiohttp.ClientSession",
-                return_value=mock_s,
-            ):
-                result = await vt.transcribe("https://example.com/voice.ogg", "voice.ogg")
-                assert result == "Hello world"
+        mock_session = MagicMock()
+        mock_session.get.return_value = get_ctx
+        mock_session.post.return_value = post_ctx
+        with patch("bot.processors.voice_transcriber.get_session", return_value=mock_session):
+            result = await vt.transcribe("https://example.com/voice.ogg", "voice.ogg")
+            assert result == "Hello world"
 
     @pytest.mark.asyncio
     async def test_transcribe_empty_text_returns_none(self, vt):
         get_resp = MagicMock()
         get_resp.status = 200
         get_resp.read = AsyncMock(return_value=b"fake_audio")
-        get_resp.__aenter__ = AsyncMock(return_value=get_resp)
-        get_resp.__aexit__ = AsyncMock(return_value=None)
+        get_ctx = MagicMock()
+        get_ctx.__aenter__ = AsyncMock(return_value=get_resp)
+        get_ctx.__aexit__ = AsyncMock(return_value=None)
 
         post_resp = MagicMock()
         post_resp.status = 200
         post_resp.read = AsyncMock(return_value=b"   ")
-        post_resp.__aenter__ = AsyncMock(return_value=post_resp)
-        post_resp.__aexit__ = AsyncMock(return_value=None)
+        post_ctx = MagicMock()
+        post_ctx.__aenter__ = AsyncMock(return_value=post_resp)
+        post_ctx.__aexit__ = AsyncMock(return_value=None)
 
-        mock_s = MagicMock()
-        mock_s.get.return_value = get_resp
-        mock_s.post.return_value = post_resp
-        mock_s.__aenter__ = AsyncMock(return_value=mock_s)
-        mock_s.__aexit__ = AsyncMock(return_value=None)
-        with patch("bot.processors.voice_transcriber.get_session", return_value=None):
-            with patch(
-                "bot.utils.http_session.aiohttp.ClientSession",
-                return_value=mock_s,
-            ):
-                result = await vt.transcribe("https://example.com/voice.ogg", "voice.ogg")
-                assert result is None
+        mock_session = MagicMock()
+        mock_session.get.return_value = get_ctx
+        mock_session.post.return_value = post_ctx
+        with patch("bot.processors.voice_transcriber.get_session", return_value=mock_session):
+            result = await vt.transcribe("https://example.com/voice.ogg", "voice.ogg")
+            assert result is None
 
     @pytest.mark.asyncio
     async def test_transcribe_exception_returns_none(self, vt):
-        mock_s = MagicMock()
-        mock_s.get.side_effect = OSError("Connection refused")
-        mock_s.__aenter__ = AsyncMock(return_value=mock_s)
-        mock_s.__aexit__ = AsyncMock(return_value=None)
-        with patch("bot.processors.voice_transcriber.get_session", return_value=None):
-            with patch(
-                "bot.utils.http_session.aiohttp.ClientSession",
-                return_value=mock_s,
-            ):
-                result = await vt.transcribe("https://example.com/voice.ogg", "voice.ogg")
-                assert result is None
+        mock_session = MagicMock()
+        mock_session.get.side_effect = OSError("Connection refused")
+        with patch("bot.processors.voice_transcriber.get_session", return_value=mock_session):
+            result = await vt.transcribe("https://example.com/voice.ogg", "voice.ogg")
+            assert result is None
 
 
 class TestSupportedContentTypes:

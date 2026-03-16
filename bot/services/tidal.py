@@ -95,12 +95,8 @@ async def tidal_playlist_to_search_queries(url: str) -> list[str] | None:
     if not m:
         return None
     uuid = m.group(1)
-    try:
-        async with session_scope(timeout=TIMEOUT, session=get_session()) as session:
-            return await _fetch_tracks_from_api(session, f"playlists/{uuid}/tracks")
-    except aiohttp.ClientError as e:
-        logger.debug("Tidal playlist fetch failed for %s: %s", url, e)
-        return None
+    async with session_scope(timeout=TIMEOUT, session=get_session()) as session:
+        return await _fetch_tracks_from_api(session, f"playlists/{uuid}/tracks")
 
 
 async def tidal_mix_to_search_queries(url: str) -> list[str] | None:
@@ -108,12 +104,8 @@ async def tidal_mix_to_search_queries(url: str) -> list[str] | None:
     if not m:
         return None
     uuid = m.group(1)
-    try:
-        async with session_scope(timeout=TIMEOUT, session=get_session()) as session:
-            return await _fetch_tracks_from_api(session, f"mixes/{uuid}/tracks")
-    except aiohttp.ClientError as e:
-        logger.debug("Tidal mix fetch failed for %s: %s", url, e)
-        return None
+    async with session_scope(timeout=TIMEOUT, session=get_session()) as session:
+        return await _fetch_tracks_from_api(session, f"mixes/{uuid}/tracks")
 
 
 async def tidal_url_to_search_query(url: str) -> str | None:
