@@ -58,4 +58,4 @@ async def session_scope(
     finally:
         close_result = temp_session.close()
         if isawaitable(close_result):
-            await close_result
+            _ = await close_result

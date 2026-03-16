@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import bot
 import bot.utils.channel_config
 import config
 import database

@@ -56,7 +56,7 @@ async def test_handle_message_runs_independent_operations_concurrently():
     assert started == {"transcribe", "convert"}
 
     gate.set()
-    await task
+    _ = await task
 
 
 @pytest.mark.asyncio
@@ -96,7 +96,7 @@ async def test_handle_message_serializes_db_heavy_operations():
     await asyncio.sleep(0)
     await asyncio.sleep(0)
     gate.set()
-    await task
+    _ = await task
 
     assert max_db_heavy == 1
     handler._process_phrase_matching.assert_awaited_once_with(message)

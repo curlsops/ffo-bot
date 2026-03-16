@@ -274,7 +274,7 @@ class TestScheduledRefreshBranches:
             assert job["message"] is message
             assert job["channel"] is channel
             assert job["message_id"] == 777
-        await done_task
+        _ = await done_task
 
     @pytest.mark.asyncio
     async def test_schedule_embed_refresh_existing_job_without_new_targets(self, view, mock_bot):
@@ -298,7 +298,7 @@ class TestScheduledRefreshBranches:
             assert job["message"] is existing_message
             assert job["channel"] is existing_channel
             assert job["message_id"] == 555
-        await done_task
+        _ = await done_task
 
     @pytest.mark.asyncio
     async def test_run_refresh_job_returns_when_job_missing(self, view, mock_bot, monkeypatch):

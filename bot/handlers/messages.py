@@ -199,9 +199,9 @@ class MessageHandler(commands.Cog):
             async with run_semaphore:
                 if is_db_heavy:
                     async with db_heavy_semaphore:
-                        await operation
+                        _ = await operation
                 else:
-                    await operation
+                    _ = await operation
 
         await asyncio.gather(
             *(run_one(is_db_heavy, operation) for is_db_heavy, operation in operations)
