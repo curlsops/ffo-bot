@@ -40,8 +40,10 @@ class TestModerationUsernameChange:
         bot.notifier.notify_moderation.assert_awaited_once()
         call = bot.notifier.notify_moderation.call_args
         assert call.args[1] == "Discord Username Changed"
-        assert "OldName" in str(call.kwargs.get("extra", ""))
-        assert "NewName" in str(call.kwargs.get("extra", ""))
+        extra = call.kwargs.get("extra")
+        assert isinstance(extra, str)
+        assert "OldName" in extra
+        assert "NewName" in extra
 
     @pytest.mark.asyncio
     async def test_notifies_on_global_name_change(self, handler, bot):
@@ -49,7 +51,9 @@ class TestModerationUsernameChange:
         after = _member(name="Same", global_name="NewDisplay")
         await handler.on_member_update(before, after)
         bot.notifier.notify_moderation.assert_awaited_once()
-        assert "OldDisplay" in str(bot.notifier.notify_moderation.call_args.kwargs.get("extra", ""))
+        extra = bot.notifier.notify_moderation.call_args.kwargs.get("extra")
+        assert isinstance(extra, str)
+        assert "OldDisplay" in extra
 
 
 class TestModerationTimeout:
@@ -73,6 +77,38 @@ class TestModerationTimeout:
         bot.notifier.notify_moderation.assert_awaited_once()
         call = bot.notifier.notify_moderation.call_args
         assert "Member Timed Out" in call.args[1]
+
+    @pytest.mark.asyncio
+    async def test_reuses_member_update_audit_fetch_across_handlers(self, handler, bot):
+        before = _member()
+        after = _member()
+        after.communication_disabled_until = datetime(2025, 12, 31, 12, 0, tzinfo=timezone.utc)
+
+        call_count = 0
+
+        async def audit_iter():
+            entry = MagicMock()
+            entry.target = MagicMock()
+            entry.target.id = before.id
+            entry.user = MagicMock()
+            entry.user.id = 99
+            entry.reason = "Spam"
+            yield entry
+
+        def audit_logs(**kw):
+            nonlocal call_count
+            call_count += 1
+            return audit_iter()
+
+        before.guild.audit_logs = audit_logs
+        await handler._notify_timeout_change(before, after)
+
+        channel = MagicMock()
+        channel.name = "general"
+        await handler._notify_voice_mod_action(before.guild, before.id, "Server Muted", channel)
+
+        assert call_count == 1
+        assert bot.notifier.notify_moderation.await_count == 2
 
 
 async def _voice_audit_iter(target_id, moderator_id):
@@ -146,7 +182,9 @@ class TestModerationMessageDelete:
         bot.notifier.notify_moderation.assert_awaited_once()
         call = bot.notifier.notify_moderation.call_args
         assert call.args[1] == "Message Deleted"
-        assert "deleted text" in str(call.kwargs.get("extra", ""))
+        extra = call.kwargs.get("extra")
+        assert isinstance(extra, str)
+        assert "deleted text" in extra
 
     @pytest.mark.asyncio
     async def test_skips_message_delete_when_self_delete(self, handler, bot):
@@ -182,7 +220,9 @@ class TestModerationBulkDelete:
         bot.notifier.notify_moderation.assert_awaited_once()
         call = bot.notifier.notify_moderation.call_args
         assert "Bulk Message Delete" in call.args[1]
-        assert "3" in str(call.kwargs.get("extra", ""))
+        extra = call.kwargs.get("extra")
+        assert isinstance(extra, str)
+        assert "Count: 3 messages" in extra
 
 
 class TestModerationShouldNotify:

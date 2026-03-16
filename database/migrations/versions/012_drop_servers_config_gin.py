@@ -6,24 +6,21 @@ Create Date: 2026-03-16
 
 """
 
-from typing import Union
+from typing import Sequence, Union
 
 from alembic import op
 
 revision: str = "012_drop_servers_config_gin"
 down_revision: Union[str, None] = "011_quotebook_quote_idx"
-__all__ = [revision, down_revision]
+branch_labels: Union[str, Sequence[str], None] = None
+depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
-    op.drop_index("idx_servers_config", table_name="servers")
+    # Defensive IF EXISTS keeps upgrade resilient on drifted environments.
+    op.execute("DROP INDEX IF EXISTS idx_servers_config")
 
 
 def downgrade() -> None:
-    op.create_index(
-        "idx_servers_config",
-        "servers",
-        ["config"],
-        unique=False,
-        postgresql_using="gin",
-    )
+    # Recreate only when missing so downgrade is safe to re-run after partial failures.
+    op.execute("CREATE INDEX IF NOT EXISTS idx_servers_config ON servers USING gin (config)")
