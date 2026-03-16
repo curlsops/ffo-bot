@@ -119,7 +119,7 @@ class AdminGroup(app_commands.Group):
                 embed.add_field(name="By", value=f"<@{interaction.user.id}>", inline=True)
                 try:
                     await notify_ch.send(embed=embed)
-                except Exception:
+                except Exception:  # channel deleted or bot lacks permission
                     pass
 
         success = await self.cog.bot.notifier.set_notify_channel(

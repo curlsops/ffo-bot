@@ -261,6 +261,26 @@ class TestQuotebookNotifications:
         assert "approve" in embed.footer.text
 
 
+class TestWhitelistNotifications:
+    @pytest.mark.asyncio
+    async def test_notify_whitelist_add(self, notifier, bot):
+        channel = _setup_channel(bot)
+        await notifier.notify_whitelist(999, "Add", 111, username="Steve")
+        embed = channel.send.call_args[1]["embed"]
+        assert embed.title == "Whitelist"
+        assert "Add" in embed.description
+        fields = str(embed.fields)
+        assert "<@111>" in fields and "Steve" in fields
+
+    @pytest.mark.asyncio
+    async def test_notify_whitelist_channel_set(self, notifier, bot):
+        channel = _setup_channel(bot)
+        await notifier.notify_whitelist(999, "Channel Set", 111, channel_id=222)
+        embed = channel.send.call_args[1]["embed"]
+        assert "Channel Set" in embed.description
+        assert "<#222>" in str(embed.fields)
+
+
 class TestPermissionNotifications:
     @pytest.mark.asyncio
     async def test_notify_permission_changed_with_target_and_role(self, notifier, bot):

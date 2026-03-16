@@ -1,6 +1,5 @@
 import re
 
-# Imperial -> SI conversions
 LENGTH_SI = {"m": 1, "km": 1000, "cm": 0.01, "mm": 0.001}
 LENGTH_IMPERIAL = {
     "ft": 0.3048,
@@ -41,8 +40,6 @@ def _to_si_temp(f: float) -> str:
     return f"{c:.1f} °C"
 
 
-# Regex patterns: (pattern, unit_key, converter_func)
-# Match: 10 lb, 5.5 lbs, 10lb
 PATTERNS = [
     (
         re.compile(r"\b(\d+\.?\d*)\s*(lb|lbs|pound|pounds)\b", re.I),

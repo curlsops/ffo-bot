@@ -89,7 +89,6 @@ class PermissionChecker:
 
         role = None
 
-        # Check Discord role membership first (server-configured roles)
         if self.bot:
             from bot.utils.server_roles import get_server_role_ids
 
@@ -109,7 +108,6 @@ class PermissionChecker:
                             role = r
                             break
 
-        # Fall back to user_permissions (explicit grants)
         if role is None:
             try:
                 async with self.db_pool.acquire() as conn:

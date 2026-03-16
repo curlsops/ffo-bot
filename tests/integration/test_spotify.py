@@ -18,7 +18,6 @@ EXPECTED_FIRST_TRACKS = [
 @pytest.mark.slow
 @pytest.mark.asyncio
 async def test_spotify_playlist_fetches_real_tracks():
-    """Requires SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET. Skipped in CI without credentials."""
     cid = os.environ.get("SPOTIFY_CLIENT_ID")
     csec = os.environ.get("SPOTIFY_CLIENT_SECRET")
     if not cid or not csec:

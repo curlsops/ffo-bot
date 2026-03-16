@@ -28,6 +28,7 @@ OPERATION_CHOICES = [
     app_commands.Choice(name="Off", value="off"),
     app_commands.Choice(name="On", value="on"),
     app_commands.Choice(name="Remove", value="remove"),
+    app_commands.Choice(name="Set", value="set"),
     app_commands.Choice(name="Sync", value="sync"),
 ]
 
@@ -71,9 +72,9 @@ def _whitelist_command(cog: "WhitelistCommands"):
     )
     @app_commands.guild_only()
     @app_commands.describe(
-        operation="Add, ClearChannel, List, Off, On, Remove, Sync",
+        operation="Add, ClearChannel, List, Off, On, Remove, Set, Sync",
         username="Minecraft username (Add/Remove only)",
-        channel="Channel for IGN posts (admin; omit with ClearChannel to disable)",
+        channel="Channel for IGN posts (admin; required for Set, omit with ClearChannel to disable)",
     )
     @app_commands.choices(operation=OPERATION_CHOICES)
     @app_commands.autocomplete(username=_whitelist_username_autocomplete)
@@ -85,7 +86,13 @@ def _whitelist_command(cog: "WhitelistCommands"):
     ):
         await interaction.response.defer(ephemeral=True)
 
-        if channel is not None:
+        if channel is not None or (operation is not None and operation.value == "set"):
+            if channel is None:
+                await interaction.followup.send(
+                    "Channel required for Set (e.g. operation:Set channel:#whitelist).",
+                    ephemeral=True,
+                )
+                return
             if not await require_admin(interaction, "whitelist channel", cog.bot):
                 return
             await cog.bot._register_server(interaction.guild)
@@ -107,6 +114,13 @@ def _whitelist_command(cog: "WhitelistCommands"):
             if not success:
                 await interaction.followup.send("Failed to update whitelist channel.")
                 return
+            if cog.bot.notifier and cog.bot.settings.feature_notify_moderation:
+                await cog.bot.notifier.notify_whitelist(
+                    interaction.guild_id,
+                    "Channel Set",
+                    interaction.user.id,
+                    channel_id=new_channel_id,
+                )
             await interaction.followup.send(
                 f"Whitelist channel set to {channel.mention}. "
                 "Users should post only their Minecraft IGN (one per message)."
@@ -133,6 +147,12 @@ def _whitelist_command(cog: "WhitelistCommands"):
                 if not success:
                     await interaction.followup.send("Failed to update whitelist channel.")
                     return
+                if cog.bot.notifier and cog.bot.settings.feature_notify_moderation:
+                    await cog.bot.notifier.notify_whitelist(
+                        interaction.guild_id,
+                        "Channel Cleared",
+                        interaction.user.id,
+                    )
                 await interaction.followup.send("Whitelist channel disabled.")
                 return
 
@@ -162,7 +182,7 @@ def _whitelist_command(cog: "WhitelistCommands"):
             return
 
         await interaction.followup.send(
-            "Provide operation (Add, List, Off, On, Remove, Sync, ClearChannel) "
+            "Provide operation (Add, ClearChannel, List, Off, On, Remove, Set, Sync) "
             "or channel to set.",
             ephemeral=True,
         )
@@ -181,6 +201,11 @@ class WhitelistCommands(commands.Cog):
                 resp = await self.bot.minecraft_rcon.whitelist_on()
             else:
                 resp = await self.bot.minecraft_rcon.whitelist_off()
+            if self.bot.notifier and self.bot.settings.feature_notify_moderation:
+                action = "Enabled" if op == "on" else "Disabled"
+                await self.bot.notifier.notify_whitelist(
+                    interaction.guild_id, action, interaction.user.id
+                )
             await interaction.followup.send(f"Whitelist: {resp}", ephemeral=True)
         except MinecraftRCONError as e:
             logger.warning("RCON whitelist %s failed: %s", op, e)
@@ -215,6 +240,13 @@ class WhitelistCommands(commands.Cog):
                 minecraft_uuid=minecraft_uuid,
                 cache=self.bot.cache,
             )
+            if self.bot.notifier and self.bot.settings.feature_notify_moderation:
+                await self.bot.notifier.notify_whitelist(
+                    interaction.guild_id,
+                    "Add",
+                    interaction.user.id,
+                    username=valid,
+                )
             await interaction.followup.send(f"Whitelist: {resp}", ephemeral=True)
         except MinecraftRCONError as e:
             logger.warning("RCON whitelist add failed: %s", e)
@@ -290,6 +322,13 @@ class WhitelistCommands(commands.Cog):
             await remove_from_cache(
                 self.bot.db_pool, interaction.guild_id, valid, cache=self.bot.cache
             )
+            if self.bot.notifier and self.bot.settings.feature_notify_moderation:
+                await self.bot.notifier.notify_whitelist(
+                    interaction.guild_id,
+                    "Remove",
+                    interaction.user.id,
+                    username=valid,
+                )
             await interaction.followup.send(f"Whitelist: {resp}", ephemeral=True)
         except MinecraftRCONError as e:
             logger.warning("RCON whitelist remove failed: %s", e)

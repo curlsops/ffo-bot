@@ -28,7 +28,7 @@ class ModerationHandler(commands.Cog):
             try:
                 ban = await guild.fetch_ban(user)
                 reason = ban.reason or reason
-            except discord.NotFound:
+            except discord.NotFound:  # no ban record (race)
                 pass
             try:
                 async for entry in guild.audit_logs(limit=5, action=discord.AuditLogAction.ban):
@@ -196,6 +196,8 @@ class ModerationHandler(commands.Cog):
                     break
         except discord.Forbidden:  # no audit log permission
             pass
+        if moderator_id is None or moderator_id == target_id:
+            return
         channel_name = getattr(channel, "name", "?")
         extra = f"Channel: #{channel_name}"
         await self.bot.notifier.notify_moderation(
@@ -212,6 +214,8 @@ class ModerationHandler(commands.Cog):
                     and (datetime.now(timezone.utc) - entry.created_at).total_seconds() < 5
                 ):
                     moderator_id = entry.user.id if entry.user else None
+                    if moderator_id is None or moderator_id == member.id:
+                        return
                     channel_name = before.channel.name if before.channel else "?"
                     extra = f"From #{channel_name}"
                     await self.bot.notifier.notify_moderation(
@@ -243,15 +247,19 @@ class ModerationHandler(commands.Cog):
                         break
             except discord.Forbidden:  # no audit log permission
                 pass
+            if moderator_id is None:
+                return
+            author_id = message.author.id if message.author else 0
+            if moderator_id == author_id:
+                return
             content = (message.content or "(no text)")[:200]
             if message.attachments:
                 content += f" [+{len(message.attachments)} attachment(s)]"
             extra = f"Channel: <#{message.channel.id}>\nContent: {content}"
-            action = "Message Deleted" if moderator_id else "Message Deleted (self or unknown)"
             await self.bot.notifier.notify_moderation(
                 message.guild.id,
-                action,
-                message.author.id if message.author else 0,
+                "Message Deleted",
+                author_id,
                 moderator_id,
                 extra=extra,
             )

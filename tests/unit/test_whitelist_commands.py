@@ -10,6 +10,9 @@ from tests.helpers import assert_followup_contains, invoke, mock_db_pool, mock_i
 def _whitelist_bot():
     bot = MagicMock()
     bot.cache = None
+    bot.notifier = MagicMock()
+    bot.notifier.notify_whitelist = AsyncMock()
+    bot.settings = MagicMock(feature_notify_moderation=True)
     bot.permission_checker.check_role = AsyncMock(return_value=True)
     bot._register_server = AsyncMock()
     bot.minecraft_rcon = MagicMock()
@@ -139,6 +142,55 @@ class TestSetWhitelistChannel:
             channel=None,
         )
         assert_followup_contains(i, "Provide operation", case_sensitive=False)
+
+    @pytest.mark.asyncio
+    async def test_operation_set_without_channel(self):
+        bot = _whitelist_bot()
+        bot.db_pool, _ = mock_db_pool()
+        cog = WhitelistCommands(bot)
+        i = mock_interaction(user_id=2)
+        i.guild = MagicMock()
+        await invoke(
+            cog,
+            "whitelist_cmd",
+            None,
+            i,
+            operation=_op_choice("set"),
+            username=None,
+            channel=None,
+        )
+        assert_followup_contains(i, "Channel required", case_sensitive=False)
+
+    @pytest.mark.asyncio
+    async def test_operation_set_with_channel(self):
+        with (
+            patch(
+                "bot.commands.whitelist.get_whitelist_channel_id",
+                new_callable=AsyncMock,
+                return_value=None,
+            ),
+            patch(
+                "bot.commands.whitelist.set_whitelist_channel",
+                new_callable=AsyncMock,
+                return_value=True,
+            ),
+        ):
+            bot = _whitelist_bot()
+            bot.db_pool, _ = mock_db_pool()
+            cog = WhitelistCommands(bot)
+            i = mock_interaction(user_id=2)
+            i.guild = MagicMock()
+            channel = MagicMock(id=999)
+            await invoke(
+                cog,
+                "whitelist_cmd",
+                None,
+                i,
+                operation=_op_choice("set"),
+                username=None,
+                channel=channel,
+            )
+            assert_followup_contains(i, "set", case_sensitive=False)
 
     @pytest.mark.asyncio
     async def test_channel_cmd_same_as_current(self):

@@ -14,8 +14,6 @@ def minecraft_container():
     from testcontainers.core.container import DockerContainer
     from testcontainers.core.wait_strategies import LogMessageWaitStrategy
 
-    # itzg/minecraft-server: RCON enabled by default, rcon-cli available
-    # ONLINE_MODE=false: skip Mojang validation so any username works (avoids "that player does not exist")
     container = (
         DockerContainer("itzg/minecraft-server:latest")
         .with_env("EULA", "TRUE")
@@ -72,7 +70,6 @@ def test_rcon_whitelist_add_duplicate(minecraft_container):
     dup_resp = _rcon_exec(minecraft_container, f"whitelist add {user}")
     assert "already" in dup_resp.lower() or "whitelisted" in dup_resp.lower()
 
-    # Cleanup
     _rcon_exec(minecraft_container, f"whitelist remove {user}")
 
 

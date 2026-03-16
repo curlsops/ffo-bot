@@ -63,7 +63,7 @@ class CloseGiveawayThreadView(discord.ui.View):
 
         try:
             await interaction.response.defer(ephemeral=False)
-        except discord.NotFound:
+        except discord.NotFound:  # interaction expired
             return
         try:
             await thread.edit(locked=True, archived=True)
@@ -151,7 +151,7 @@ class GiveawayManager(commands.Cog):
                 g = dict(giveaway)
                 g["ended_at"] = now
                 await msg.edit(embed=self._build_ended_embed(g, winners, len(entries)), view=None)
-            except discord.NotFound:
+            except discord.NotFound:  # message already deleted
                 pass
 
             if winners:

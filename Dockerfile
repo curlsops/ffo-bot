@@ -5,7 +5,7 @@ FROM python:3.14-slim AS builder
 WORKDIR /build
 
 # Install build dependencies
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get upgrade -y && apt-get install -y \
     gcc \
     g++ \
     libpq-dev \
@@ -35,9 +35,8 @@ RUN useradd -m -u 1000 -s /bin/bash discord && \
 WORKDIR /app
 
 # Install runtime dependencies only
-RUN apt-get update && apt-get install -y \
+RUN apt-get update && apt-get upgrade -y && apt-get install -y \
     libpq5 \
-    curl \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*
 
@@ -68,7 +67,7 @@ EXPOSE 8080 8443
 
 # Health check
 HEALTHCHECK --interval=30s --timeout=10s --start-period=40s --retries=3 \
-  CMD curl -f http://localhost:8080/healthz || exit 1
+  CMD python -c "import urllib.request; urllib.request.urlopen('http://localhost:8080/healthz')" || exit 1
 
 # Run application with migrations
 ENTRYPOINT ["./entrypoint.sh"]

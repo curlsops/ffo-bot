@@ -11,6 +11,6 @@ def repair_servers_config(cfg) -> dict | None:
                     parsed = json.loads(item)
                     if isinstance(parsed, dict):
                         return parsed
-                except json.JSONDecodeError:
+                except json.JSONDecodeError:  # try next decode attempt
                     pass
     return None

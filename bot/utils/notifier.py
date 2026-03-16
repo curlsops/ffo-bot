@@ -254,6 +254,21 @@ class AdminNotifier:
             server_id, "Moderation", f"**{action}**", discord.Color.dark_red(), fields
         )
 
+    async def notify_whitelist(
+        self,
+        server_id: int,
+        action: str,
+        changed_by_id: int,
+        channel_id: int | None = None,
+        username: str | None = None,
+    ):
+        fields = [
+            ("By", f"<@{changed_by_id}>", True),
+            ("Channel", f"<#{channel_id}>" if channel_id else None, True),
+            ("Username", username, True),
+        ]
+        await self._notify(server_id, "Whitelist", f"**{action}**", discord.Color.blue(), fields)
+
     async def notify_faq_submission(
         self, server_id: int, question: str, submitter_id: int, submission_id: str
     ):
