@@ -42,6 +42,19 @@ class TestTidalTrackPattern:
 
 class TestTidalUrlToSearchQuery:
     @pytest.mark.asyncio
+    async def test_success_returns_title_shared_session(self):
+        html = f'<meta property="og:title" content="{TIDAL_TRACK_TITLE}">'
+        resp = _make_resp(200, html)
+        ctx = MagicMock(
+            __aenter__=AsyncMock(return_value=resp), __aexit__=AsyncMock(return_value=None)
+        )
+        mock_session = MagicMock()
+        mock_session.get.return_value = ctx
+        with patch("bot.services.tidal.get_session", return_value=mock_session):
+            result = await tidal_url_to_search_query(TIDAL_TRACK_URL)
+            assert result == TIDAL_TRACK_TITLE
+
+    @pytest.mark.asyncio
     async def test_success_returns_title(self):
         html = f'<meta property="og:title" content="{TIDAL_TRACK_TITLE}">'
         resp = _make_resp(200, html)
@@ -178,6 +191,25 @@ class TestTidalPlaylistToSearchQueries:
         resp.status = 200
         resp.json = AsyncMock(return_value={"items": items})
         return resp
+
+    @pytest.mark.asyncio
+    async def test_success_returns_search_queries_shared_session(self):
+        items = [
+            {"title": "Blood Wolf", "artist": {"name": "Dance Gavin Dance"}},
+            {"title": "Reborn", "artist": {"name": "Delta Heavy"}},
+        ]
+        resp = self._make_json_resp(items)
+        ctx = MagicMock(
+            __aenter__=AsyncMock(return_value=resp), __aexit__=AsyncMock(return_value=None)
+        )
+        mock_session = MagicMock()
+        mock_session.get.return_value = ctx
+        with patch("bot.services.tidal.get_session", return_value=mock_session):
+            result = await tidal_playlist_to_search_queries(TIDAL_PLAYLIST_URL)
+            assert result == [
+                "Dance Gavin Dance - Blood Wolf",
+                "Delta Heavy - Reborn",
+            ]
 
     @pytest.mark.asyncio
     async def test_success_returns_search_queries(self):
@@ -373,6 +405,22 @@ class TestTidalMixToSearchQueries:
         resp.status = 200
         resp.json = AsyncMock(return_value={"items": items})
         return resp
+
+    @pytest.mark.asyncio
+    async def test_success_returns_search_queries_shared_session(self):
+        items = [
+            {"title": "Song A", "artist": {"name": "Artist A"}},
+            {"title": "Song B", "artist": {"name": "Artist B"}},
+        ]
+        resp = self._make_json_resp(items)
+        ctx = MagicMock(
+            __aenter__=AsyncMock(return_value=resp), __aexit__=AsyncMock(return_value=None)
+        )
+        mock_session = MagicMock()
+        mock_session.get.return_value = ctx
+        with patch("bot.services.tidal.get_session", return_value=mock_session):
+            result = await tidal_mix_to_search_queries(TIDAL_MIX_URL)
+            assert result == ["Artist A - Song A", "Artist B - Song B"]
 
     @pytest.mark.asyncio
     async def test_success_returns_search_queries(self):

@@ -15,6 +15,7 @@ from bot.auth.permissions import PermissionChecker
 from bot.cache.memory import InMemoryCache
 from bot.processors.phrase_matcher import PhraseMatcher
 from bot.utils.health import HealthCheckServer
+from bot.utils.http_session import close_session, create_session, set_session
 from bot.utils.interaction import send_ephemeral
 from bot.utils.metrics import BotMetrics
 from bot.utils.notifier import AdminNotifier
@@ -127,6 +128,7 @@ class FFOBot(commands.Bot):
             default_ttl=self.settings.cache_default_ttl,
             max_memory_bytes=max_memory_bytes,
         )
+        set_session(create_session())
 
         self.phrase_matcher = PhraseMatcher(self.db_pool, self.cache)
 
@@ -271,13 +273,16 @@ class FFOBot(commands.Bot):
                 self.pool = None
 
         if getattr(self.settings, "sync_commands_on_boot", True):
-            await self._connection.http.bulk_upsert_global_commands(self.application_id, [])
+            clear_commands_on_boot = getattr(self.settings, "clear_commands_on_boot", True)
+            if clear_commands_on_boot:
+                await self._connection.http.bulk_upsert_global_commands(self.application_id, [])
             if self.guilds:
                 await asyncio.gather(*[self._register_server(g) for g in self.guilds])
             for guild in self.guilds:
-                await self._connection.http.bulk_upsert_guild_commands(
-                    self.application_id, guild.id, []
-                )
+                if clear_commands_on_boot:
+                    await self._connection.http.bulk_upsert_guild_commands(
+                        self.application_id, guild.id, []
+                    )
                 self.tree.copy_global_to(guild=guild)
                 await self.tree.sync(guild=guild)
             if self.guilds:
@@ -356,6 +361,7 @@ class FFOBot(commands.Bot):
 
         if self._health_server:
             await self._health_server.cleanup()
+        await close_session()
         if self.media_downloader:
             await self.media_downloader.close()  # type: ignore[attr-defined]
         if self.db_pool:

@@ -5,7 +5,7 @@ FROM python:3.14-slim AS builder
 WORKDIR /build
 
 # Install build dependencies
-RUN apt-get update && apt-get upgrade -y && apt-get install -y \
+RUN apt-get update && apt-get install -y \
     gcc \
     g++ \
     libpq-dev \
@@ -25,7 +25,7 @@ ENV FFO_BOT_VERSION=$FFO_BOT_VERSION
 
 LABEL org.opencontainers.image.source="${IMAGE_SOURCE}"
 LABEL org.opencontainers.image.description="FFO Discord Bot"
-LABEL org.opencontainers.image.licenses="MIT"
+LABEL org.opencontainers.image.licenses="CC-BY-NC-SA-4.0"
 
 # Create non-root user
 RUN useradd -m -u 1000 -s /bin/bash discord && \
@@ -35,7 +35,7 @@ RUN useradd -m -u 1000 -s /bin/bash discord && \
 WORKDIR /app
 
 # Install runtime dependencies only
-RUN apt-get update && apt-get upgrade -y && apt-get install -y \
+RUN apt-get update && apt-get install -y \
     libpq5 \
     ca-certificates \
     && rm -rf /var/lib/apt/lists/*

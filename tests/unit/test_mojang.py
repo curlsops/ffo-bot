@@ -46,6 +46,8 @@ class TestFormatUuid:
             ("069a79f444e94726a5befca90e38aaf5", "069a79f4-44e9-4726-a5be-fca90e38aaf5"),
             ("00000000000000000000000000000000", "00000000-0000-0000-0000-000000000000"),
             ("ffffffffffffffffffffffffffffffff", "ffffffff-ffff-ffff-ffff-ffffffffffff"),
+            ("aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", "aaaaaaaa-aaaa-aaaa-aaaa-aaaaaaaaaaaa"),
+            ("0123456789abcdef0123456789abcdef", "01234567-89ab-cdef-0123-456789abcdef"),
         ],
     )
     def test_format_uuid_variants(self, raw, expected):
@@ -53,6 +55,19 @@ class TestFormatUuid:
 
 
 class TestGetProfileFromMojang:
+    @pytest.mark.asyncio
+    async def test_200_success_uses_shared_session(self):
+        resp = make_response_mock(200, {"id": "069a79f444e94726a5befca90e38aaf5", "name": "Steve"})
+        ctx = MagicMock(
+            __aenter__=AsyncMock(return_value=resp), __aexit__=AsyncMock(return_value=None)
+        )
+        mock_session = MagicMock()
+        mock_session.get.return_value = ctx
+
+        with patch("bot.services.mojang.get_session", return_value=mock_session):
+            result = await _get_profile_from_mojang("Steve")
+            assert result == ("069a79f4-44e9-4726-a5be-fca90e38aaf5", "Steve")
+
     @pytest.mark.asyncio
     async def test_200_success(self):
         resp = make_response_mock(200, {"id": "069a79f444e94726a5befca90e38aaf5", "name": "Steve"})
@@ -193,6 +208,19 @@ class TestGetProfileFromMojang:
 
 
 class TestGetProfileFromNameMC:
+    @pytest.mark.asyncio
+    async def test_200_with_uuid_in_html_shared_session(self):
+        html = '<html><title>Steve | NameMC</title><div data-id="069a79f444e94726a5befca90e38aaf5"></div></html>'
+        resp = make_response_mock(200, text_data=html)
+        ctx = MagicMock(
+            __aenter__=AsyncMock(return_value=resp), __aexit__=AsyncMock(return_value=None)
+        )
+        mock_session = MagicMock()
+        mock_session.get.return_value = ctx
+        with patch("bot.services.mojang.get_session", return_value=mock_session):
+            result = await _get_profile_from_namemc("Steve")
+            assert result == ("069a79f4-44e9-4726-a5be-fca90e38aaf5", "Steve")
+
     @pytest.mark.asyncio
     async def test_200_with_uuid_in_html(self):
         html = '<html><title>Steve | NameMC</title><div data-id="069a79f444e94726a5befca90e38aaf5"></div></html>'
@@ -381,6 +409,26 @@ class TestUsernameExists:
 
 
 class TestBatchLookup:
+    @pytest.mark.asyncio
+    async def test_batch_lookup_200_success_shared_session(self):
+        resp = make_response_mock(
+            200,
+            json_data=[
+                {"id": "069a79f444e94726a5befca90e38aaf5", "name": "Steve"},
+                {"id": "11111111222233334444555555555555", "name": "Alex"},
+            ],
+        )
+        ctx = MagicMock(
+            __aenter__=AsyncMock(return_value=resp), __aexit__=AsyncMock(return_value=None)
+        )
+        mock_session = MagicMock()
+        mock_session.post.return_value = ctx
+        with patch("bot.services.mojang.get_session", return_value=mock_session):
+            result = await _batch_lookup(["Steve", "Alex"])
+            assert "steve" in result
+            assert "alex" in result
+            assert result["steve"][0] == "069a79f4-44e9-4726-a5be-fca90e38aaf5"
+
     @pytest.mark.asyncio
     async def test_batch_lookup_200_success(self):
         resp = make_response_mock(

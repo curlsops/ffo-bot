@@ -4,6 +4,11 @@ import aiohttp
 import discord
 from discord.ext import commands, tasks
 
+from bot.utils.http_session import get_session as _get_session
+from bot.utils.http_session import session_scope
+
+get_session = _get_session
+
 logger = logging.getLogger(__name__)
 
 DAD_JOKE_API = "https://icanhazdadjoke.com/"
@@ -25,9 +30,9 @@ class StatusRotator(commands.Cog):
     async def _fetch_joke(self):
         try:
             timeout = aiohttp.ClientTimeout(total=10)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session_scope(timeout=timeout, session=get_session()) as session:
                 async with session.get(
-                    DAD_JOKE_API, headers={"Accept": "application/json"}
+                    DAD_JOKE_API, headers={"Accept": "application/json"}, timeout=timeout
                 ) as resp:
                     if resp.status != 200:
                         return None

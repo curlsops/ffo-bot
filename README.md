@@ -32,6 +32,14 @@ kubectl apply -f examples/kubernetes/
 pip install -r requirements.txt && alembic upgrade head && python main.py
 ```
 
+Optional feature deps:
+
+```bash
+# Better anonymous name detection (FEATURE_ANONYMOUS_POST)
+pip install -r requirements-anonymous.txt
+python -m spacy download en_core_web_sm
+```
+
 ---
 
 ## Bot Permissions
@@ -87,7 +95,7 @@ https://discord.com/api/oauth2/authorize?client_id=YOUR_CLIENT_ID&permissions=27
 | `FEATURE_FAQ_SUBMISSIONS` | true | Allow users to submit FAQ questions |
 | `FEATURE_NOTIFY_MODERATION` | true | Notify on kicks, bans, nickname changes |
 | `FEATURE_NOTIFY_RATE_LIMIT` | false | Notify when users hit rate limit |
-| `FEATURE_ANONYMOUS_POST` | false | Enable anonymous post button with modal and anonymization (uses spaCy NER when available) |
+| `FEATURE_ANONYMOUS_POST` | false | Enable anonymous post button with modal and anonymization (regex fallback by default; spaCy NER when optional deps are installed) |
 | `INTERACTIONS_ENDPOINT_ENABLED` | false | Enable POST /interactions for Discord Interactions Endpoint URL (PING only) |
 | `FEATURE_MUSIC` | false | Enable Lavalink music commands |
 | `LAVALINK_HOST` | 127.0.0.1 | Lavalink server host |

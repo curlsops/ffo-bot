@@ -11,13 +11,13 @@ coverage:
   status:
     project:
       default:
-        target: 80%
+        target: 100%
         threshold: 2%
         informational: false
       unittests:
         flags:
           - unittests
-        target: 80%
+        target: 100%
         threshold: 2%
         informational: false
     patch:
@@ -36,7 +36,7 @@ component_management:
   default_rules:
     statuses:
       - type: project
-        target: 80%
+        target: 100%
   individual_components:
     - component_id: media_downloader
       name: Media Downloader

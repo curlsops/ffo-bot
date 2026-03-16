@@ -10,7 +10,7 @@ REM Check Python version
 echo Checking Python version...
 python --version
 if errorlevel 1 (
-    echo ❌ Python not found. Please install Python 3.11+
+    echo ❌ Python not found. Please install Python 3.12+
     exit /b 1
 )
 
@@ -28,8 +28,8 @@ call venv\Scripts\activate.bat
 REM Install dependencies
 echo Installing dependencies...
 python -m pip install --upgrade pip
-pip install -r requirements.txt
-pip install -r requirements-dev.txt
+python -m pip install -r requirements.txt
+python -m pip install -r requirements-dev.txt
 echo ✓ Dependencies installed
 
 REM Run linters
@@ -49,7 +49,7 @@ echo ✓ All linters passed
 REM Run tests (full suite including Docker RCON integration tests)
 echo.
 echo Running tests (full suite including Docker RCON)...
-pytest tests/ -v --cov=bot --cov=config --cov=database --cov-report=term --cov-report=html -m "slow or not slow"
+pytest tests/ -v --cov=bot --cov=config --cov=database --cov-report=term --cov-report=html --cov-fail-under=100 -m "slow or not slow"
 
 echo.
 echo ✓ All tests passed

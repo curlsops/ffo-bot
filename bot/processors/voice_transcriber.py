@@ -2,6 +2,11 @@ import logging
 
 import aiohttp
 
+from bot.utils.http_session import get_session as _get_session
+from bot.utils.http_session import session_scope
+
+get_session = _get_session
+
 logger = logging.getLogger(__name__)
 
 SUPPORTED_CONTENT_TYPES = {"audio/ogg", "audio/opus", "audio/webm", "audio/mpeg", "audio/wav"}
@@ -30,8 +35,8 @@ class VoiceTranscriber:
 
         try:
             timeout = aiohttp.ClientTimeout(total=30)
-            async with aiohttp.ClientSession(timeout=timeout) as session:
-                async with session.get(url) as resp:
+            async with session_scope(timeout=timeout, session=get_session()) as session:
+                async with session.get(url, timeout=timeout) as resp:
                     if resp.status != 200:
                         logger.warning("Voice fetch failed: %s", resp.status)
                         return None
@@ -41,12 +46,11 @@ class VoiceTranscriber:
                 logger.warning("Voice message too large for transcription")
                 return None
 
-            async with aiohttp.ClientSession(timeout=timeout) as session:
+            async with session_scope(timeout=timeout, session=get_session()) as session:
                 form = aiohttp.FormData()
                 form.add_field("file", data, filename=filename)
                 form.add_field("model", "whisper-1")
                 form.add_field("response_format", "text")
-
                 headers = {"Authorization": f"Bearer {self.api_key}"}
                 async with session.post(
                     "https://api.openai.com/v1/audio/transcriptions",

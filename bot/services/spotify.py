@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import logging
 import re
@@ -5,6 +6,11 @@ import time
 from urllib.parse import quote
 
 import aiohttp
+
+from bot.utils.http_session import get_session as _get_session
+from bot.utils.http_session import session_scope
+
+get_session = _get_session
 
 logger = logging.getLogger(__name__)
 
@@ -17,6 +23,7 @@ TIMEOUT = aiohttp.ClientTimeout(total=10)
 
 _SPOTIFY_TOKEN_CACHE: tuple[str, float] | None = None
 _SPOTIFY_TOKEN_TTL = 3500
+_SPOTIFY_TOKEN_LOCK = asyncio.Lock()
 
 SPOTIFY_TRACK_PATTERN = re.compile(
     r"https?://(?:open\.)?spotify\.com/track/([a-zA-Z0-9]+)",
@@ -39,7 +46,7 @@ async def spotify_url_to_search_query(url: str) -> str | None:
         return None
     oembed_url = f"{SPOTIFY_OEMBED}?url={quote(url, safe='')}"
     try:
-        async with aiohttp.ClientSession(timeout=TIMEOUT) as session:
+        async with session_scope(timeout=TIMEOUT, session=get_session()) as session:
             async with session.get(oembed_url) as resp:
                 if resp.status != 200:
                     return None
@@ -59,28 +66,32 @@ async def _get_spotify_token(client_id: str, client_secret: str) -> str | None:
     now = time.monotonic()
     if _SPOTIFY_TOKEN_CACHE and (now - _SPOTIFY_TOKEN_CACHE[1]) < _SPOTIFY_TOKEN_TTL:
         return _SPOTIFY_TOKEN_CACHE[0]
-    creds = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
-    try:
-        async with aiohttp.ClientSession(timeout=TIMEOUT) as session:
-            async with session.post(
-                SPOTIFY_TOKEN_URL,
-                headers={
-                    "Authorization": f"Basic {creds}",
-                    "Content-Type": "application/x-www-form-urlencoded",
-                },
-                data={"grant_type": "client_credentials"},
-            ) as resp:
-                if resp.status != 200:
-                    return None
-                data = await resp.json()
-    except aiohttp.ClientError as e:
-        logger.debug("Spotify token fetch failed: %s", e)
-        return None
-    token = data.get("access_token")
-    if not token or not isinstance(token, str):
-        return None
-    _SPOTIFY_TOKEN_CACHE = (token, now)
-    return str(token)
+    async with _SPOTIFY_TOKEN_LOCK:
+        now = time.monotonic()
+        if _SPOTIFY_TOKEN_CACHE and (now - _SPOTIFY_TOKEN_CACHE[1]) < _SPOTIFY_TOKEN_TTL:
+            return _SPOTIFY_TOKEN_CACHE[0]
+        creds = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
+        try:
+            async with session_scope(timeout=TIMEOUT, session=get_session()) as session:
+                async with session.post(
+                    SPOTIFY_TOKEN_URL,
+                    headers={
+                        "Authorization": f"Basic {creds}",
+                        "Content-Type": "application/x-www-form-urlencoded",
+                    },
+                    data={"grant_type": "client_credentials"},
+                ) as resp:
+                    if resp.status != 200:
+                        return None
+                    data = await resp.json()
+        except aiohttp.ClientError as e:
+            logger.debug("Spotify token fetch failed: %s", e)
+            return None
+        token = data.get("access_token")
+        if not token or not isinstance(token, str):
+            return None
+        _SPOTIFY_TOKEN_CACHE = (token, time.monotonic())
+        return str(token)
 
 
 def _track_to_search_query(item: dict) -> str | None:
@@ -111,38 +122,44 @@ async def spotify_playlist_to_search_queries(
     token = await _get_spotify_token(client_id, client_secret)
     if not token:
         return None
+    async with session_scope(timeout=TIMEOUT, session=get_session()) as session:
+        return await _spotify_playlist_fetch(session, playlist_id, token)
+
+
+async def _spotify_playlist_fetch(
+    session: aiohttp.ClientSession, playlist_id: str, token: str
+) -> list[str] | None:
     queries: list[str] = []
     offset = 0
     try:
-        async with aiohttp.ClientSession(timeout=TIMEOUT) as session:
-            while len(queries) < SPOTIFY_PLAYLIST_MAX_TRACKS:
-                api_url = (
-                    f"{SPOTIFY_API_BASE}/playlists/{playlist_id}/tracks"
-                    f"?limit={SPOTIFY_PLAYLIST_PAGE_SIZE}&offset={offset}"
-                )
-                async with session.get(
-                    api_url,
-                    headers={"Authorization": f"Bearer {token}"},
-                ) as resp:
-                    if resp.status == 401:
-                        global _SPOTIFY_TOKEN_CACHE
-                        _SPOTIFY_TOKEN_CACHE = None
-                    if resp.status != 200:
-                        return None
-                    data = await resp.json()
-                items = data.get("items") or []
-                if not items:
+        while len(queries) < SPOTIFY_PLAYLIST_MAX_TRACKS:
+            api_url = (
+                f"{SPOTIFY_API_BASE}/playlists/{playlist_id}/tracks"
+                f"?limit={SPOTIFY_PLAYLIST_PAGE_SIZE}&offset={offset}"
+            )
+            async with session.get(
+                api_url,
+                headers={"Authorization": f"Bearer {token}"},
+            ) as resp:
+                if resp.status == 401:
+                    global _SPOTIFY_TOKEN_CACHE
+                    _SPOTIFY_TOKEN_CACHE = None
+                if resp.status != 200:
+                    return None
+                data = await resp.json()
+            items = data.get("items") or []
+            if not items:
+                break
+            for item in items:
+                q = _track_to_search_query(item)
+                if q:
+                    queries.append(q)
+                if len(queries) >= SPOTIFY_PLAYLIST_MAX_TRACKS:
                     break
-                for item in items:
-                    q = _track_to_search_query(item)
-                    if q:
-                        queries.append(q)
-                    if len(queries) >= SPOTIFY_PLAYLIST_MAX_TRACKS:
-                        break
-                if len(items) < SPOTIFY_PLAYLIST_PAGE_SIZE:
-                    break
-                offset += SPOTIFY_PLAYLIST_PAGE_SIZE
+            if len(items) < SPOTIFY_PLAYLIST_PAGE_SIZE:
+                break
+            offset += SPOTIFY_PLAYLIST_PAGE_SIZE
     except aiohttp.ClientError as e:
-        logger.debug("Spotify playlist fetch failed for %s: %s", url, e)
+        logger.debug("Spotify playlist fetch failed: %s", e)
         return None
     return queries or None

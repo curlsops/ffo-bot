@@ -70,6 +70,13 @@ class TestStatusRotator:
 
 class TestFetchJoke:
     @pytest.mark.asyncio
+    async def test_success_shared_session(self, rotator):
+        resp = AsyncMock(status=200, json=AsyncMock(return_value={"joke": "Test joke"}))
+        session = mock_session(resp)
+        with patch("bot.tasks.status_rotator.get_session", return_value=session):
+            assert await rotator._fetch_joke() == "Test joke"
+
+    @pytest.mark.asyncio
     async def test_success(self, rotator):
         resp = AsyncMock(status=200, json=AsyncMock(return_value={"joke": "Test joke"}))
         with patch("aiohttp.ClientSession", return_value=mock_session(resp)):

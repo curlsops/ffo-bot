@@ -1,3 +1,4 @@
+import time
 from contextlib import contextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -91,6 +92,14 @@ class TestSpotifyTrackPattern:
 
 class TestSpotifyUrlToSearchQuery:
     @pytest.mark.asyncio
+    async def test_success_returns_title_shared_session(self):
+        resp = _make_json_resp(200, {"title": SPOTIFY_TRACK_TITLE})
+        session = _mock_session(None, resp)
+        with patch("bot.services.spotify.get_session", return_value=session):
+            result = await spotify_url_to_search_query(SPOTIFY_TRACK_URL)
+            assert result == SPOTIFY_TRACK_TITLE
+
+    @pytest.mark.asyncio
     async def test_success_returns_title(self):
         resp = _make_json_resp(200, {"title": SPOTIFY_TRACK_TITLE})
         session = _mock_session(None, resp)
@@ -174,6 +183,19 @@ class TestSpotifyPlaylistToSearchQueries:
         assert result is None
 
     @pytest.mark.asyncio
+    async def test_success_returns_search_queries_shared_session(self):
+        items = [
+            _track("Slave Knight Gael", ["Yuka Kitamura"]),
+            _track("Soul of Cinder", ["Yuka Kitamura"]),
+        ]
+        session = _mock_session(TOKEN_OK, _playlist_resp(items))
+        with patch("bot.services.spotify.get_session", return_value=session):
+            result = await spotify_playlist_to_search_queries(
+                "https://open.spotify.com/playlist/5bCeKZhm0Vrk4cOydmil2N", *CREDS
+            )
+        assert result == ["Yuka Kitamura - Slave Knight Gael", "Yuka Kitamura - Soul of Cinder"]
+
+    @pytest.mark.asyncio
     async def test_success_returns_search_queries(self):
         items = [
             _track("Slave Knight Gael", ["Yuka Kitamura"]),
@@ -217,6 +239,13 @@ class TestSpotifyPlaylistToSearchQueries:
             assert await spotify_playlist_to_search_queries(PLAYLIST_URL, *CREDS) is None
 
     @pytest.mark.asyncio
+    async def test_get_spotify_token_success_shared_session(self):
+        session = _mock_session(TOKEN_OK)
+        with patch("bot.services.spotify.get_session", return_value=session):
+            result = await _get_spotify_token(*CREDS)
+        assert result == "tok"
+
+    @pytest.mark.asyncio
     async def test_get_spotify_token_success_returns_token(self):
         session = _mock_session(TOKEN_OK)
         with _patch_client_session(session):
@@ -237,6 +266,23 @@ class TestSpotifyPlaylistToSearchQueries:
         with _patch_client_session(session):
             result = await _get_spotify_token(*CREDS)
         assert result is None
+
+    @pytest.mark.asyncio
+    async def test_get_spotify_token_returns_cache_inside_lock(self):
+        spotify_module._SPOTIFY_TOKEN_CACHE = None
+        token_before_lock = "prefilled"
+
+        class _LockThatPrefillsCache:
+            async def __aenter__(self):
+                spotify_module._SPOTIFY_TOKEN_CACHE = (token_before_lock, time.monotonic())
+
+            async def __aexit__(self, exc_type, exc, tb):
+                return None
+
+        with patch.object(spotify_module, "_SPOTIFY_TOKEN_LOCK", _LockThatPrefillsCache()):
+            result = await _get_spotify_token(*CREDS)
+
+        assert result == token_before_lock
 
     @pytest.mark.asyncio
     async def test_token_post_non_200_returns_none(self):
