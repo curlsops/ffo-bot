@@ -570,5 +570,3 @@ def downgrade() -> None:
     op.drop_table("command_permissions")
     op.drop_table("user_permissions")
     op.drop_table("servers")
-
-    op.execute('DROP EXTENSION IF EXISTS "uuid-ossp"')

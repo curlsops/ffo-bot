@@ -115,36 +115,20 @@ class DatabasePool:
             self._metrics.db_query_duration.labels(query_type=query_type).observe(duration)
 
     async def execute(self, query: str, *args, timeout: Optional[float] = None):
-        start = time.perf_counter()
-        try:
-            async with self.acquire() as conn:
-                return await conn.execute(query, *args, timeout=timeout)
-        finally:
-            self._record_duration(_query_type(query), time.perf_counter() - start)
+        async with self.acquire() as conn:
+            return await conn.execute(query, *args, timeout=timeout)
 
     async def fetch(self, query: str, *args, timeout: Optional[float] = None):
-        start = time.perf_counter()
-        try:
-            async with self.acquire() as conn:
-                return await conn.fetch(query, *args, timeout=timeout)
-        finally:
-            self._record_duration(_query_type(query), time.perf_counter() - start)
+        async with self.acquire() as conn:
+            return await conn.fetch(query, *args, timeout=timeout)
 
     async def fetchrow(self, query: str, *args, timeout: Optional[float] = None):
-        start = time.perf_counter()
-        try:
-            async with self.acquire() as conn:
-                return await conn.fetchrow(query, *args, timeout=timeout)
-        finally:
-            self._record_duration(_query_type(query), time.perf_counter() - start)
+        async with self.acquire() as conn:
+            return await conn.fetchrow(query, *args, timeout=timeout)
 
     async def fetchval(self, query: str, *args, timeout: Optional[float] = None):
-        start = time.perf_counter()
-        try:
-            async with self.acquire() as conn:
-                return await conn.fetchval(query, *args, timeout=timeout)
-        finally:
-            self._record_duration(_query_type(query), time.perf_counter() - start)
+        async with self.acquire() as conn:
+            return await conn.fetchval(query, *args, timeout=timeout)
 
     async def close(self):
         if self._pool:

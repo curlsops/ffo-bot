@@ -4,6 +4,8 @@ Revision ID: 010_servers_config_jsonb
 Revises: 009_anonymous_post_channels
 Create Date: 2026-03-10
 
+Note: 001_initial_schema already creates config as JSONB. This migration exists
+for upgrade paths from older revisions that may have used json type.
 """
 
 from typing import Union
