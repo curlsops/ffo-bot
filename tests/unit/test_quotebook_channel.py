@@ -131,8 +131,9 @@ async def test_set_quotebook_channel_with_id():
     result = await set_quotebook_channel(pool, 123, 999)
     assert result is True
     conn.execute.assert_called_once()
-    call_args = conn.execute.call_args[0]
-    assert 999 in call_args or "999" in str(call_args)
+    call_args = conn.execute.call_args
+    assert call_args.args[1] == {"quotebook_channel_id": 999}
+    assert call_args.args[2] == 123
 
 
 @pytest.mark.asyncio
@@ -143,8 +144,9 @@ async def test_set_quotebook_channel_clear():
     result = await set_quotebook_channel(pool, 123, None)
     assert result is True
     conn.execute.assert_called_once()
-    call_args = str(conn.execute.call_args)
-    assert "quotebook_channel_id" in call_args
+    call_args = conn.execute.call_args
+    assert call_args.args[1] == "quotebook_channel_id"
+    assert call_args.args[2] == 123
 
 
 @pytest.mark.asyncio

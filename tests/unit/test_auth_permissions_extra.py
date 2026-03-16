@@ -344,8 +344,9 @@ class TestLogPermissionDenial:
         with patch.object(perm_module.logger, "error") as mock_log:
             await checker._log_permission_denial(_ctx(command_name="x"), Role.SUPER_ADMIN)
             mock_log.assert_called_once()
-            assert mock_log.call_args[0][0] == "Failed to log permission denial: %s"
-            assert str(mock_log.call_args[0][1]) == "constraint violation"
+            assert mock_log.call_args.args[0] == "Failed to log permission denial: %s"
+            assert isinstance(mock_log.call_args.args[1], ValueError)
+            assert mock_log.call_args.args[1].args == ("constraint violation",)
 
     @pytest.mark.asyncio
     async def test_check_role_logs_denial_when_audit_fails(self, caplog):

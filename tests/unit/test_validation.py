@@ -3,115 +3,205 @@ import pytest
 from bot.utils.validation import InputValidator, ValidationError
 
 
-class TestValidateDiscordId:
-    @pytest.mark.parametrize(
-        "inp,expected",
-        [
-            ("123456789012345678", 123456789012345678),
-            (0, 0),
-            (str(2**63 - 1), 2**63 - 1),
-        ],
+def assert_raises_validation_error(callback, *args, **kwargs) -> str:
+    with pytest.raises(ValidationError) as exc_info:
+        callback(*args, **kwargs)
+    return str(exc_info.value)
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        (0, 0),
+        (1, 1),
+        (2**63 - 1, 2**63 - 1),
+        (2**63, 2**63),
+        (2**64, 2**64),
+        ("0", 0),
+        ("1", 1),
+        ("123456789012345678", 123456789012345678),
+    ],
+)
+def test_validate_discord_id_valid(value, expected):
+    assert InputValidator.validate_discord_id(value, "id") == expected
+
+
+@pytest.mark.parametrize("value", [-1, -100, 2**64 + 1, str(2**64 + 1)])
+def test_validate_discord_id_out_of_range(value):
+    assert "out of valid range" in assert_raises_validation_error(
+        InputValidator.validate_discord_id,
+        value,
+        "id",
     )
-    def test_valid(self, inp, expected):
-        assert InputValidator.validate_discord_id(inp, "user_id") == expected
 
-    @pytest.mark.parametrize(
-        "inp",
-        ["not_a_number", -1, 2**64 + 1, str(2**64 + 1), None, [], {}],
+
+@pytest.mark.parametrize("value", ["abc", "123.5", "12.5", "", None, [], {}])
+def test_validate_discord_id_invalid_integer(value):
+    assert "must be a valid integer" in assert_raises_validation_error(
+        InputValidator.validate_discord_id,
+        value,
+        "id",
     )
-    def test_invalid(self, inp):
-        with pytest.raises(ValidationError):
-            InputValidator.validate_discord_id(inp, "user_id")
 
 
-class TestValidateString:
-    def test_valid(self):
-        assert InputValidator.validate_string("test", "field", max_length=100) == "test"
-
-    def test_exactly_max_length(self):
-        assert len(InputValidator.validate_string("a" * 100, "field", max_length=100)) == 100
-
-    def test_exceeds_max_length(self):
-        with pytest.raises(ValidationError):
-            InputValidator.validate_string("a" * 1000, "field", max_length=100)
-
-    def test_not_string(self):
-        with pytest.raises(ValidationError):
-            InputValidator.validate_string(12345, "field", max_length=100)
-
-    def test_empty_not_allowed(self):
-        with pytest.raises(ValidationError):
-            InputValidator.validate_string("   ", "field", max_length=100, allow_empty=False)
-
-    def test_empty_allowed(self):
-        assert (
-            InputValidator.validate_string("   ", "field", max_length=100, allow_empty=True) == ""
-        )
-
-    @pytest.mark.parametrize("inp", ["a", "x" * 50, "normal text"])
-    def test_valid_various_lengths(self, inp):
-        assert InputValidator.validate_string(inp, "field", max_length=100) == inp
-
-    def test_strips_whitespace(self):
-        assert InputValidator.validate_string("  foo  ", "field", max_length=100) == "foo"
-
-
-class TestValidateCommandName:
-    @pytest.mark.parametrize("inp", ["reactbot_phrases", "my_command", "test123"])
-    def test_valid(self, inp):
-        assert InputValidator.validate_command_name(inp) == inp
-
-    @pytest.mark.parametrize("inp", ["reactbot-phrases!", "", "UPPERCASE", "with space"])
-    def test_invalid(self, inp):
-        with pytest.raises(ValidationError):
-            InputValidator.validate_command_name(inp)
-
-
-class TestValidatePhrasePattern:
-    @pytest.mark.parametrize(
-        "inp", [r"hello\s+world", r"\d{3}-\d{4}", r"[a-zA-Z]+@[a-zA-Z]+\.[a-zA-Z]+"]
+@pytest.mark.parametrize("field_name", ["user_id", "server_id", "channel_id", "my_field"])
+def test_validate_discord_id_includes_field_name(field_name):
+    message = assert_raises_validation_error(
+        InputValidator.validate_discord_id,
+        "not_number",
+        field_name,
     )
-    def test_valid(self, inp):
-        assert InputValidator.validate_phrase_pattern(inp) == inp
+    assert field_name in message
 
-    @pytest.mark.parametrize(
-        "inp,desc",
-        [
-            (r"[invalid", "bad_syntax"),
-            ("", "empty"),
-        ],
-        ids=["bad_syntax", "empty"],
+
+@pytest.mark.parametrize(
+    "value,max_length,expected",
+    [
+        ("a", 1, "a"),
+        ("ab", 2, "ab"),
+        ("hello", 100, "hello"),
+        ("x" * 50, 100, "x" * 50),
+        ("a" * 1000, 1000, "a" * 1000),
+        ("a" * 2000, 2000, "a" * 2000),
+        ("日本語", 100, "日本語"),
+        ("  foo  ", 100, "foo"),
+    ],
+)
+def test_validate_string_valid(value, max_length, expected):
+    assert InputValidator.validate_string(value, "field", max_length=max_length) == expected
+
+
+@pytest.mark.parametrize("max_length", [1, 5, 10, 50, 100, 500, 1000])
+def test_validate_string_accepts_exact_boundary(max_length):
+    value = "a" * max_length
+    assert InputValidator.validate_string(value, "field", max_length=max_length) == value
+
+
+@pytest.mark.parametrize("max_length", [1, 10, 100])
+def test_validate_string_rejects_over_max(max_length):
+    message = assert_raises_validation_error(
+        InputValidator.validate_string,
+        "a" * (max_length + 1),
+        "field",
+        max_length=max_length,
     )
-    def test_invalid(self, inp, desc):
-        with pytest.raises(ValidationError):
-            InputValidator.validate_phrase_pattern(inp)
-
-    def test_too_long(self):
-        with pytest.raises(ValidationError):
-            InputValidator.validate_phrase_pattern("a" * 1000)
+    assert "exceeds maximum length" in message
 
 
-class TestValidateEmoji:
-    @pytest.mark.parametrize("inp", ["👋", "🎉", "😀", "👍", "🔥", "<:custom:123456789>"])
-    def test_valid(self, inp):
-        assert InputValidator.validate_emoji(inp) == inp
-
-    @pytest.mark.parametrize("inp", ["   ", ""])
-    def test_invalid(self, inp):
-        with pytest.raises(ValidationError):
-            InputValidator.validate_emoji(inp)
-
-
-class TestSanitizeSqlParameter:
-    @pytest.mark.parametrize(
-        "inp,expected",
-        [
-            ("hello\x00world", "helloworld"),
-            ("test\x00value\x00", "testvalue"),
-            ("no_null", "no_null"),
-            ("", ""),
-            ("\x00\x00\x00", ""),
-        ],
+@pytest.mark.parametrize("value", [12345, 0, True, None, [], {}])
+def test_validate_string_rejects_non_string(value):
+    assert "my_field must be a string" in assert_raises_validation_error(
+        InputValidator.validate_string,
+        value,
+        "my_field",
+        max_length=10,
     )
-    def test_removes_null_bytes(self, inp, expected):
-        assert InputValidator.sanitize_sql_parameter(inp) == expected
+
+
+def test_validate_string_rejects_empty_when_not_allowed():
+    assert "cannot be empty" in assert_raises_validation_error(
+        InputValidator.validate_string,
+        "   ",
+        "field",
+        max_length=100,
+        allow_empty=False,
+    )
+
+
+def test_validate_string_allows_empty_when_configured():
+    assert InputValidator.validate_string("   ", "field", max_length=100, allow_empty=True) == ""
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "a",
+        "ab",
+        "a1",
+        "a_b",
+        "reactbot_phrases",
+        "my_command",
+        "test123",
+        "command_name",
+        "my_command_123",
+        "z" * 100,
+    ],
+)
+def test_validate_command_name_valid(value):
+    assert InputValidator.validate_command_name(value) == value
+
+
+@pytest.mark.parametrize(
+    "value",
+    [
+        "",
+        "A",
+        "UPPER",
+        "UPPERCASE",
+        "a-b",
+        "a b",
+        "with space",
+        "a!",
+        "a.b",
+        "a:b",
+        "a\nb",
+    ],
+)
+def test_validate_command_name_invalid(value):
+    assert_raises_validation_error(InputValidator.validate_command_name, value)
+
+
+@pytest.mark.parametrize(
+    "pattern",
+    [
+        ".",
+        "a",
+        r"\d",
+        r"\w+",
+        r"\s",
+        r"\b",
+        r"^$",
+        r"^test$",
+        r"[a-z]",
+        r"(a|b)",
+        r"\b(hello|world)\b",
+        r"hello\s+world",
+        r"\d{3}-\d{4}",
+        r"[a-zA-Z]+@[a-zA-Z]+\.[a-zA-Z]+",
+    ],
+)
+def test_validate_phrase_pattern_valid(pattern):
+    assert InputValidator.validate_phrase_pattern(pattern) == pattern
+
+
+@pytest.mark.parametrize("pattern", [r"[invalid", r"[", r"(?", r"*", r"(?P<>", "", "a" * 1000])
+def test_validate_phrase_pattern_invalid(pattern):
+    assert_raises_validation_error(InputValidator.validate_phrase_pattern, pattern)
+
+
+@pytest.mark.parametrize("value", ["👋", "🎉", "😀", "👍", "🔥", "<:custom:123456789>"])
+def test_validate_emoji_valid(value):
+    assert InputValidator.validate_emoji(value) == value
+
+
+@pytest.mark.parametrize("value", ["", "   ", "x" * 256])
+def test_validate_emoji_invalid(value):
+    assert_raises_validation_error(InputValidator.validate_emoji, value)
+
+
+@pytest.mark.parametrize(
+    "value,expected",
+    [
+        ("a", "a"),
+        ("", ""),
+        ("hello", "hello"),
+        ("hello\x00world", "helloworld"),
+        ("test\x00value\x00", "testvalue"),
+        ("\x00\x00\x00", ""),
+        ("a\x00b", "ab"),
+        ("\x00a\x00b\x00", "ab"),
+        ("a\x00b\x00c", "abc"),
+    ],
+)
+def test_sanitize_sql_parameter(value, expected):
+    assert InputValidator.sanitize_sql_parameter(value) == expected
