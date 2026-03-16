@@ -1,15 +1,13 @@
 import logging
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING
 
-from bot.utils.config_repair import repair_servers_config
-from config.constants import Constants, Role
+from bot.utils.server_config import get_servers_config, invalidate_servers_config
+from config.constants import Role
 
 if TYPE_CHECKING:
     from bot.cache.memory import InMemoryCache
 
 logger = logging.getLogger(__name__)
-
-CACHE_KEY = "server_roles:{server_id}"
 
 ROLE_KEYS = {
     Role.SUPER_ADMIN: "super_admin_role_id",
@@ -26,7 +24,7 @@ def _extract_role_ids_from_config(cfg) -> dict[Role, int]:
         if val := cfg.get(key):
             try:
                 result[role] = int(val)
-            except (TypeError, ValueError):  # skip invalid role ID
+            except (TypeError, ValueError):
                 pass
     return result
 
@@ -34,23 +32,8 @@ def _extract_role_ids_from_config(cfg) -> dict[Role, int]:
 async def get_server_role_ids(
     db_pool, server_id: int, cache: "InMemoryCache | None" = None
 ) -> dict[Role, int]:
-    cache_key = CACHE_KEY.format(server_id=server_id)
-    if cache:
-        cached = cache.get(cache_key)
-        if cached is not None:
-            return cast(dict[Role, int], cached)
-    try:
-        async with db_pool.acquire() as conn:
-            row = await conn.fetchrow("SELECT config FROM servers WHERE server_id = $1", server_id)
-        cfg = row["config"] if row else None
-        repaired = repair_servers_config(cfg) if cfg is not None else None
-        result = _extract_role_ids_from_config(repaired) if repaired else {}
-        if cache:
-            cache.set(cache_key, result, ttl=Constants.CACHE_TTL)
-        return result
-    except Exception as e:
-        logger.warning("Failed to get server role config: %s", e)
-        return {}
+    cfg = await get_servers_config(db_pool, server_id, cache)
+    return _extract_role_ids_from_config(cfg)
 
 
 async def set_server_role(
@@ -87,8 +70,7 @@ async def set_server_role(
                     key,
                     server_id,
                 )
-        if cache:
-            cache.delete(CACHE_KEY.format(server_id=server_id))
+        invalidate_servers_config(cache, server_id)
         return True
     except Exception:
         logger.exception("Failed to set server role %s", role.value)

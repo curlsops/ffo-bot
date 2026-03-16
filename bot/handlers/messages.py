@@ -1,9 +1,14 @@
+import asyncio
 import logging
+from typing import cast
 
 import discord
 from discord.ext import commands
 
 from bot.utils.pagination import truncate_for_discord
+from bot.utils.server_config import get_servers_config
+from bot.utils.user_preferences import OPT_OUT_CACHE_KEY
+from config.constants import Constants
 
 logger = logging.getLogger(__name__)
 
@@ -76,6 +81,7 @@ class MessageHandler(commands.Cog):
                 except discord.HTTPException as e:
                     logger.warning("Failed to remove reaction %s: %s", emoji, e)
 
+            logged: list[tuple[int, int, int, int, str, str]] = []
             for emoji in to_add:
                 try:
                     await msg.add_reaction(emoji)
@@ -86,16 +92,20 @@ class MessageHandler(commands.Cog):
                                     server_id=str(message.guild.id),
                                     phrase_id=phrase_id,
                                 ).inc()
-                            await self._log_phrase_match(
-                                message.guild.id,
-                                message.id,
-                                message.channel.id,
-                                message.author.id,
-                                phrase_id,
-                                emoji,
+                            logged.append(
+                                (
+                                    message.guild.id,
+                                    message.id,
+                                    message.channel.id,
+                                    message.author.id,
+                                    phrase_id,
+                                    emoji,
+                                )
                             )
                 except discord.HTTPException as e:
                     logger.warning("Failed to add reaction %s: %s", emoji, e)
+            if logged:
+                await self._log_phrase_matches_batch(logged)
         except Exception as e:
             logger.error("Phrase matching edit error: %s", e, exc_info=True)
             if self.bot.metrics:
@@ -154,6 +164,7 @@ class MessageHandler(commands.Cog):
     async def _process_phrase_matching(self, message: discord.Message):
         try:
             matches = await self.bot.phrase_matcher.match_phrases(message.content, message.guild.id)
+            logged: list[tuple[int, int, int, int, str, str]] = []
             for phrase_id, emoji in matches:
                 try:
                     await message.add_reaction(emoji)
@@ -161,16 +172,20 @@ class MessageHandler(commands.Cog):
                         self.bot.metrics.phrase_matches.labels(
                             server_id=str(message.guild.id), phrase_id=phrase_id
                         ).inc()
-                    await self._log_phrase_match(
-                        message.guild.id,
-                        message.id,
-                        message.channel.id,
-                        message.author.id,
-                        phrase_id,
-                        emoji,
+                    logged.append(
+                        (
+                            message.guild.id,
+                            message.id,
+                            message.channel.id,
+                            message.author.id,
+                            phrase_id,
+                            emoji,
+                        )
                     )
                 except discord.HTTPException as e:
                     logger.warning("Failed to add reaction %s: %s", emoji, e)
+            if logged:
+                await self._log_phrase_matches_batch(logged)
         except Exception as e:
             logger.error("Phrase matching error: %s", e, exc_info=True)
             if self.bot.metrics:
@@ -201,32 +216,49 @@ class MessageHandler(commands.Cog):
             if self.bot.metrics:
                 self.bot.metrics.errors_total.labels(error_type="media_download").inc()
 
-    async def _log_phrase_match(
+    async def _log_phrase_matches_batch(
         self,
-        server_id: int,
-        message_id: int,
-        channel_id: int,
-        user_id: int,
-        phrase_id: str,
-        emoji: str,
+        rows: list[tuple[int, int, int, int, str, str]],
     ):
+        if not rows:
+            return
         try:
+            seen_msg: dict[int, tuple[int, int, int, int, str, str]] = {}
+            for server_id, message_id, channel_id, user_id, phrase_id, emoji in rows:
+                if message_id not in seen_msg:
+                    seen_msg[message_id] = (
+                        server_id,
+                        message_id,
+                        channel_id,
+                        user_id,
+                        phrase_id,
+                        emoji,
+                    )
+            phrase_ids = [r[4] for r in rows]
             async with self.bot.db_pool.acquire() as conn:
-                await conn.execute(
-                    "INSERT INTO message_metadata (server_id, message_id, channel_id, user_id, phrase_matched, reaction_added) VALUES ($1, $2, $3, $4, $5, $6) ON CONFLICT (message_id) DO NOTHING",
-                    server_id,
-                    message_id,
-                    channel_id,
-                    user_id,
-                    phrase_id,
-                    emoji,
+                await conn.executemany(
+                    """
+                    INSERT INTO message_metadata (server_id, message_id, channel_id, user_id, phrase_matched, reaction_added)
+                    VALUES ($1, $2, $3, $4, $5, $6)
+                    ON CONFLICT (message_id) DO NOTHING
+                    """,
+                    list(seen_msg.values()),
                 )
                 await conn.execute(
-                    "UPDATE phrase_reactions SET match_count = match_count + 1, last_matched_at = NOW() WHERE id = $1",
-                    phrase_id,
+                    """
+                    UPDATE phrase_reactions pr
+                    SET match_count = match_count + sub.cnt, last_matched_at = NOW()
+                    FROM (
+                        SELECT id, COUNT(*)::int AS cnt
+                        FROM unnest($1::text[]) AS id
+                        GROUP BY id
+                    ) sub
+                    WHERE pr.id = sub.id
+                    """,
+                    phrase_ids,
                 )
         except Exception as e:
-            logger.error("Failed to log phrase match: %s", e)
+            logger.error("Failed to log phrase matches: %s", e)
 
     async def _convert_units(self, message: discord.Message):
         from bot.processors.unit_converter import detect_and_convert
@@ -247,50 +279,53 @@ class MessageHandler(commands.Cog):
         vt = getattr(self.bot, "voice_transcriber", None)
         if not vt:
             return
-        for att in message.attachments:
-            if not vt.is_voice_attachment(att.filename, att.content_type):
-                continue
-            try:
-                text = await vt.transcribe(att.url, att.filename)
-                if text:
-                    embed = discord.Embed(
-                        description=truncate_for_discord(text),
-                        color=discord.Color.blue(),
-                    )
-                    embed.set_author(
-                        name=f"Voice message from {message.author.display_name}",
-                        icon_url=message.author.display_avatar.url,
-                    )
-                    embed.set_footer(text="Transcribed automatically")
-                    await message.reply(embed=embed)
-            except Exception as e:
-                logger.error("Voice transcription error: %s", e, exc_info=True)
+        atts = [
+            att
+            for att in message.attachments
+            if vt.is_voice_attachment(att.filename, att.content_type)
+        ]
+        if not atts:
+            return
+        results = await asyncio.gather(
+            *[vt.transcribe(att.url, att.filename) for att in atts],
+            return_exceptions=True,
+        )
+        for att, result in zip(atts, results):
+            if isinstance(result, Exception):
+                logger.error("Voice transcription error: %s", result, exc_info=True)
+            elif result:
+                embed = discord.Embed(
+                    description=truncate_for_discord(cast(str, result)),
+                    color=discord.Color.blue(),
+                )
+                embed.set_author(
+                    name=f"Voice message from {message.author.display_name}",
+                    icon_url=message.author.display_avatar.url,
+                )
+                embed.set_footer(text="Transcribed automatically")
+                await message.reply(embed=embed)
 
     async def _is_monitored_channel(self, server_id: int, channel_id: int) -> bool:
-        try:
-            async with self.bot.db_pool.acquire() as conn:
-                config = await conn.fetchval(
-                    "SELECT config FROM servers WHERE server_id = $1", server_id
-                )
-            return (
-                config
-                and "monitored_channels" in config
-                and str(channel_id) in config["monitored_channels"]
-            )
-        except Exception:
-            return False
+        cfg = await get_servers_config(self.bot.db_pool, server_id, self.bot.cache)
+        return bool(cfg.get("monitored_channels") and str(channel_id) in cfg["monitored_channels"])
 
     async def _check_user_opt_out(self, server_id: int, user_id: int) -> bool:
+        cache_key = OPT_OUT_CACHE_KEY.format(server_id=server_id, user_id=user_id)
+        if self.bot.cache:
+            cached = self.bot.cache.get(cache_key)
+            if cached is not None:
+                return bool(cached)
         try:
             async with self.bot.db_pool.acquire() as conn:
-                return (
-                    await conn.fetchval(
-                        "SELECT message_tracking_opt_out FROM user_preferences WHERE server_id = $1 AND user_id = $2",
-                        server_id,
-                        user_id,
-                    )
-                    or False
+                val = await conn.fetchval(
+                    "SELECT message_tracking_opt_out FROM user_preferences WHERE server_id = $1 AND user_id = $2",
+                    server_id,
+                    user_id,
                 )
+            result = bool(val)
+            if self.bot.cache:
+                self.bot.cache.set(cache_key, result, ttl=Constants.CACHE_TTL)
+            return result
         except Exception:
             return False
 

@@ -1,41 +1,18 @@
 import logging
 from typing import TYPE_CHECKING
 
-from bot.utils.config_repair import repair_servers_config
-from config.constants import Constants
+from bot.utils.server_config import get_server_config_channel, invalidate_servers_config
 
 if TYPE_CHECKING:
     from bot.cache.memory import InMemoryCache
 
 logger = logging.getLogger(__name__)
 
-CACHE_KEY = "quotebook_channel:{server_id}"
-
 
 async def get_quotebook_channel_id(
     db_pool, server_id: int, cache: "InMemoryCache | None" = None
 ) -> int | None:
-    cache_key = CACHE_KEY.format(server_id=server_id)
-    if cache:
-        cached = cache.get(cache_key)
-        if cached is not None:
-            return None if cached == -1 else cached
-    try:
-        async with db_pool.acquire() as conn:
-            row = await conn.fetchrow("SELECT config FROM servers WHERE server_id = $1", server_id)
-        cfg = repair_servers_config(row["config"]) if row and row["config"] is not None else None
-        if not cfg:
-            result = None
-        elif channel_id := cfg.get("quotebook_channel_id"):
-            result = int(channel_id)
-        else:
-            result = None
-        if cache:
-            cache.set(cache_key, result if result is not None else -1, ttl=Constants.CACHE_TTL)
-        return result
-    except Exception as e:
-        logger.warning("Failed to get quotebook channel: %s", e)
-        return None
+    return await get_server_config_channel(db_pool, server_id, "quotebook_channel_id", cache)
 
 
 async def set_quotebook_channel(
@@ -57,8 +34,7 @@ async def set_quotebook_channel(
                     "UPDATE servers SET config = config - 'quotebook_channel_id', updated_at = NOW() WHERE server_id = $1",
                     server_id,
                 )
-        if cache:
-            cache.delete(CACHE_KEY.format(server_id=server_id))
+        invalidate_servers_config(cache, server_id)
         return True
     except Exception:
         logger.exception("Failed to set quotebook channel")

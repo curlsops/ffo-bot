@@ -88,7 +88,7 @@ class PhraseMatcher:
         return matches
 
     async def _match_with_timeout(self, pattern: re.Pattern, text: str) -> re.Match | None:
-        return await asyncio.get_event_loop().run_in_executor(None, pattern.search, text)
+        return await asyncio.to_thread(pattern.search, text)
 
     def _normalize_message(self, content: str) -> str:
         return content.lower()

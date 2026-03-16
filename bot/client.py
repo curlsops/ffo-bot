@@ -269,8 +269,9 @@ class FFOBot(commands.Bot):
                 self.pool = None
 
         await self._connection.http.bulk_upsert_global_commands(self.application_id, [])
+        if self.guilds:
+            await asyncio.gather(*[self._register_server(g) for g in self.guilds])
         for guild in self.guilds:
-            await self._register_server(guild)
             await self._connection.http.bulk_upsert_guild_commands(
                 self.application_id, guild.id, []
             )

@@ -62,15 +62,15 @@ class TestGetNotifyChannelId:
     @pytest.mark.asyncio
     async def test_cache_hit_returns_value(self, notifier, bot):
         bot.cache = MagicMock()
-        bot.cache.get.return_value = 456
+        bot.cache.get.return_value = {"notify_channel_id": 456}
         result = await notifier.get_notify_channel_id(999)
         assert result == 456
         bot.db_pool.acquire.assert_not_called()
 
     @pytest.mark.asyncio
-    async def test_cache_hit_sentinel_returns_none(self, notifier, bot):
+    async def test_cache_hit_empty_returns_none(self, notifier, bot):
         bot.cache = MagicMock()
-        bot.cache.get.return_value = -1
+        bot.cache.get.return_value = {}
         result = await notifier.get_notify_channel_id(999)
         assert result is None
         bot.db_pool.acquire.assert_not_called()
@@ -83,17 +83,19 @@ class TestGetNotifyChannelId:
         bot.db_pool.acquire.return_value = _db_ctx(conn)
         result = await notifier.get_notify_channel_id(999)
         assert result == 789
-        bot.cache.set.assert_called_once_with("notify_channel:999", 789, ttl=86400)
+        bot.cache.set.assert_called_once_with(
+            "servers_config:999", {"notify_channel_id": 789}, ttl=86400
+        )
 
     @pytest.mark.asyncio
-    async def test_cache_miss_none_sets_sentinel(self, notifier, bot):
+    async def test_cache_miss_none_sets_empty(self, notifier, bot):
         bot.cache = MagicMock()
         bot.cache.get.return_value = None
         conn = _conn_with_config(None)
         bot.db_pool.acquire.return_value = _db_ctx(conn)
         result = await notifier.get_notify_channel_id(999)
         assert result is None
-        bot.cache.set.assert_called_once_with("notify_channel:999", -1, ttl=86400)
+        bot.cache.set.assert_called_once_with("servers_config:999", {}, ttl=86400)
 
 
 class TestGetNotifyChannel:
@@ -159,7 +161,7 @@ class TestSetNotifyChannel:
         bot.db_pool.acquire.return_value = _db_ctx(conn)
         bot.cache = MagicMock()
         assert await notifier.set_notify_channel(999, 123) is True
-        bot.cache.delete.assert_called_once_with("notify_channel:999")
+        bot.cache.delete.assert_called_once_with("servers_config:999")
 
 
 class TestSend:

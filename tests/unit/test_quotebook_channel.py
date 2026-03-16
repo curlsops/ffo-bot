@@ -67,31 +67,31 @@ async def test_get_quotebook_channel_id_no_channel_key():
 
 @pytest.mark.asyncio
 async def test_get_quotebook_channel_id_exception_returns_none(caplog):
-    caplog.set_level(logging.WARNING, logger="bot.utils.quotebook_channel")
+    caplog.set_level(logging.WARNING, logger="bot.utils.server_config")
     conn = AsyncMock()
     conn.fetchrow.side_effect = Exception("DB error")
     pool = make_pool(conn)
 
     result = await get_quotebook_channel_id(pool, 123)
     assert result is None
-    assert "Failed to get quotebook channel" in caplog.text
+    assert "Failed to get servers config" in caplog.text
 
 
 @pytest.mark.asyncio
 async def test_get_quotebook_channel_id_cache_hit_returns_value():
     pool = make_pool(AsyncMock())
     cache = MagicMock()
-    cache.get.return_value = 777
+    cache.get.return_value = {"quotebook_channel_id": 777}
     result = await get_quotebook_channel_id(pool, 123, cache=cache)
     assert result == 777
     pool.acquire.assert_not_called()
 
 
 @pytest.mark.asyncio
-async def test_get_quotebook_channel_id_cache_hit_sentinel_returns_none():
+async def test_get_quotebook_channel_id_cache_hit_empty_returns_none():
     pool = make_pool(AsyncMock())
     cache = MagicMock()
-    cache.get.return_value = -1
+    cache.get.return_value = {}
     result = await get_quotebook_channel_id(pool, 123, cache=cache)
     assert result is None
     pool.acquire.assert_not_called()
@@ -106,11 +106,13 @@ async def test_get_quotebook_channel_id_cache_miss_sets_cache():
     cache.get.return_value = None
     result = await get_quotebook_channel_id(pool, 123, cache=cache)
     assert result == 888
-    cache.set.assert_called_once_with("quotebook_channel:123", 888, ttl=86400)
+    cache.set.assert_called_once_with(
+        "servers_config:123", {"quotebook_channel_id": 888}, ttl=86400
+    )
 
 
 @pytest.mark.asyncio
-async def test_get_quotebook_channel_id_cache_miss_none_sets_sentinel():
+async def test_get_quotebook_channel_id_cache_miss_none_sets_empty():
     conn = AsyncMock()
     conn.fetchrow.return_value = None
     pool = make_pool(conn)
@@ -118,7 +120,7 @@ async def test_get_quotebook_channel_id_cache_miss_none_sets_sentinel():
     cache.get.return_value = None
     result = await get_quotebook_channel_id(pool, 123, cache=cache)
     assert result is None
-    cache.set.assert_called_once_with("quotebook_channel:123", -1, ttl=86400)
+    cache.set.assert_called_once_with("servers_config:123", {}, ttl=86400)
 
 
 @pytest.mark.asyncio
@@ -163,4 +165,4 @@ async def test_set_quotebook_channel_invalidates_cache():
     cache = MagicMock()
     result = await set_quotebook_channel(pool, 123, 999, cache=cache)
     assert result is True
-    cache.delete.assert_called_once_with("quotebook_channel:123")
+    cache.delete.assert_called_once_with("servers_config:123")

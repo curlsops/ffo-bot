@@ -69,7 +69,7 @@ async def test_set_server_role_add_invalidates_cache():
     cache = MagicMock()
     result = await set_server_role(pool, 123, Role.ADMIN, 999, cache=cache)
     assert result is True
-    cache.delete.assert_called_once_with("server_roles:123")
+    cache.delete.assert_called_once_with("servers_config:123")
 
 
 @pytest.mark.asyncio
@@ -86,13 +86,13 @@ async def test_set_server_role_clear_invalidates_cache():
     cache = MagicMock()
     result = await set_server_role(pool, 123, Role.MODERATOR, None, cache=cache)
     assert result is True
-    cache.delete.assert_called_once_with("server_roles:123")
+    cache.delete.assert_called_once_with("servers_config:123")
 
 
 @pytest.mark.asyncio
 async def test_get_server_role_ids_cache_hit():
     cache = MagicMock()
-    cache.get.return_value = {Role.ADMIN: 999}
+    cache.get.return_value = {"admin_role_id": 999}
     pool, conn = _make_pool(fetchrow_result={"config": {"admin_role_id": 111}})
     result = await get_server_role_ids(pool, 123, cache=cache)
     assert result == {Role.ADMIN: 999}

@@ -4,13 +4,11 @@ from collections.abc import Sequence
 
 import discord
 
-from bot.utils.config_repair import repair_servers_config
 from bot.utils.discord_helpers import get_or_fetch_channel
-from config.constants import Constants
+from bot.utils.server_config import get_server_config_channel, invalidate_servers_config
 
 logger = logging.getLogger(__name__)
 
-CACHE_KEY = "notify_channel:{server_id}"
 TB_MAX = 1016  # 1024 limit; "```\n"+tb+"\n```" adds 8
 
 
@@ -28,20 +26,9 @@ class AdminNotifier:
         self.bot = bot
 
     async def get_notify_channel_id(self, server_id: int) -> int | None:
-        cache_key = CACHE_KEY.format(server_id=server_id)
-        if self.bot.cache:
-            cached = self.bot.cache.get(cache_key)
-            if cached is not None:
-                return None if cached == -1 else cached
-        async with self.bot.db_pool.acquire() as conn:
-            row = await conn.fetchrow("SELECT config FROM servers WHERE server_id = $1", server_id)
-        cfg = repair_servers_config(row["config"]) if row and row["config"] is not None else None
-        result = int(cfg["notify_channel_id"]) if cfg and cfg.get("notify_channel_id") else None
-        if self.bot.cache:
-            self.bot.cache.set(
-                cache_key, result if result is not None else -1, ttl=Constants.CACHE_TTL
-            )
-        return result
+        return await get_server_config_channel(
+            self.bot.db_pool, server_id, "notify_channel_id", self.bot.cache
+        )
 
     async def get_notify_channel(self, server_id: int) -> discord.TextChannel | None:
         channel_id = await self.get_notify_channel_id(server_id)
@@ -66,8 +53,7 @@ class AdminNotifier:
                         "UPDATE servers SET config = config - 'notify_channel_id', updated_at = NOW() WHERE server_id = $1",
                         server_id,
                     )
-            if self.bot.cache:
-                self.bot.cache.delete(CACHE_KEY.format(server_id=server_id))
+            invalidate_servers_config(self.bot.cache, server_id)
             return True
         except Exception:
             logger.exception("Failed to set notify channel")
