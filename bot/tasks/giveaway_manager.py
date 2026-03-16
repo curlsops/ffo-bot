@@ -1,5 +1,4 @@
 import logging
-import random
 import re
 from datetime import datetime, timezone
 
@@ -9,7 +8,8 @@ from discord.ext import commands, tasks
 from bot.auth.permissions import PermissionContext
 from bot.commands.giveaway import CACHE_GIVEAWAY_MESSAGE_ID
 from bot.utils.db import TRANSIENT_DB_ERRORS
-from bot.utils.discord_helpers import get_or_fetch_channel
+from bot.utils.discord_helpers import discord_timestamp, get_or_fetch_channel
+from bot.utils.giveaway_selection import select_weighted_winners
 from bot.views.giveaway import GIVEAWAY_COLUMNS
 from config.constants import Role
 
@@ -217,24 +217,11 @@ class GiveawayManager(commands.Cog):
             logger.warning("Could not create prize thread for giveaway %s: %s", giveaway["id"], e)
 
     def _select_winners(self, entries: list, count: int) -> list:
-        if not entries:
-            return []
-        weighted = []
-        for e in entries:
-            weighted.extend([e["user_id"]] * e["entries"])
-        random.shuffle(weighted)
-        winners, seen = [], set()
-        for uid in weighted:
-            if uid not in seen:
-                winners.append(uid)
-                seen.add(uid)
-            if len(winners) >= count:
-                break
-        return winners
+        return select_weighted_winners(entries, count)
 
     def _build_ended_embed(self, giveaway, winners: list, entry_count: int) -> discord.Embed:
         ended_at = giveaway["ended_at"]
-        ts_full = f"<t:{int(ended_at.timestamp())}:F>"
+        ts_full = discord_timestamp(ended_at, "F")
 
         lines = [
             f"**{giveaway['prize']}**",

@@ -10,6 +10,7 @@ from discord.ext import commands
 
 from bot.auth.command_helpers import require_admin, send_error
 from bot.utils.autocomplete import cached_autocomplete
+from bot.utils.giveaway_selection import select_weighted_winners
 from bot.views.giveaway import GIVEAWAY_COLUMNS, GiveawayView, build_embed
 from config.constants import Constants
 
@@ -430,20 +431,7 @@ class GiveawayCommands(commands.Cog):
         return None
 
     def _select_winners(self, entries: list, count: int) -> list:
-        if not entries or count < 1:
-            return []
-        weighted = []
-        for e in entries:
-            weighted.extend([e["user_id"]] * e["entries"])
-        random.shuffle(weighted)
-        winners, seen = [], set()
-        for uid in weighted:
-            if uid not in seen:
-                winners.append(uid)
-                seen.add(uid)
-            if len(winners) >= count:
-                break
-        return winners
+        return select_weighted_winners(entries, count)
 
     def _parse_roles(self, roles_str: str | None) -> list:
         if not roles_str:

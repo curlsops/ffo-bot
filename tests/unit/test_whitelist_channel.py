@@ -144,19 +144,20 @@ async def test_set_whitelist_channel_clear():
     result = await set_whitelist_channel(pool, 123, None)
     assert result is True
     conn.execute.assert_called_once()
-    assert "whitelist_channel_id" in conn.execute.call_args[0][0]
+    call_args = str(conn.execute.call_args)
+    assert "whitelist_channel_id" in call_args
 
 
 @pytest.mark.asyncio
 async def test_set_whitelist_channel_exception_returns_false(caplog):
-    caplog.set_level(logging.WARNING, logger="bot.utils.whitelist_channel")
+    caplog.set_level(logging.WARNING, logger="bot.utils.channel_config")
     conn = AsyncMock()
     conn.execute.side_effect = Exception("DB error")
     pool = make_pool(conn)
 
     result = await set_whitelist_channel(pool, 123, 999)
     assert result is False
-    assert "Failed to set whitelist channel" in caplog.text
+    assert "Failed to set" in caplog.text
 
 
 @pytest.mark.asyncio

@@ -35,6 +35,11 @@ from bot.services.tidal import (
 )
 from bot.tasks.giveaway_manager import GiveawayManager
 from bot.tasks.status_rotator import StatusRotator
+from bot.utils.channel_config import (
+    get_quotebook_channel_id,
+    get_whitelist_channel_id,
+    set_whitelist_channel,
+)
 from bot.utils.collector import wait_for_message, wait_for_reaction
 from bot.utils.cooldown import CommandCooldown, with_cooldown
 from bot.utils.db import TRANSIENT_DB_ERRORS, cached_or_fallback
@@ -53,7 +58,6 @@ from bot.utils.whitelist_cache import (
     remove_from_cache,
     sync_from_rcon,
 )
-from bot.utils.whitelist_channel import get_whitelist_channel_id, set_whitelist_channel
 from config.settings import Settings
 from database.connection import DatabasePool
 

@@ -5,12 +5,21 @@ from typing import cast
 import discord
 from discord.ext import commands
 
+from bot.commands.whitelist import WHITELIST_APPROVE_EMOJI, WHITELIST_REJECT_EMOJI
+from bot.processors.media_downloader import MediaAttachment
+from bot.processors.unit_converter import detect_and_convert
+from bot.services.mojang import get_profile
 from bot.utils.pagination import truncate_for_discord
 from bot.utils.server_config import get_servers_config
 from bot.utils.user_preferences import OPT_OUT_CACHE_KEY
+from bot.utils.whitelist_channel import get_whitelist_channel_id
 from config.constants import Constants
 
 logger = logging.getLogger(__name__)
+
+MOJANG_CACHE_TTL = 300
+MOJANG_CACHE_KEY = "mojang:profile:{username}"
+_MOJANG_NOT_FOUND = object()
 
 
 class MessageHandler(commands.Cog):
@@ -22,6 +31,16 @@ class MessageHandler(commands.Cog):
         if message.author.bot or not message.guild or self.bot.is_shutting_down():
             return
 
+        task = asyncio.current_task()
+        if task and not task.done():
+            self.bot._message_handler_tasks.add(task)
+        try:
+            await self._handle_message(message)
+        finally:
+            if task:
+                self.bot._message_handler_tasks.discard(task)
+
+    async def _handle_message(self, message: discord.Message):
         if self.bot.metrics:
             self.bot.metrics.messages_processed.labels(server_id=str(message.guild.id)).inc()
 
@@ -112,10 +131,6 @@ class MessageHandler(commands.Cog):
                 self.bot.metrics.errors_total.labels(error_type="phrase_matching").inc()
 
     async def _process_whitelist_channel(self, message: discord.Message):
-        from bot.commands.whitelist import WHITELIST_APPROVE_EMOJI, WHITELIST_REJECT_EMOJI
-        from bot.services.mojang import get_profile
-        from bot.utils.whitelist_channel import get_whitelist_channel_id
-
         if not message.guild or not message.content:
             return
         channel_id = await get_whitelist_channel_id(
@@ -132,7 +147,7 @@ class MessageHandler(commands.Cog):
             return
 
         username = content
-        profile = await get_profile(username)
+        profile = await self._get_mojang_profile_cached(username)
         if profile:
             uuid_val, _ = profile
             try:
@@ -191,9 +206,20 @@ class MessageHandler(commands.Cog):
             if self.bot.metrics:
                 self.bot.metrics.errors_total.labels(error_type="phrase_matching").inc()
 
-    async def _download_media(self, message: discord.Message):
-        from bot.processors.media_downloader import MediaAttachment
+    async def _get_mojang_profile_cached(self, username: str):
+        key = MOJANG_CACHE_KEY.format(username=username.lower())
+        if self.bot.cache:
+            cached = self.bot.cache.get(key)
+            if cached is not None:
+                return None if cached is _MOJANG_NOT_FOUND else cached
+        profile = await get_profile(username)
+        if self.bot.cache:
+            self.bot.cache.set(
+                key, _MOJANG_NOT_FOUND if profile is None else profile, ttl=MOJANG_CACHE_TTL
+            )
+        return profile
 
+    async def _download_media(self, message: discord.Message):
         try:
             attachments = [
                 MediaAttachment(
@@ -261,8 +287,6 @@ class MessageHandler(commands.Cog):
             logger.error("Failed to log phrase matches: %s", e)
 
     async def _convert_units(self, message: discord.Message):
-        from bot.processors.unit_converter import detect_and_convert
-
         try:
             converted = detect_and_convert(message.content)
             if converted:
@@ -326,7 +350,10 @@ class MessageHandler(commands.Cog):
             if self.bot.cache:
                 self.bot.cache.set(cache_key, result, ttl=Constants.CACHE_TTL)
             return result
-        except Exception:
+        except Exception as e:
+            logger.debug(
+                "_check_user_opt_out failed server_id=%s user_id=%s: %s", server_id, user_id, e
+            )
             return False
 
 

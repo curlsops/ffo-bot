@@ -1,10 +1,10 @@
 import logging
 import uuid
-from datetime import datetime
 
 import discord
 
 from bot.utils.db import cached_or_fallback
+from bot.utils.discord_helpers import discord_timestamp
 from bot.utils.pagination import ListPaginatedView
 
 logger = logging.getLogger(__name__)
@@ -17,14 +17,10 @@ GIVEAWAY_COLUMNS = (
 )
 
 
-def _discord_timestamp(dt: datetime, fmt: str = "R") -> str:
-    return f"<t:{int(dt.timestamp())}:{fmt}>"
-
-
 def build_embed(giveaway, entry_count: int, ended: bool = False) -> discord.Embed:
     ends_at = giveaway.get("ended_at") or giveaway["ends_at"]
-    ts_rel = _discord_timestamp(ends_at, "R")
-    ts_full = _discord_timestamp(ends_at, "F")
+    ts_rel = discord_timestamp(ends_at, "R")
+    ts_full = discord_timestamp(ends_at, "F")
 
     lines = [
         f"**{giveaway['prize']}**",

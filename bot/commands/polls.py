@@ -8,6 +8,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from bot.auth.command_helpers import require_admin
+from bot.utils.discord_helpers import discord_timestamp
 
 logger = logging.getLogger(__name__)
 
@@ -22,10 +23,6 @@ async def _poll_duration_autocomplete(
     cur = current.lower()
     matches = [app_commands.Choice(name=d, value=d) for d in POLL_DURATIONS if cur in d]
     return matches if matches else [app_commands.Choice(name=d, value=d) for d in POLL_DURATIONS]
-
-
-def _discord_timestamp(dt: datetime, fmt: str = "R") -> str:
-    return f"<t:{int(dt.timestamp())}:{fmt}>"
 
 
 def _parse_duration(s: str) -> timedelta | None:
@@ -160,7 +157,7 @@ class PollCommands(commands.Cog):
                     color=discord.Color.blue(),
                     timestamp=ends_at,
                 )
-                embed.set_footer(text=f"Ends {_discord_timestamp(ends_at, 'R')}")
+                embed.set_footer(text=f"Ends {discord_timestamp(ends_at, 'R')}")
                 msg = await target.send(embed=embed)
                 for emoji in emojis:
                     await msg.add_reaction(emoji)

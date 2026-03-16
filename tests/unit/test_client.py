@@ -438,7 +438,7 @@ class TestFFOBotPersistentViews:
         bot.settings.feature_giveaways = True
         gid, mid = uuid.uuid4(), 12345
         conn = MagicMock()
-        conn.fetch = AsyncMock(return_value=[{"id": gid, "message_id": mid}])
+        conn.fetch = AsyncMock(return_value=[{"id": gid, "message_id": mid, "entry_count": 0}])
         conn.fetchval = AsyncMock(return_value=0)
         bot.db_pool = make_db_ctx(conn)
         with patch("bot.commands.giveaway.GiveawayView"):
@@ -485,9 +485,9 @@ class TestFFOBotPersistentViews:
 
         bot.settings.feature_giveaways = True
         rows = [
-            {"id": uuid.uuid4(), "message_id": 111},
-            {"id": uuid.uuid4(), "message_id": 222},
-            {"id": uuid.uuid4(), "message_id": 333},
+            {"id": uuid.uuid4(), "message_id": 111, "entry_count": 0},
+            {"id": uuid.uuid4(), "message_id": 222, "entry_count": 5},
+            {"id": uuid.uuid4(), "message_id": 333, "entry_count": 1},
         ]
         conn = MagicMock()
         conn.fetch = AsyncMock(return_value=rows)
@@ -544,6 +544,22 @@ class TestFFOBotOnReady:
             with patch.object(bot.tree, "sync", new_callable=AsyncMock):
                 await bot.on_ready()
 
+    @pytest.mark.asyncio
+    async def test_on_ready_skips_sync_when_disabled(self, bot):
+        from bot.client import FFOBot
+
+        bot.settings.sync_commands_on_boot = False
+        bot.metrics = MagicMock()
+        bot._connection = MagicMock()
+        bot._connection.user = MagicMock(id=123)
+        guilds = [MagicMock(id=111, name="G1")]
+
+        with patch.object(FFOBot, "guilds", new_callable=PropertyMock, return_value=guilds):
+            with patch.object(bot, "_register_server", new_callable=AsyncMock):
+                await bot.on_ready()
+        bot._connection.http.bulk_upsert_global_commands.assert_not_called()
+        bot._connection.http.bulk_upsert_guild_commands.assert_not_called()
+
 
 class TestFFOBotDrainQueue:
     @pytest.mark.asyncio
@@ -552,8 +568,8 @@ class TestFFOBotDrainQueue:
             await asyncio.sleep(0.001)
 
         task = asyncio.create_task(fake_on_message())
-        with patch("asyncio.all_tasks", return_value={task}):
-            await bot._drain_message_queue()
+        bot._message_handler_tasks.add(task)
+        await bot._drain_message_queue()
         assert task.done()
 
 

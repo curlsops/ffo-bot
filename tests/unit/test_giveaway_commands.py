@@ -8,11 +8,11 @@ import pytest
 from discord import app_commands
 
 from bot.commands.giveaway import GiveawayCommands, parse_duration
+from bot.utils.discord_helpers import discord_timestamp
 from bot.views.giveaway import (
     AlreadyJoinedView,
     EntriesPaginatedView,
     GiveawayView,
-    _discord_timestamp,
     build_embed,
 )
 
@@ -95,18 +95,18 @@ def _entries(n):
 class TestDiscordTimestamp:
     def test_default_format(self):
         dt = datetime(2025, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
-        out = _discord_timestamp(dt)
+        out = discord_timestamp(dt)
         assert out.startswith("<t:") and ":R>" in out
 
     def test_custom_format(self):
         dt = datetime(2025, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
-        out = _discord_timestamp(dt, "F")
+        out = discord_timestamp(dt, "F")
         assert ":F>" in out
 
     @pytest.mark.parametrize("fmt", ["t", "T", "d", "D", "f", "F", "R"])
     def test_formats(self, fmt):
         dt = datetime(2025, 1, 15, 12, 0, 0, tzinfo=timezone.utc)
-        out = _discord_timestamp(dt, fmt)
+        out = discord_timestamp(dt, fmt)
         assert f":{fmt}>" in out
 
 

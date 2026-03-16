@@ -1,5 +1,7 @@
 from __future__ import annotations
 
+from datetime import datetime
+
 import discord
 
 
@@ -13,3 +15,7 @@ async def get_or_fetch_channel(
         return await bot.fetch_channel(channel_id)
     except Exception:
         return None
+
+
+def discord_timestamp(dt: datetime, fmt: str = "R") -> str:
+    return f"<t:{int(dt.timestamp())}:{fmt}>"
