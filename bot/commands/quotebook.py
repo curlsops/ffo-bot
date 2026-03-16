@@ -109,6 +109,12 @@ def _rows_to_choices(
     return choices
 
 
+def _rows_to_choices_with_approved(
+    rows: list[dict], current: str
+) -> list[app_commands.Choice[str]]:
+    return _rows_to_choices(rows, current, include_approved=True)
+
+
 async def _quote_id_autocomplete(
     interaction: discord.Interaction, current: str
 ) -> list[app_commands.Choice[str]]:
@@ -117,7 +123,7 @@ async def _quote_id_autocomplete(
         current,
         CACHE_QUOTE_AUTOCOMPLETE,
         _fetch_quote_ids,
-        lambda rows, cur: _rows_to_choices(rows, cur, include_approved=True),
+        _rows_to_choices_with_approved,
         ttl=Constants.CACHE_TTL,
         log_prefix="Quote ID",
     )
@@ -131,7 +137,7 @@ async def _quote_id_approve_autocomplete(
         current,
         CACHE_QUOTE_APPROVE_AUTOCOMPLETE,
         _fetch_quote_approve_ids,
-        lambda rows, cur: _rows_to_choices(rows, cur),
+        _rows_to_choices,
         ttl=Constants.CACHE_TTL,
         log_prefix="Quote approve",
     )
