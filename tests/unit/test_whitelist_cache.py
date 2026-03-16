@@ -157,13 +157,15 @@ async def test_remove_from_cache_exception_logs(caplog):
 @pytest.mark.asyncio
 async def test_sync_from_rcon_success():
     conn = AsyncMock()
+    conn.executemany = AsyncMock()
     pool = make_pool(conn)
     rcon = AsyncMock()
     rcon.whitelist_list.return_value = "There are 2 whitelisted players: Alice, Bob"
 
     result = await sync_from_rcon(pool, 123, rcon)
     assert result is True
-    assert conn.execute.call_count >= 2
+    conn.execute.assert_awaited_once()
+    conn.executemany.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -217,6 +219,7 @@ async def test_sync_from_rcon_rcon_fails():
 @pytest.mark.asyncio
 async def test_sync_from_rcon_with_fetch_uuid():
     conn = AsyncMock()
+    conn.executemany = AsyncMock()
     pool = make_pool(conn)
     rcon = AsyncMock()
     rcon.whitelist_list.return_value = "There are 1 whitelisted player: Steve"
@@ -228,9 +231,9 @@ async def test_sync_from_rcon_with_fetch_uuid():
 
     result = await sync_from_rcon(pool, 123, rcon, fetch_uuid=fetch_uuid)
     assert result is True
-    assert conn.execute.call_count >= 2
-    insert_calls = [c for c in conn.execute.call_args_list if "INSERT" in str(c)]
-    assert any("069a79f4-44e9-4726-a5be-fca90e38aaf5" in str(c) for c in insert_calls)
+    conn.execute.assert_awaited_once()
+    conn.executemany.assert_awaited_once()
+    assert "069a79f4-44e9-4726-a5be-fca90e38aaf5" in str(conn.executemany.call_args)
 
 
 @pytest.mark.asyncio
@@ -256,6 +259,7 @@ async def test_sync_from_rcon_fetch_uuid_returns_none_and_raises(caplog):
 @pytest.mark.asyncio
 async def test_sync_from_rcon_with_batch_fetch():
     conn = AsyncMock()
+    conn.executemany = AsyncMock()
     pool = make_pool(conn)
     rcon = AsyncMock()
     rcon.whitelist_list.return_value = "There are 2 whitelisted players: Steve, Alex"
@@ -268,10 +272,11 @@ async def test_sync_from_rcon_with_batch_fetch():
 
     result = await sync_from_rcon(pool, 123, rcon, batch_fetch=batch_fetch)
     assert result is True
-    assert conn.execute.call_count >= 3
-    insert_calls = [c for c in conn.execute.call_args_list if "INSERT" in str(c)]
-    assert any("069a79f4-44e9-4726-a5be-fca90e38aaf5" in str(c) for c in insert_calls)
-    assert any("11111111-2222-3333-4444-555555555555" in str(c) for c in insert_calls)
+    conn.execute.assert_awaited_once()
+    conn.executemany.assert_awaited_once()
+    exec_args = str(conn.executemany.call_args)
+    assert "069a79f4-44e9-4726-a5be-fca90e38aaf5" in exec_args
+    assert "11111111-2222-3333-4444-555555555555" in exec_args
 
 
 @pytest.mark.asyncio

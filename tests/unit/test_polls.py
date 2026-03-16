@@ -1,3 +1,4 @@
+import asyncio
 from datetime import timedelta
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -215,7 +216,16 @@ class TestPollLongFormat:
         i = _interaction()
         i.channel.send = AsyncMock(return_value=MagicMock(add_reaction=AsyncMock(), id=999))
         opts = ",".join(f"X{i}" for i in range(11))
-        with patch("bot.commands.polls.asyncio.create_task") as create_task:
+        real_create_task = asyncio.create_task
+
+        def mock_create_task(coro):
+            task = real_create_task(coro)
+            task.cancel()
+            return task
+
+        with patch(
+            "bot.commands.polls.asyncio.create_task", side_effect=mock_create_task
+        ) as create_task:
             await cog.poll.callback(cog, i, "Q?", opts, "1d")
             create_task.assert_called_once()
             coro = create_task.call_args[0][0]

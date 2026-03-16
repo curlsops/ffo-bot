@@ -115,16 +115,16 @@ async def sync_from_rcon(
 
         async with db_pool.acquire() as conn:
             await conn.execute("DELETE FROM whitelist_cache WHERE server_id = $1", server_id)
-            for username in usernames:
-                uuid_val = uuid_map.get(username.lower())
-                await conn.execute(
+            if usernames:
+                rows = [
+                    (server_id, username, uuid_map.get(username.lower())) for username in usernames
+                ]
+                await conn.executemany(
                     """
                     INSERT INTO whitelist_cache (server_id, username, minecraft_uuid)
                     VALUES ($1, $2, $3::uuid)
                     """,
-                    server_id,
-                    username,
-                    uuid_val,
+                    rows,
                 )
         _invalidate_whitelist_cache(cache, server_id)
         return True

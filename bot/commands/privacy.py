@@ -4,6 +4,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
+from bot.utils.user_preferences import invalidate_opt_out_cache
+
 logger = logging.getLogger(__name__)
 
 PRIVACY_OPERATION_CHOICES = [
@@ -39,10 +41,7 @@ def _privacy_command(cog: "PrivacyCommands"):
                         interaction.guild_id,
                         interaction.user.id,
                     )
-                await interaction.followup.send(
-                    "✅ Opted out. Your message history has been deleted.",
-                    ephemeral=True,
-                )
+                msg = "✅ Opted out. Your message history has been deleted."
             else:
                 async with cog.bot.db_pool.acquire() as conn:
                     await conn.execute(
@@ -50,10 +49,10 @@ def _privacy_command(cog: "PrivacyCommands"):
                         interaction.guild_id,
                         interaction.user.id,
                     )
-                await interaction.followup.send(
-                    "✅ Opted back in to message tracking.",
-                    ephemeral=True,
-                )
+                msg = "✅ Opted back in to message tracking."
+            if interaction.guild_id is not None:
+                invalidate_opt_out_cache(cog.bot.cache, interaction.guild_id, interaction.user.id)
+            await interaction.followup.send(msg, ephemeral=True)
         except Exception as e:
             logger.error("privacy %s error: %s", operation.value, e, exc_info=True)
             await interaction.followup.send("❌ An error occurred.", ephemeral=True)

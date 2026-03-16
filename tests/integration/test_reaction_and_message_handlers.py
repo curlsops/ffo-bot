@@ -82,6 +82,7 @@ async def test_message_handler_user_opted_out_skips_processing():
 async def test_message_handler_voice_transcription(transcribe_result, should_reply):
     db_pool, _ = make_db_pool(fetchval_result=None)
     bot = _bot_with_metrics()
+    bot.cache = None
     bot.phrase_matcher = None
     bot.media_downloader = None
     bot.db_pool = db_pool
@@ -127,7 +128,12 @@ async def test_message_handler_voice_transcription(transcribe_result, should_rep
 )
 async def test_message_handler_monitored_channel_media_download(monitored_config, should_download):
     conn = MagicMock()
-    conn.fetchval = AsyncMock(side_effect=[None, monitored_config])
+    conn.fetchval = AsyncMock(return_value=None)
+    conn.fetchrow = AsyncMock(
+        return_value=(
+            {"config": monitored_config} if monitored_config is not None else {"config": None}
+        )
+    )
     conn.execute = AsyncMock()
 
     @asynccontextmanager
@@ -138,6 +144,7 @@ async def test_message_handler_monitored_channel_media_download(monitored_config
     pool.acquire = acquire
     bot = _bot_with_metrics()
     bot.db_pool = pool
+    bot.cache = None
     bot.phrase_matcher = None
     bot.voice_transcriber = None
     md = MagicMock()
@@ -191,7 +198,8 @@ async def test_message_handler_non_voice_attachment_no_transcription():
 @pytest.mark.asyncio
 async def test_message_handler_media_download_error_logged():
     conn = MagicMock()
-    conn.fetchval = AsyncMock(side_effect=[None, {"monitored_channels": {"2": True}}])
+    conn.fetchval = AsyncMock(return_value=None)
+    conn.fetchrow = AsyncMock(return_value={"config": {"monitored_channels": {"2": True}}})
     conn.execute = AsyncMock()
 
     @asynccontextmanager
@@ -201,6 +209,7 @@ async def test_message_handler_media_download_error_logged():
     pool = MagicMock()
     pool.acquire = acquire
     bot = _bot_with_metrics()
+    bot.cache = None
     bot.metrics.errors_total = MagicMock()
     bot.metrics.errors_total.labels.return_value.inc = MagicMock()
     bot.db_pool = pool
@@ -227,6 +236,7 @@ async def test_message_handler_media_download_error_logged():
 async def test_message_handler_processes_phrase_match():
     bot = MagicMock()
     bot.is_shutting_down.return_value = False
+    bot.cache = None
     metrics = MagicMock()
     metrics.messages_processed.labels.return_value.inc = MagicMock()
     metrics.phrase_matches.labels.return_value.inc = MagicMock()
@@ -234,6 +244,7 @@ async def test_message_handler_processes_phrase_match():
     bot.metrics = metrics
     bot.phrase_matcher.match_phrases = AsyncMock(return_value=[("id-1", "✅")])
     db_pool, conn = make_db_pool()
+    conn.executemany = AsyncMock()
     bot.db_pool = db_pool
     bot.media_downloader = None
 
@@ -253,7 +264,8 @@ async def test_message_handler_processes_phrase_match():
     metrics.messages_processed.labels.assert_called_once()
     metrics.phrase_matches.labels.assert_called_once()
     msg.add_reaction.assert_awaited()
-    assert conn.execute.await_count == 2
+    conn.executemany.assert_awaited_once()
+    conn.execute.assert_awaited_once()
 
 
 @pytest.mark.asyncio
@@ -412,6 +424,7 @@ async def test_message_handler_check_user_opt_out_error_continues_processing():
     pool, conn = make_db_pool(fetchval_result=None)
     conn.fetchval = AsyncMock(side_effect=Exception("DB"))
     bot = _bot_with_metrics()
+    bot.cache = None
     bot.db_pool = pool
     bot.phrase_matcher = MagicMock(match_phrases=AsyncMock(return_value=[]))
     bot.media_downloader = None
@@ -432,9 +445,10 @@ async def test_message_handler_check_user_opt_out_error_continues_processing():
 async def test_message_handler_phrase_match_log_failure_still_reacts(caplog):
     caplog.set_level(logging.WARNING, logger="bot.handlers.messages")
     db_pool, conn = make_db_pool()
-    conn.execute = AsyncMock(side_effect=Exception("DB down"))
+    conn.executemany = AsyncMock(side_effect=Exception("DB down"))
     bot = MagicMock()
     bot.is_shutting_down.return_value = False
+    bot.cache = None
     bot.metrics = MagicMock()
     bot.metrics.messages_processed.labels.return_value.inc = MagicMock()
     bot.metrics.phrase_matches.labels.return_value.inc = MagicMock()
@@ -454,13 +468,14 @@ async def test_message_handler_phrase_match_log_failure_still_reacts(caplog):
     msg.add_reaction = AsyncMock()
     await handler.on_message(msg)
     msg.add_reaction.assert_awaited_once()
-    assert "Failed to log phrase match" in caplog.text
+    assert "Failed to log phrase matches" in caplog.text
 
 
 @pytest.mark.asyncio
 async def test_message_edit_phrase_matching_removes_stale_reaction():
     db_pool, conn = make_db_pool(fetchval_result=None)
     bot = _bot_with_metrics()
+    bot.cache = None
     bot.db_pool = db_pool
     bot.phrase_matcher = MagicMock(match_phrases=AsyncMock(return_value=[]))
     bot.user = MagicMock()
@@ -501,6 +516,7 @@ async def test_message_edit_phrase_matching_removes_stale_reaction():
 async def test_message_edit_phrase_matching_adds_new_reaction():
     db_pool, conn = make_db_pool(fetchval_result=None)
     bot = _bot_with_metrics()
+    bot.cache = None
     bot.metrics.phrase_matches = MagicMock()
     bot.metrics.phrase_matches.labels.return_value.inc = MagicMock()
     bot.db_pool = db_pool
@@ -553,6 +569,7 @@ async def test_message_edit_phrase_matching_skips_when_content_unchanged():
 async def test_message_edit_phrase_matching_fetch_not_found_returns_early():
     db_pool, _ = make_db_pool(fetchval_result=None)
     bot = _bot_with_metrics()
+    bot.cache = None
     bot.db_pool = db_pool
     bot.user = MagicMock()
     bot.phrase_matcher = MagicMock(match_phrases=AsyncMock(return_value=[("id-1", "👋")]))
@@ -598,6 +615,7 @@ async def test_message_handler_phrase_match_http_exception_logged(caplog):
     caplog.set_level(logging.WARNING, logger="bot.handlers.messages")
     bot = MagicMock()
     bot.is_shutting_down.return_value = False
+    bot.cache = None
     bot.metrics = MagicMock()
     bot.metrics.messages_processed.labels.return_value.inc = MagicMock()
     bot.phrase_matcher.match_phrases = AsyncMock(return_value=[("id-1", "✅")])
