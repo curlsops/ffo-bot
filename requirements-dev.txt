@@ -10,6 +10,9 @@ pytest-xdist>=3.8.0
 testcontainers[postgres,generic]>=4.0.0
 httpx>=0.27.0
 
+# Release
+python-semantic-release>=10.5.0,<11
+
 # Linting and Formatting
 pre-commit>=4.0.0
 flake8>=7.0.0,<8.0.0
