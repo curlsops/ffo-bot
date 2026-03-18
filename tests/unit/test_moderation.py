@@ -27,7 +27,7 @@ def _member(guild_id=1, user_id=10, nick=None, name="User", global_name="User"):
     m.nick = nick
     m.name = name
     m.global_name = global_name
-    m.communication_disabled_until = None
+    m.timed_out_until = None
     return m
 
 
@@ -61,7 +61,7 @@ class TestModerationTimeout:
     async def test_notifies_on_timeout_added(self, handler, bot):
         before = _member()
         after = _member()
-        after.communication_disabled_until = datetime(2025, 12, 31, 12, 0, tzinfo=timezone.utc)
+        after.timed_out_until = datetime(2025, 12, 31, 12, 0, tzinfo=timezone.utc)
 
         async def audit_iter():
             entry = MagicMock()
@@ -82,7 +82,7 @@ class TestModerationTimeout:
     async def test_reuses_member_update_audit_fetch_across_handlers(self, handler, bot):
         before = _member()
         after = _member()
-        after.communication_disabled_until = datetime(2025, 12, 31, 12, 0, tzinfo=timezone.utc)
+        after.timed_out_until = datetime(2025, 12, 31, 12, 0, tzinfo=timezone.utc)
 
         call_count = 0
 
@@ -127,12 +127,12 @@ class TestModerationVoiceState:
         member.guild.audit_logs = lambda **kw: _voice_audit_iter(10, 99)
         before_vs = MagicMock()
         before_vs.channel = MagicMock(name="general")
-        before_vs.server_mute = False
-        before_vs.server_deaf = False
+        before_vs.mute = False
+        before_vs.deaf = False
         after_vs = MagicMock()
         after_vs.channel = before_vs.channel
-        after_vs.server_mute = True
-        after_vs.server_deaf = False
+        after_vs.mute = True
+        after_vs.deaf = False
         await handler.on_voice_state_update(member, before_vs, after_vs)
         bot.notifier.notify_moderation.assert_awaited_once()
         assert "Server Muted" in bot.notifier.notify_moderation.call_args.args[1]
@@ -143,11 +143,11 @@ class TestModerationVoiceState:
         member.guild.audit_logs = lambda **kw: _empty_async_iter()
         before_vs = MagicMock()
         before_vs.channel = MagicMock(name="general")
-        before_vs.server_mute = False
+        before_vs.mute = False
         after_vs = MagicMock()
         after_vs.channel = before_vs.channel
-        after_vs.server_mute = True
-        after_vs.server_deaf = False
+        after_vs.mute = True
+        after_vs.deaf = False
         await handler.on_voice_state_update(member, before_vs, after_vs)
         bot.notifier.notify_moderation.assert_not_awaited()
 

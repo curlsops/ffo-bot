@@ -155,7 +155,9 @@ class ModerationHandler(commands.Cog):
             if before.name != after.name or before.global_name != after.global_name:
                 await self._notify_username_change(before, after)
                 return
-            if before.communication_disabled_until != after.communication_disabled_until:
+            before_timeout = getattr(before, "timed_out_until", None)
+            after_timeout = getattr(after, "timed_out_until", None)
+            if before_timeout != after_timeout:
                 await self._notify_timeout_change(before, after)
         except discord.HTTPException as e:
             logger.warning("moderation notify member update failed: %s", e)
@@ -209,8 +211,9 @@ class ModerationHandler(commands.Cog):
         if entry:
             moderator_id = entry.user.id if entry.user else None
             reason = entry.reason
-        if after.communication_disabled_until:
-            extra = f"Until <t:{int(after.communication_disabled_until.timestamp())}:F>"
+        after_timeout = getattr(after, "timed_out_until", None)
+        if after_timeout:
+            extra = f"Until <t:{int(after_timeout.timestamp())}:F>"
             await self.bot.notifier.notify_moderation(
                 before.guild.id,
                 "Member Timed Out",
@@ -239,13 +242,17 @@ class ModerationHandler(commands.Cog):
             return
         try:
             if before.channel == after.channel:
-                if before.server_mute != after.server_mute:
-                    action = "Server Muted" if after.server_mute else "Server Unmuted"
+                before_mute = getattr(before, "mute", False)
+                after_mute = getattr(after, "mute", False)
+                before_deaf = getattr(before, "deaf", False)
+                after_deaf = getattr(after, "deaf", False)
+                if before_mute != after_mute:
+                    action = "Server Muted" if after_mute else "Server Unmuted"
                     await self._notify_voice_mod_action(
                         member.guild, member.id, action, after.channel or before.channel
                     )
-                elif before.server_deaf != after.server_deaf:
-                    action = "Server Deafened" if after.server_deaf else "Server Undeafened"
+                elif before_deaf != after_deaf:
+                    action = "Server Deafened" if after_deaf else "Server Undeafened"
                     await self._notify_voice_mod_action(
                         member.guild, member.id, action, after.channel or before.channel
                     )
