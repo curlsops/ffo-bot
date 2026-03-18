@@ -1,5 +1,12 @@
 # Changelog
 
+## [3.0.1](https://github.com/curlsops/ffo-bot/compare/v3.0.0...v3.0.1) (2026-03-18)
+
+
+### Bug Fixes
+
+* **moderation:** use timed_out_until, mute, deaf for Discord API compatibility ([a622c70](https://github.com/curlsops/ffo-bot/commit/a622c706635d6587a48c817eea976710bdb7a81b))
+
 ## [3.0.0](https://github.com/curlsops/ffo-bot/compare/v2.0.0...v3.0.0) (2026-03-16)
 
 
