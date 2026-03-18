@@ -1,14 +1,19 @@
+# Edge (prerelease) builds from edge branch. Push to edge or trigger manually.
 name: Edge Build
 
 on:
   push:
     branches:
-      - main
+      - edge
   workflow_dispatch:
 
 concurrency:
   group: edge-${{ github.ref }}
   cancel-in-progress: true
+
+permissions:
+  contents: write
+  packages: write
 
 jobs:
   test:
@@ -32,6 +37,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: edge
 
       - name: Set up Python
         uses: actions/setup-python@a309ff8b426b58ec0e2a45f0f869d46889d02405 # v6
@@ -47,8 +54,30 @@ jobs:
           DATABASE_URL: postgresql://test:test@localhost:5432/ffobot_test
         run: pytest tests/ -v -n auto
 
-  build-and-push:
+  release:
     needs: test
+    runs-on: ubuntu-24.04
+    outputs:
+      released: ${{ steps.psr.outputs.released }}
+      tag: ${{ steps.psr.outputs.tag }}
+      version: ${{ steps.psr.outputs.version }}
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: 0
+          ref: edge
+
+      - name: Semantic Release (edge prerelease)
+        id: psr
+        uses: python-semantic-release/python-semantic-release@v10.5.3
+        with:
+          github_token: ${{ secrets.GITHUB_TOKEN }}
+          build: "false"
+
+  build-and-push:
+    needs: release
+    if: needs.release.outputs.released == 'true'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: staging
@@ -58,6 +87,8 @@ jobs:
 
     steps:
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          ref: ${{ needs.release.outputs.tag }}
 
       - name: Set up Docker Buildx
         uses: docker/setup-buildx-action@4d04d5d9486b7bd6fa91e7baf45bbb4f8b9deedd # v4
@@ -69,7 +100,6 @@ jobs:
           username: ${{ github.actor }}
           password: ${{ secrets.GITHUB_TOKEN }}
 
-      # Requires DOCKERHUB_USERNAME and DOCKERHUB_TOKEN repo secrets
       - name: Log in to Docker Hub
         uses: docker/login-action@b45d80f862d83dbcd57f89517bcf500b2ab88fb2 # v4
         with:
@@ -88,13 +118,16 @@ jobs:
           push: true
           tags: |
             ghcr.io/${{ github.repository }}:edge
+            ghcr.io/${{ github.repository }}:edge-${{ needs.release.outputs.version }}
             ghcr.io/${{ github.repository }}:edge-${{ steps.sha.outputs.short }}
             docker.io/${{ secrets.DOCKERHUB_USERNAME }}/ffo-bot:edge
+            docker.io/${{ secrets.DOCKERHUB_USERNAME }}/ffo-bot:edge-${{ needs.release.outputs.version }}
             docker.io/${{ secrets.DOCKERHUB_USERNAME }}/ffo-bot:edge-${{ steps.sha.outputs.short }}
           build-args: |
-            FFO_BOT_VERSION=edge-${{ steps.sha.outputs.short }}
+            FFO_BOT_VERSION=edge-${{ needs.release.outputs.version }}
             IMAGE_SOURCE=${{ github.server_url }}/${{ github.repository }}
           labels: |
+            org.opencontainers.image.version=${{ needs.release.outputs.version }}
             org.opencontainers.image.revision=${{ github.sha }}
             org.opencontainers.image.source=${{ github.server_url }}/${{ github.repository }}
           cache-from: type=gha
