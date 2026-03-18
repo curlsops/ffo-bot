@@ -1,0 +1,37 @@
+name: Sync Main to Edge
+
+on:
+  workflow_run:
+    workflows: ["Semantic Release"]
+    types: [completed]
+    branches: [main]
+
+concurrency:
+  group: sync-main-${{ github.run_id }}
+  cancel-in-progress: false
+
+jobs:
+  sync:
+    if: github.event.workflow_run.conclusion == 'success'
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+
+    steps:
+      - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
+        with:
+          fetch-depth: 0
+          ref: edge
+          persist-credentials: false
+
+      - name: Configure git
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git remote set-url origin "https://x-access-token:${{ secrets.RELEASE_TOKEN }}@github.com/${{ github.repository }}.git"
+
+      - name: Merge main into edge
+        run: |
+          git fetch origin main
+          git merge origin/main -m "chore: sync main into edge [automated]"
+          git push origin edge
