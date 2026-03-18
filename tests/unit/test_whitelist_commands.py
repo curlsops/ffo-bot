@@ -7,13 +7,13 @@ from bot.commands.whitelist import OPERATION_CHOICES, WhitelistCommands, _valida
 from tests.helpers import (
     assert_followup_contains,
     build_whitelist_bot,
-    invoke,
+def _whitelist_bot(permission_granted: bool = True):
     mock_db_pool,
     mock_interaction,
 )
 
 
-def _whitelist_bot():
+    bot.permission_checker.check_role = AsyncMock(return_value=permission_granted)
     return build_whitelist_bot()
 
 
