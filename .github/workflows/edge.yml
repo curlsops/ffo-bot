@@ -71,8 +71,10 @@ jobs:
       - name: Semantic Release (edge prerelease)
         id: psr
         uses: python-semantic-release/python-semantic-release@v10.5.3
+        env:
+          GH_TOKEN: ${{ secrets.RELEASE_TOKEN }}
         with:
-          github_token: ${{ secrets.GITHUB_TOKEN }}
+          github_token: ${{ secrets.RELEASE_TOKEN }}
           build: "false"
 
   build-and-push:
