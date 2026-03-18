@@ -20,6 +20,7 @@ class TestMigrationMetadataStyle:
             _load_migration("011_quotebook_server_quote_text_index.py", "migration_011"),
             _load_migration("012_drop_servers_config_gin.py", "migration_012"),
             _load_migration("013_query_performance_indexes.py", "migration_013"),
+            _load_migration("014_repair_servers_config_array.py", "migration_014"),
         ]
 
         for module in modules:
@@ -32,10 +33,13 @@ class TestMigrationMetadataStyle:
         migration_010 = _load_migration("010_servers_config_jsonb.py", "migration_010_chain")
         migration_012 = _load_migration("012_drop_servers_config_gin.py", "migration_012_chain")
         migration_013 = _load_migration("013_query_performance_indexes.py", "migration_013_chain")
+        migration_014 = _load_migration("014_repair_servers_config_array.py", "migration_014_chain")
 
         assert migration_010.down_revision == "009_anonymous_post_channels"
         assert migration_012.down_revision == "011_quotebook_quote_idx"
         assert migration_013.down_revision == "012_drop_servers_config_gin"
+        assert migration_014.down_revision == "013_query_performance_indexes"
+        assert migration_014.revision == "014_repair_servers_config_array"
 
 
 class TestMigration010Compatibility:

@@ -31,9 +31,16 @@ async def set_channel_config(
         async with db_pool.acquire() as conn:
             if channel_id:
                 await conn.execute(
-                    "UPDATE servers SET config = COALESCE(config, '{}'::jsonb) || $1::jsonb, updated_at = NOW() WHERE server_id = $2",
-                    {config_key: channel_id},
+                    """
+                    INSERT INTO servers (server_id, server_name, config)
+                    VALUES ($1, $2, $3::jsonb)
+                    ON CONFLICT (server_id) DO UPDATE
+                    SET config = COALESCE(servers.config, '{}'::jsonb) || EXCLUDED.config,
+                        updated_at = NOW()
+                    """,
                     server_id,
+                    "Unknown",
+                    {config_key: channel_id},
                 )
             else:
                 await conn.execute(

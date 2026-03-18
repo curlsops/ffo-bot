@@ -30,7 +30,7 @@ class TestNotifierJsonbParams:
         bot, conn = bot_with_conn
         await AdminNotifier(bot).set_notify_channel(999, 123456789)
         conn.execute.assert_awaited_once()
-        param = conn.execute.call_args[0][1]
+        param = conn.execute.call_args[0][3]
         assert param == {"notify_channel_id": 123456789}
 
 
@@ -111,7 +111,7 @@ class TestNotifierJsonbParamsExtended:
     async def test_set_notify_channel_json_structure(self, bot_with_conn):
         bot, conn = bot_with_conn
         await AdminNotifier(bot).set_notify_channel(1, 999)
-        param = conn.execute.call_args[0][1]
+        param = conn.execute.call_args[0][3]
         assert param == {"notify_channel_id": 999}
 
 

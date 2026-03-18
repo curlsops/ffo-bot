@@ -133,8 +133,8 @@ async def test_set_whitelist_channel_with_id():
     assert result is True
     conn.execute.assert_called_once()
     call_args = conn.execute.call_args
-    assert call_args.args[1] == {"whitelist_channel_id": 999}
-    assert call_args.args[2] == 123
+    assert 123 in call_args[0]
+    assert {"whitelist_channel_id": 999} in call_args[0]
 
 
 @pytest.mark.asyncio

@@ -44,9 +44,16 @@ class AdminNotifier:
             async with self.bot.db_pool.acquire() as conn:
                 if channel_id:
                     await conn.execute(
-                        "UPDATE servers SET config = COALESCE(config, '{}'::jsonb) || $1::jsonb, updated_at = NOW() WHERE server_id = $2",
-                        {"notify_channel_id": channel_id},
+                        """
+                        INSERT INTO servers (server_id, server_name, config)
+                        VALUES ($1, $2, $3::jsonb)
+                        ON CONFLICT (server_id) DO UPDATE
+                        SET config = COALESCE(servers.config, '{}'::jsonb) || EXCLUDED.config,
+                            updated_at = NOW()
+                        """,
                         server_id,
+                        "Unknown",
+                        {"notify_channel_id": channel_id},
                     )
                 else:
                     await conn.execute(
