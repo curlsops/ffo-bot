@@ -1,4 +1,3 @@
-# CI uses pre-built ghcr.io/<repo>-ci:latest. Run build-ci-image on main first if the image does not exist.
 name: CI
 
 on:
