@@ -116,6 +116,7 @@ def build_whitelist_bot():
     bot.minecraft_rcon.whitelist_list = AsyncMock(return_value="Steve, Alex")
     bot.minecraft_rcon.whitelist_on = AsyncMock(return_value="Whitelist is now turned on")
     bot.minecraft_rcon.whitelist_off = AsyncMock(return_value="Whitelist is now turned off")
+    bot.minecraft_rcon.push_master_whitelist = AsyncMock(return_value=[])
     return bot
 
 

@@ -48,10 +48,37 @@ jobs:
       - name: Install dependencies
         run: pip install -r requirements-dev.txt
 
-      - name: Run tests
+      - name: Run tests with coverage
         env:
           DATABASE_URL: postgresql://test:test@localhost:5432/ffobot_test
-        run: pytest tests/ -v -n auto
+        run: |
+          pytest tests/ -v -n auto --cov=bot --cov=config --cov=database --cov-report=xml --cov-report=term --cov-fail-under=100 --durations=10
+
+      - name: Upload coverage artifact
+        uses: actions/upload-artifact@bbbca2ddaa5d8feaa63e36b76fdaad77386f024f # v7.0.0
+        with:
+          name: coverage
+          path: coverage.xml
+
+  codecov:
+    runs-on: ubuntu-24.04
+    needs: test
+    timeout-minutes: 5
+    permissions:
+      contents: read
+
+    steps:
+      - uses: actions/download-artifact@3e5f45b2cfb9172054b4087a40e8e0b5a5461e7c # v8.0.1
+        with:
+          name: coverage
+
+      - name: Upload coverage to Codecov
+        uses: codecov/codecov-action@671740ac38dd9b0130fbe1cec585b89eea48d3de # v5
+        with:
+          token: ${{ secrets.CODECOV_TOKEN }}
+          files: ./coverage.xml
+          codecov_yml_path: .github/codecov.yml
+          fail_ci_if_error: false
 
   build-and-push:
     needs: test

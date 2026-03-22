@@ -7,7 +7,7 @@ from discord.ext import commands
 from bot.auth.command_helpers import require_admin, require_mod, require_rcon
 from bot.services.minecraft_rcon import MinecraftRCONError, parse_whitelist_list_response
 from bot.services.mojang import get_profile, get_profiles_batch
-from bot.utils.pagination import ListPaginatedView
+from bot.utils.pagination import ListPaginatedView, truncate_for_discord
 from bot.utils.whitelist_cache import (
     add_to_cache,
     get_cached_usernames,
@@ -27,13 +27,14 @@ OPERATION_CHOICES = [
     app_commands.Choice(name="List", value="list"),
     app_commands.Choice(name="Off", value="off"),
     app_commands.Choice(name="On", value="on"),
+    app_commands.Choice(name="Push", value="push"),
     app_commands.Choice(name="Remove", value="remove"),
     app_commands.Choice(name="Set", value="set"),
     app_commands.Choice(name="Sync", value="sync"),
 ]
 
 TOGGLE_OPERATIONS = {"off", "on"}
-MODERATION_OPERATIONS = {"add", "list", "remove", "sync"}
+MODERATION_OPERATIONS = {"add", "list", "push", "remove", "sync"}
 
 
 async def _whitelist_username_autocomplete(
@@ -75,7 +76,7 @@ def _whitelist_command(cog: "WhitelistCommands"):
     )
     @app_commands.guild_only()
     @app_commands.describe(
-        operation="Add, ClearChannel, List, Off, On, Remove, Set, Sync",
+        operation="Add, ClearChannel, List, Off, On, Push, Remove, Set, Sync",
         username="Minecraft username (Add/Remove only)",
         channel="Channel for IGN posts (admin; required for Set, omit with ClearChannel to disable)",
     )
@@ -118,7 +119,7 @@ class WhitelistCommands(commands.Cog):
 
         if op is None:
             await interaction.followup.send(
-                "Provide operation (Add, ClearChannel, List, Off, On, Remove, Set, Sync) "
+                "Provide operation (Add, ClearChannel, List, Off, On, Push, Remove, Set, Sync) "
                 "or channel to set.",
                 ephemeral=True,
             )
@@ -158,6 +159,8 @@ class WhitelistCommands(commands.Cog):
             await self._handle_remove(interaction, username)
         elif op == "list":
             await self._handle_list(interaction)
+        elif op == "push":
+            await self._handle_push(interaction)
         else:
             await self._handle_sync(interaction)
 
@@ -336,6 +339,42 @@ class WhitelistCommands(commands.Cog):
                 "Failed to sync from Minecraft server.",
                 ephemeral=True,
             )
+
+    async def _handle_push(self, interaction: discord.Interaction):
+        master = await get_cached_usernames(
+            self.bot.db_pool, interaction.guild_id, cache=self.bot.cache
+        )
+        if not master:
+            await interaction.followup.send(
+                "Whitelist cache is empty. Approve IGN posts or use Add.",
+                ephemeral=True,
+            )
+            return
+        try:
+            results = await self.bot.minecraft_rcon.push_master_whitelist(master)
+        except MinecraftRCONError as e:
+            logger.warning("RCON push master failed: %s", e)
+            await interaction.followup.send(
+                "Could not push to Minecraft servers. Check RCON configuration.",
+                ephemeral=True,
+            )
+            return
+        lines = []
+        for tr in results:
+            if tr.error:
+                lines.append(f"**{tr.target_id}**: error: {tr.error}")
+            else:
+                lines.append(
+                    f"**{tr.target_id}**: +{len(tr.added)} added, −{len(tr.removed)} removed"
+                )
+        summary = truncate_for_discord("\n".join(lines))
+        if self.bot.notifier and self.bot.settings.feature_notify_moderation:
+            await self.bot.notifier.notify_whitelist(
+                interaction.guild_id,
+                "Push",
+                interaction.user.id,
+            )
+        await interaction.followup.send(summary, ephemeral=True)
 
     async def _handle_remove(self, interaction: discord.Interaction, username: str | None):
         if not username:

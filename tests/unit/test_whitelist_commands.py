@@ -4,6 +4,7 @@ import pytest
 from discord import app_commands
 
 from bot.commands.whitelist import OPERATION_CHOICES, WhitelistCommands, _validate_username
+from bot.services.minecraft_rcon import MinecraftRCONError, TargetPushResult
 from tests.helpers import (
     assert_followup_contains,
     build_whitelist_bot,
@@ -522,6 +523,77 @@ class TestWhitelistSync:
             username=None,
         )
         assert_followup_contains(i, "not configured", case_sensitive=False)
+
+
+class TestWhitelistPush:
+    @pytest.mark.asyncio
+    async def test_push_success(self):
+        bot = _whitelist_bot()
+        bot.minecraft_rcon.push_master_whitelist = AsyncMock(
+            return_value=[TargetPushResult(target_id="default", added=["a"], removed=[])]
+        )
+        with patch(
+            "bot.commands.whitelist.get_cached_usernames",
+            new_callable=AsyncMock,
+            return_value=["Steve"],
+        ):
+            bot.db_pool, _ = mock_db_pool()
+            cog = WhitelistCommands(bot)
+            i = mock_interaction(user_id=2)
+            await invoke(
+                cog,
+                "whitelist_cmd",
+                None,
+                i,
+                operation=_op_choice("push"),
+                username=None,
+            )
+            bot.minecraft_rcon.push_master_whitelist.assert_awaited_once()
+            assert_followup_contains(i, "default", case_sensitive=False)
+
+    @pytest.mark.asyncio
+    async def test_push_empty_master(self):
+        bot = _whitelist_bot()
+        with patch(
+            "bot.commands.whitelist.get_cached_usernames",
+            new_callable=AsyncMock,
+            return_value=[],
+        ):
+            bot.db_pool, _ = mock_db_pool()
+            cog = WhitelistCommands(bot)
+            i = mock_interaction(user_id=2)
+            await invoke(
+                cog,
+                "whitelist_cmd",
+                None,
+                i,
+                operation=_op_choice("push"),
+                username=None,
+            )
+            bot.minecraft_rcon.push_master_whitelist.assert_not_awaited()
+            assert_followup_contains(i, "empty", case_sensitive=False)
+
+    @pytest.mark.asyncio
+    async def test_push_rcon_error(self):
+        bot = _whitelist_bot()
+        bot.minecraft_rcon.push_master_whitelist = AsyncMock(side_effect=MinecraftRCONError("down"))
+        with patch(
+            "bot.commands.whitelist.get_cached_usernames",
+            new_callable=AsyncMock,
+            return_value=["Steve"],
+        ):
+            bot.db_pool, _ = mock_db_pool()
+            cog = WhitelistCommands(bot)
+            i = mock_interaction(user_id=2)
+            await invoke(
+                cog,
+                "whitelist_cmd",
+                None,
+                i,
+                operation=_op_choice("push"),
+                username=None,
+            )
+            assert_followup_contains(i, "Could not", case_sensitive=False)
 
 
 class TestWhitelistDispatch:

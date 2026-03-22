@@ -1,3 +1,4 @@
+import asyncio
 import logging
 from asyncio import Lock
 from datetime import datetime, timezone
@@ -32,19 +33,22 @@ class ModerationHandler(commands.Cog):
         cache_scope: str,
         *,
         limit: int,
+        force_refresh: bool = False,
     ) -> list:
         key = (guild.id, action, cache_scope, limit)
         now = monotonic()
-        cached = self._audit_logs_cache.get(key)
-        if cached is not None and cached[0] > now:
-            return cached[1]
+        if not force_refresh:
+            cached = self._audit_logs_cache.get(key)
+            if cached is not None and cached[0] > now:
+                return cached[1]
 
         lock = self._audit_logs_locks.setdefault(key, Lock())
         async with lock:
             now = monotonic()
-            cached = self._audit_logs_cache.get(key)
-            if cached is not None and cached[0] > now:
-                return cached[1]
+            if not force_refresh:
+                cached = self._audit_logs_cache.get(key)
+                if cached is not None and cached[0] > now:
+                    return cached[1]
             try:
                 entries = [entry async for entry in guild.audit_logs(limit=limit, action=action)]
             except discord.Forbidden:  # no audit log permission
@@ -72,8 +76,11 @@ class ModerationHandler(commands.Cog):
         matcher,
         *,
         limit: int,
+        force_refresh: bool = False,
     ):
-        entries = await self._get_audit_logs(guild, action, cache_scope, limit=limit)
+        entries = await self._get_audit_logs(
+            guild, action, cache_scope, limit=limit, force_refresh=force_refresh
+        )
         for entry in entries:
             if matcher(entry):
                 return entry
@@ -275,11 +282,45 @@ class ModerationHandler(commands.Cog):
         if entry:
             moderator_id = entry.user.id if entry.user else None
         if moderator_id is None or moderator_id == target_id:
+            await asyncio.sleep(0.35)
+            entry = await self._find_audit_log_entry(
+                guild,
+                discord.AuditLogAction.member_update,
+                f"member_update:{target_id}",
+                lambda e: bool(e.target and e.target.id == target_id),
+                limit=5,
+                force_refresh=True,
+            )
+            if entry:
+                moderator_id = entry.user.id if entry.user else None
+        if moderator_id is None:
+            logger.info(
+                "Voice moderation skipped (no audit actor): guild_id=%s action=%s target_id=%s",
+                guild.id,
+                action,
+                target_id,
+            )
+            return
+        if moderator_id == target_id:
+            logger.info(
+                "Voice moderation skipped (actor is target): guild_id=%s action=%s target_id=%s",
+                guild.id,
+                action,
+                target_id,
+            )
             return
         channel_name = getattr(channel, "name", "?")
         extra = f"Channel: #{channel_name}"
         await self.bot.notifier.notify_moderation(
             guild.id, action, target_id, moderator_id, extra=extra
+        )
+        logger.info(
+            "Voice moderation notified: guild_id=%s action=%s target_id=%s moderator_id=%s channel=%s",
+            guild.id,
+            action,
+            target_id,
+            moderator_id,
+            channel_name,
         )
 
     async def _notify_voice_disconnect(self, member: discord.Member, before: discord.VoiceState):
