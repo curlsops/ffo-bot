@@ -8,14 +8,21 @@ on:
     - cron: '0 0 * * 1'
   workflow_dispatch:
     inputs:
+      action:
+        description: Manual run mode
+        type: choice
+        options:
+          - run-semantic-release
+          - publish-docker-image
+        default: run-semantic-release
       docker_ref:
         description: >-
-          Git tag or SHA to build and push (e.g. v3.1.0). Leave empty to run semantic release on main only.
+          Required when action is publish-docker-image (e.g. v3.1.0). Ignored for run-semantic-release.
         required: false
         type: string
         default: ""
       update_latest:
-        description: When using docker_ref, also push :latest to GHCR and Docker Hub.
+        description: When publishing Docker, also push :latest to GHCR and Docker Hub.
         required: false
         type: boolean
         default: true
@@ -31,7 +38,10 @@ permissions:
 jobs:
   release:
     runs-on: ubuntu-24.04
-    if: github.event_name != 'workflow_dispatch' || github.event.inputs.docker_ref == ''
+    if: >-
+      github.event_name != 'workflow_dispatch' ||
+      github.event.inputs.action == 'run-semantic-release' ||
+      github.event.inputs.action == null
     outputs:
       released: ${{ steps.psr.outputs.released }}
       tag: ${{ steps.psr.outputs.tag }}
@@ -118,7 +128,9 @@ jobs:
           sbom: true
 
   docker-republish:
-    if: github.event_name == 'workflow_dispatch' && github.event.inputs.docker_ref != ''
+    if: >-
+      github.event_name == 'workflow_dispatch' &&
+      github.event.inputs.action == 'publish-docker-image'
     runs-on: ubuntu-24.04
     timeout-minutes: 30
     environment: production
@@ -127,6 +139,15 @@ jobs:
       packages: write
 
     steps:
+      - name: Require docker_ref
+        env:
+          REF: ${{ github.event.inputs.docker_ref }}
+        run: |
+          if [ -z "${REF// }" ]; then
+            echo '::error::Choose action "publish-docker-image" only with docker_ref set (e.g. v3.1.0).'
+            exit 1
+          fi
+
       - uses: actions/checkout@de0fac2e4500dabe0009e67214ff5f5447ce83dd # v6
         with:
           ref: ${{ github.event.inputs.docker_ref }}
