@@ -121,6 +121,13 @@ async def _voice_audit_iter(target_id, moderator_id):
 
 
 class TestModerationVoiceState:
+    @pytest.fixture(autouse=True)
+    def _fast_voice_sleep(self, monkeypatch):
+        async def _sleep(_t):
+            return None
+
+        monkeypatch.setattr("bot.handlers.moderation.asyncio.sleep", _sleep)
+
     @pytest.mark.asyncio
     async def test_notifies_on_server_mute_when_moderator_mutes_other(self, handler, bot):
         member = _member(user_id=10)
@@ -136,6 +143,31 @@ class TestModerationVoiceState:
         await handler.on_voice_state_update(member, before_vs, after_vs)
         bot.notifier.notify_moderation.assert_awaited_once()
         assert "Server Muted" in bot.notifier.notify_moderation.call_args.args[1]
+
+    @pytest.mark.asyncio
+    async def test_notifies_on_server_mute_after_first_audit_empty(self, handler, bot):
+        member = _member(user_id=10)
+        attempt = [0]
+
+        async def audit_iter():
+            attempt[0] += 1
+            if attempt[0] == 1:
+                return
+            async for row in _voice_audit_iter(10, 99):
+                yield row
+
+        member.guild.audit_logs = lambda **kw: audit_iter()
+        before_vs = MagicMock()
+        before_vs.channel = MagicMock(name="general")
+        before_vs.mute = False
+        before_vs.deaf = False
+        after_vs = MagicMock()
+        after_vs.channel = before_vs.channel
+        after_vs.mute = True
+        after_vs.deaf = False
+        await handler.on_voice_state_update(member, before_vs, after_vs)
+        assert attempt[0] == 2
+        bot.notifier.notify_moderation.assert_awaited_once()
 
     @pytest.mark.asyncio
     async def test_skips_server_mute_when_self_mute(self, handler, bot):
