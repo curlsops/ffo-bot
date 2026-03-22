@@ -1,5 +1,5 @@
 import struct
-from unittest.mock import MagicMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
@@ -8,6 +8,7 @@ from bot.services.minecraft_rcon import (
     RCON_PACKET_LOGIN,
     MinecraftRCONClient,
     MinecraftRCONError,
+    RconTarget,
     _rcon_command,
     _recv_rcon_packet,
     _send_rcon_packet,
@@ -116,6 +117,7 @@ class TestMinecraftRCONClient:
     def configured_settings(self):
         s = MagicMock()
         s.feature_minecraft_whitelist = True
+        s.minecraft_rcon_targets = None
         s.minecraft_rcon_host = "localhost"
         s.minecraft_rcon_port = 25575
         s.minecraft_rcon_password = "secret"
@@ -125,6 +127,7 @@ class TestMinecraftRCONClient:
     def unconfigured_settings(self):
         s = MagicMock()
         s.feature_minecraft_whitelist = False
+        s.minecraft_rcon_targets = None
         s.minecraft_rcon_host = None
         s.minecraft_rcon_password = None
         return s
@@ -138,18 +141,24 @@ class TestMinecraftRCONClient:
     @pytest.mark.asyncio
     async def test_whitelist_add_success(self, configured_settings):
         client = MinecraftRCONClient(configured_settings)
-        with patch.object(client, "_run_rcon", return_value="Added Steve") as mock_run:
+        with patch.object(
+            client, "_run_rcon_on", new_callable=AsyncMock, return_value="Added Steve"
+        ) as mock_run:
             result = await client.whitelist_add("Steve")
-            mock_run.assert_called_once_with("whitelist add Steve")
-            assert result == "Added Steve"
+            mock_run.assert_awaited_once()
+            assert mock_run.await_args[0][1] == "whitelist add Steve"
+            assert result == "default: Added Steve"
 
     @pytest.mark.asyncio
     async def test_whitelist_remove_success(self, configured_settings):
         client = MinecraftRCONClient(configured_settings)
-        with patch.object(client, "_run_rcon", return_value="Removed Steve") as mock_run:
+        with patch.object(
+            client, "_run_rcon_on", new_callable=AsyncMock, return_value="Removed Steve"
+        ) as mock_run:
             result = await client.whitelist_remove("Steve")
-            mock_run.assert_called_once_with("whitelist remove Steve")
-            assert result == "Removed Steve"
+            mock_run.assert_awaited_once()
+            assert mock_run.await_args[0][1] == "whitelist remove Steve"
+            assert result == "default: Removed Steve"
 
     @pytest.mark.asyncio
     async def test_whitelist_list_success(self, configured_settings):
@@ -167,38 +176,44 @@ class TestMinecraftRCONClient:
     async def test_whitelist_on_success(self, configured_settings):
         client = MinecraftRCONClient(configured_settings)
         with patch.object(
-            client, "_run_rcon", return_value="Whitelist is now turned on"
+            client,
+            "_run_rcon_on",
+            new_callable=AsyncMock,
+            return_value="Whitelist is now turned on",
         ) as mock_run:
             result = await client.whitelist_on()
-            mock_run.assert_called_once_with("whitelist on")
-            assert result == "Whitelist is now turned on"
+            mock_run.assert_awaited_once()
+            assert mock_run.await_args[0][1] == "whitelist on"
+            assert result == "default: Whitelist is now turned on"
 
     @pytest.mark.asyncio
     async def test_whitelist_off_success(self, configured_settings):
         client = MinecraftRCONClient(configured_settings)
         with patch.object(
-            client, "_run_rcon", return_value="Whitelist is now turned off"
+            client,
+            "_run_rcon_on",
+            new_callable=AsyncMock,
+            return_value="Whitelist is now turned off",
         ) as mock_run:
             result = await client.whitelist_off()
-            mock_run.assert_called_once_with("whitelist off")
-            assert result == "Whitelist is now turned off"
+            mock_run.assert_awaited_once()
+            assert mock_run.await_args[0][1] == "whitelist off"
+            assert result == "default: Whitelist is now turned off"
 
     @pytest.mark.asyncio
-    async def test_run_rcon_raises_when_host_or_password_none_after_is_configured(
-        self, configured_settings
-    ):
+    async def test_run_rcon_raises_when_no_targets(self, configured_settings):
         client = MinecraftRCONClient(configured_settings)
-        with patch.object(client, "_is_configured", return_value=True):
-            configured_settings.minecraft_rcon_host = None
-            with pytest.raises(MinecraftRCONError, match="not configured"):
-                await client._run_rcon("whitelist list")
+        client._targets = []
+        with pytest.raises(MinecraftRCONError, match="not configured"):
+            await client._run_rcon("whitelist list")
 
-        client2 = MinecraftRCONClient(configured_settings)
-        configured_settings.minecraft_rcon_host = "localhost"
-        configured_settings.minecraft_rcon_password = None
-        with patch.object(client2, "_is_configured", return_value=True):
-            with pytest.raises(MinecraftRCONError, match="not configured"):
-                await client2._run_rcon("whitelist list")
+    @pytest.mark.asyncio
+    async def test_run_rcon_on_raises_when_not_configured(self, configured_settings):
+        client = MinecraftRCONClient(configured_settings)
+        client._targets = []
+        t = RconTarget(id="x", host="h", port=25575, password="p")
+        with pytest.raises(MinecraftRCONError, match="not configured"):
+            await client._run_rcon_on(t, "whitelist list")
 
     @pytest.mark.asyncio
     async def test_run_rcon_executes_in_executor(self, configured_settings):
@@ -209,3 +224,152 @@ class TestMinecraftRCONClient:
 
         assert result == "ok"
         mock_cmd.assert_called_once_with("localhost", 25575, "secret", "whitelist list")
+
+    def test_targets_json_skips_non_dict_entries(self):
+        s = MagicMock()
+        s.feature_minecraft_whitelist = True
+        s.minecraft_rcon_targets = '[null, 1, {"id":"a","host":"h1","port":25575,"password":"p1"}]'
+        s.minecraft_rcon_host = "ignored"
+        s.minecraft_rcon_port = 25575
+        s.minecraft_rcon_password = "ignored"
+        client = MinecraftRCONClient(s)
+        assert len(client._targets) == 1
+        assert client._targets[0].id == "a"
+
+    def test_targets_json_skips_dict_without_host_or_password(self):
+        s = MagicMock()
+        s.feature_minecraft_whitelist = True
+        s.minecraft_rcon_targets = '[{"id":"onlyhost","host":"h1"},{"id":"onlypw","password":"p"}]'
+        s.minecraft_rcon_host = "localhost"
+        s.minecraft_rcon_port = 25575
+        s.minecraft_rcon_password = "secret"
+        client = MinecraftRCONClient(s)
+        assert len(client._targets) == 1
+        assert client._targets[0].id == "default"
+
+    def test_targets_from_json_array(self):
+        s = MagicMock()
+        s.feature_minecraft_whitelist = True
+        s.minecraft_rcon_targets = (
+            '[{"id":"alpha","host":"h1","port":25575,"password":"p1"},'
+            '{"id":"beta","host":"h2","port":25576,"password":"p2"}]'
+        )
+        s.minecraft_rcon_host = "ignored"
+        s.minecraft_rcon_port = 25575
+        s.minecraft_rcon_password = "ignored"
+        client = MinecraftRCONClient(s)
+        assert len(client._targets) == 2
+        assert client._targets[0].id == "alpha"
+        assert client._targets[1].host == "h2"
+
+    def test_invalid_json_falls_back_to_legacy(self):
+        s = MagicMock()
+        s.feature_minecraft_whitelist = True
+        s.minecraft_rcon_targets = "not-json{"
+        s.minecraft_rcon_host = "localhost"
+        s.minecraft_rcon_port = 25575
+        s.minecraft_rcon_password = "secret"
+        client = MinecraftRCONClient(s)
+        assert len(client._targets) == 1
+        assert client._targets[0].id == "default"
+
+    def test_empty_json_array_falls_back_to_legacy(self):
+        s = MagicMock()
+        s.feature_minecraft_whitelist = True
+        s.minecraft_rcon_targets = "[]"
+        s.minecraft_rcon_host = "localhost"
+        s.minecraft_rcon_port = 25575
+        s.minecraft_rcon_password = "secret"
+        client = MinecraftRCONClient(s)
+        assert len(client._targets) == 1
+
+    @pytest.mark.asyncio
+    async def test_whitelist_add_broadcast_partial_failure(self):
+        s = MagicMock()
+        s.feature_minecraft_whitelist = True
+        s.minecraft_rcon_targets = (
+            '[{"id":"a","host":"h1","port":25575,"password":"p1"},'
+            '{"id":"b","host":"h2","port":25575,"password":"p2"}]'
+        )
+        client = MinecraftRCONClient(s)
+        with patch.object(client, "_run_rcon_on", new_callable=AsyncMock) as m:
+            m.side_effect = ["ok", MinecraftRCONError("down")]
+            result = await client.whitelist_add("Steve")
+        assert "a: ok" in result
+        assert "b: failed" in result
+
+    @pytest.mark.asyncio
+    async def test_whitelist_add_all_targets_fail_raises(self):
+        s = MagicMock()
+        s.feature_minecraft_whitelist = True
+        s.minecraft_rcon_targets = (
+            '[{"id":"a","host":"h1","port":25575,"password":"p1"},'
+            '{"id":"b","host":"h2","port":25575,"password":"p2"}]'
+        )
+        client = MinecraftRCONClient(s)
+        with patch.object(client, "_run_rcon_on", new_callable=AsyncMock) as m:
+            m.side_effect = MinecraftRCONError("down")
+            with pytest.raises(MinecraftRCONError, match="All targets failed"):
+                await client.whitelist_add("Steve")
+
+    @pytest.mark.asyncio
+    async def test_push_master_adds_and_removes(self, configured_settings):
+        client = MinecraftRCONClient(configured_settings)
+        with patch.object(client, "_run_rcon_on", new_callable=AsyncMock) as m:
+            m.side_effect = [
+                "There are 1 whitelisted players: OldName",
+                "Removed OldName",
+                "Added Steve",
+            ]
+            results = await client.push_master_whitelist(["Steve"])
+        assert len(results) == 1
+        assert results[0].added == ["Steve"]
+        assert results[0].removed == ["OldName"]
+        assert results[0].error is None
+
+    @pytest.mark.asyncio
+    async def test_push_master_list_fails_records_error(self, configured_settings):
+        client = MinecraftRCONClient(configured_settings)
+        with patch.object(client, "_run_rcon_on", new_callable=AsyncMock) as m:
+            m.side_effect = MinecraftRCONError("no connection")
+            results = await client.push_master_whitelist(["Steve"])
+        assert len(results) == 1
+        assert results[0].error == "no connection"
+
+    @pytest.mark.asyncio
+    async def test_push_master_case_insensitive(self, configured_settings):
+        client = MinecraftRCONClient(configured_settings)
+        with patch.object(client, "_run_rcon_on", new_callable=AsyncMock) as m:
+            m.side_effect = [
+                "There are 1 whitelisted players: steve",
+            ]
+            results = await client.push_master_whitelist(["Steve"])
+        assert results[0].added == []
+        assert results[0].removed == []
+
+    @pytest.mark.asyncio
+    async def test_push_master_not_configured(self, unconfigured_settings):
+        client = MinecraftRCONClient(unconfigured_settings)
+        with pytest.raises(MinecraftRCONError, match="not configured"):
+            await client.push_master_whitelist(["Steve"])
+
+    def test_targets_json_uses_name_as_id_and_auto_id(self):
+        s = MagicMock()
+        s.feature_minecraft_whitelist = True
+        s.minecraft_rcon_targets = (
+            '[{"name":"named","host":"h0","port":25575,"password":"p0"},'
+            '{"host":"h1","port":25575,"password":"p1"}]'
+        )
+        s.minecraft_rcon_host = "ignored"
+        client = MinecraftRCONClient(s)
+        assert len(client._targets) == 2
+        assert client._targets[0].id == "named"
+        assert client._targets[1].id == "server1"
+
+    def test_legacy_empty_when_no_host(self):
+        s = MagicMock()
+        s.feature_minecraft_whitelist = True
+        s.minecraft_rcon_targets = None
+        s.minecraft_rcon_host = None
+        s.minecraft_rcon_password = None
+        assert len(MinecraftRCONClient(s)._targets) == 0

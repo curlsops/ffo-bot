@@ -147,6 +147,13 @@ class Settings(BaseSettings):
     minecraft_rcon_password: Optional[str] = Field(
         default=None, description="RCON password (from secret)"
     )
+    minecraft_rcon_targets: Optional[str] = Field(
+        default=None,
+        description=(
+            'JSON array: [{"id":"main","host":"...","port":25575,"password":"..."},...]; '
+            "non-empty list overrides MINECRAFT_RCON_HOST for multi-server RCON"
+        ),
+    )
 
     @model_validator(mode="after")
     def resolve_database_url(self) -> "Settings":

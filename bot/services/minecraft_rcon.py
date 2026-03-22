@@ -1,8 +1,10 @@
 import asyncio
+import json
 import logging
 import re
 import socket
 import struct
+from dataclasses import dataclass, field
 
 from config.settings import Settings
 
@@ -10,11 +12,67 @@ logger = logging.getLogger(__name__)
 
 RCON_PACKET_LOGIN = 3
 RCON_PACKET_COMMAND = 2
-RCON_PACKET_RESPONSE = 0
 
 
 class MinecraftRCONError(Exception):
     pass
+
+
+@dataclass
+class RconTarget:
+    id: str
+    host: str
+    port: int
+    password: str
+
+
+@dataclass
+class TargetPushResult:
+    target_id: str
+    added: list[str] = field(default_factory=list)
+    removed: list[str] = field(default_factory=list)
+    error: str | None = None
+
+
+def _parse_rcon_targets(settings: Settings) -> list[RconTarget]:
+    if not settings.feature_minecraft_whitelist:
+        return []
+    raw = settings.minecraft_rcon_targets
+    if raw and str(raw).strip():
+        try:
+            data = json.loads(raw)
+        except json.JSONDecodeError as e:
+            logger.warning("Invalid minecraft_rcon_targets JSON: %s", e)
+            data = None
+        if isinstance(data, list) and data:
+            result: list[RconTarget] = []
+            for item in data:
+                if not isinstance(item, dict):
+                    continue
+                tid = str(item.get("id") or item.get("name") or f"server{len(result)}")
+                host = item.get("host")
+                password = item.get("password")
+                port = int(item.get("port", 25575))
+                if host and password:
+                    result.append(RconTarget(id=tid, host=host, port=port, password=password))
+            if result:
+                return result
+    return _legacy_single_target(settings)
+
+
+def _legacy_single_target(settings: Settings) -> list[RconTarget]:
+    host = settings.minecraft_rcon_host
+    password = settings.minecraft_rcon_password
+    if host and password:
+        return [
+            RconTarget(
+                id="default",
+                host=host,
+                port=int(settings.minecraft_rcon_port),
+                password=password,
+            )
+        ]
+    return []
 
 
 def _send_rcon_packet(sock: socket.socket, packet_type: int, payload: str, req_id: int) -> None:
@@ -57,48 +115,92 @@ def _rcon_command(host: str, port: int, password: str, command: str, timeout: fl
 
 class MinecraftRCONClient:
     def __init__(self, settings: Settings):
-        self._settings = settings
+        self._targets: list[RconTarget] = _parse_rcon_targets(settings)
 
     def _is_configured(self) -> bool:
-        return bool(
-            self._settings.feature_minecraft_whitelist
-            and self._settings.minecraft_rcon_host
-            and self._settings.minecraft_rcon_password
-        )
+        return bool(self._targets)
 
-    async def _run_rcon(self, command: str) -> str:
+    async def _run_rcon_on(self, target: RconTarget, command: str) -> str:
         if not self._is_configured():
-            raise MinecraftRCONError("Minecraft RCON not configured")
-        host = self._settings.minecraft_rcon_host
-        password = self._settings.minecraft_rcon_password
-        if not host or not password:
             raise MinecraftRCONError("Minecraft RCON not configured")
 
         def _sync_command() -> str:
             return _rcon_command(
-                host,
-                self._settings.minecraft_rcon_port,
-                password,
+                target.host,
+                target.port,
+                target.password,
                 command,
             )
 
         loop = asyncio.get_event_loop()
         return await loop.run_in_executor(None, _sync_command)
 
+    async def _run_rcon(self, command: str) -> str:
+        if not self._targets:
+            raise MinecraftRCONError("Minecraft RCON not configured")
+        return await self._run_rcon_on(self._targets[0], command)
+
+    async def _broadcast_command(self, command: str) -> str:
+        if not self._targets:
+            raise MinecraftRCONError("Minecraft RCON not configured")
+        successes: list[tuple[str, str]] = []
+        failures: list[tuple[str, str]] = []
+        for t in self._targets:
+            try:
+                r = await self._run_rcon_on(t, command)
+                successes.append((t.id, r))
+            except MinecraftRCONError as e:
+                failures.append((t.id, str(e)))
+        if not successes:
+            raise MinecraftRCONError(
+                "All targets failed: " + "; ".join(f"{k}: {v}" for k, v in failures)
+            )
+        lines = [f"{tid}: {r}" for tid, r in successes]
+        if failures:
+            lines.extend(f"{tid}: failed ({err})" for tid, err in failures)
+        return "\n".join(lines)
+
     async def whitelist_add(self, username: str) -> str:
-        return await self._run_rcon(f"whitelist add {username}")
+        return await self._broadcast_command(f"whitelist add {username}")
 
     async def whitelist_remove(self, username: str) -> str:
-        return await self._run_rcon(f"whitelist remove {username}")
+        return await self._broadcast_command(f"whitelist remove {username}")
 
     async def whitelist_list(self) -> str:
         return await self._run_rcon("whitelist list")
 
     async def whitelist_on(self) -> str:
-        return await self._run_rcon("whitelist on")
+        return await self._broadcast_command("whitelist on")
 
     async def whitelist_off(self) -> str:
-        return await self._run_rcon("whitelist off")
+        return await self._broadcast_command("whitelist off")
+
+    async def push_master_whitelist(self, master_usernames: list[str]) -> list[TargetPushResult]:
+        if not self._is_configured():
+            raise MinecraftRCONError("Minecraft RCON not configured")
+        master_by_lower = {u.lower(): u for u in master_usernames}
+        master_lower = set(master_by_lower.keys())
+        results: list[TargetPushResult] = []
+        for t in self._targets:
+            tr = TargetPushResult(target_id=t.id)
+            try:
+                resp = await self._run_rcon_on(t, "whitelist list")
+                current = parse_whitelist_list_response(resp)
+                current_lower = {u.lower(): u for u in current}
+                for u in current:
+                    if u.lower() not in master_lower:
+                        await self._run_rcon_on(t, f"whitelist remove {u}")
+                        tr.removed.append(u)
+                for low in master_lower:
+                    if low not in current_lower:
+                        canon = master_by_lower[low]
+                        await self._run_rcon_on(t, f"whitelist add {canon}")
+                        tr.added.append(canon)
+            except Exception as e:
+                tr.error = str(e)
+                logger.warning("push_master_whitelist failed for %s: %s", t.id, e)
+            results.append(tr)
+        return results
 
 
 def parse_whitelist_list_response(response: str) -> list[str]:
