@@ -154,6 +154,11 @@ class Settings(BaseSettings):
             "non-empty list overrides MINECRAFT_RCON_HOST for multi-server RCON"
         ),
     )
+    whitelist_cache_reconcile_interval_hours: float = Field(
+        default=24.0,
+        ge=0,
+        description="Interval (hours) for whitelist DB cache reconcile vs Mojang; 0 disables.",
+    )
 
     @model_validator(mode="after")
     def resolve_database_url(self) -> "Settings":

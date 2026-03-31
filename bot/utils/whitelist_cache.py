@@ -1,7 +1,8 @@
 import logging
-from typing import TYPE_CHECKING, cast
+from typing import TYPE_CHECKING, Any, cast
 
 from bot.services.minecraft_rcon import parse_whitelist_list_response
+from bot.services.mojang import get_profile, get_profile_by_uuid
 from config.constants import Constants
 
 if TYPE_CHECKING:
@@ -67,6 +68,132 @@ async def add_to_cache(
         _invalidate_whitelist_cache(cache, server_id)
     except Exception as e:
         logger.warning("Failed to add to whitelist cache: %s", e)
+
+
+async def get_cache_entry(db_pool, server_id: int, username: str) -> dict[str, Any] | None:
+    try:
+        async with db_pool.acquire() as conn:
+            row = await conn.fetchrow(
+                """
+                SELECT username, minecraft_uuid FROM whitelist_cache
+                WHERE server_id = $1 AND username = $2
+                """,
+                server_id,
+                username,
+            )
+        if not row:
+            return None
+        mu = row["minecraft_uuid"]
+        return {
+            "username": row["username"],
+            "minecraft_uuid": str(mu) if mu is not None else None,
+        }
+    except Exception as e:
+        logger.warning("Failed to fetch whitelist cache entry: %s", e)
+        return None
+
+
+async def reconcile_whitelist_cache(
+    db_pool,
+    server_id: int,
+    cache: "InMemoryCache | None" = None,
+) -> dict[str, list]:
+    updated: list[str] = []
+    uuid_filled: list[str] = []
+    pruned: list[str] = []
+    try:
+        async with db_pool.acquire() as conn:
+            rows = await conn.fetch(
+                """
+                SELECT username, minecraft_uuid FROM whitelist_cache
+                WHERE server_id = $1 ORDER BY username
+                """,
+                server_id,
+            )
+        for row in rows:
+            un = row["username"]
+            mu = row["minecraft_uuid"]
+            str_uuid = str(mu) if mu is not None else None
+            if str_uuid:
+                prof = await get_profile_by_uuid(str_uuid)
+                if not prof:
+                    continue
+                _, current = prof
+                if current != un:
+                    async with db_pool.acquire() as conn:
+                        await conn.execute(
+                            """
+                            INSERT INTO whitelist_cache (server_id, username, minecraft_uuid)
+                            VALUES ($1, $2, $3::uuid)
+                            ON CONFLICT (server_id, username) DO UPDATE SET
+                                minecraft_uuid = EXCLUDED.minecraft_uuid
+                            """,
+                            server_id,
+                            current,
+                            prof[0],
+                        )
+                        await conn.execute(
+                            """
+                            DELETE FROM whitelist_cache
+                            WHERE server_id = $1 AND username = $2
+                            """,
+                            server_id,
+                            un,
+                        )
+                    updated.append(f"{un} → {current}")
+                continue
+            prof = await get_profile(un)
+            if prof:
+                uu, canonical = prof[0], prof[1]
+                if canonical.lower() != un.lower():
+                    async with db_pool.acquire() as conn:
+                        await conn.execute(
+                            """
+                            INSERT INTO whitelist_cache (server_id, username, minecraft_uuid)
+                            VALUES ($1, $2, $3::uuid)
+                            ON CONFLICT (server_id, username) DO UPDATE SET
+                                minecraft_uuid = EXCLUDED.minecraft_uuid
+                            """,
+                            server_id,
+                            canonical,
+                            uu,
+                        )
+                        await conn.execute(
+                            """
+                            DELETE FROM whitelist_cache
+                            WHERE server_id = $1 AND username = $2
+                            """,
+                            server_id,
+                            un,
+                        )
+                    updated.append(f"{un} → {canonical}")
+                else:
+                    async with db_pool.acquire() as conn:
+                        await conn.execute(
+                            """
+                            UPDATE whitelist_cache SET minecraft_uuid = $1::uuid
+                            WHERE server_id = $2 AND username = $3
+                            """,
+                            uu,
+                            server_id,
+                            un,
+                        )
+                    uuid_filled.append(un)
+            else:
+                async with db_pool.acquire() as conn:
+                    await conn.execute(
+                        """
+                        DELETE FROM whitelist_cache
+                        WHERE server_id = $1 AND username = $2
+                        """,
+                        server_id,
+                        un,
+                    )
+                pruned.append(un)
+        _invalidate_whitelist_cache(cache, server_id)
+    except Exception as e:
+        logger.warning("whitelist cache reconcile failed: %s", e)
+    return {"updated": updated, "uuid_filled": uuid_filled, "pruned": pruned}
 
 
 async def remove_from_cache(

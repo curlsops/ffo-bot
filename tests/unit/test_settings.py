@@ -96,6 +96,7 @@ class TestSettingsDefaults:
             ("feature_voice_transcription", False),
             ("feature_conversion", False),
             ("feature_minecraft_whitelist", False),
+            ("whitelist_cache_reconcile_interval_hours", 24.0),
             ("feature_anonymous_post", False),
             ("feature_music", False),
         ],

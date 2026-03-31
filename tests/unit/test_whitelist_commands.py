@@ -456,6 +456,74 @@ class TestWhitelistRemove:
         )
         assert_followup_contains(i, "not configured", case_sensitive=False)
 
+    @pytest.mark.asyncio
+    async def test_remove_retries_current_mojang_name(self):
+        with (
+            patch("bot.commands.whitelist.remove_from_cache", new_callable=AsyncMock),
+            patch(
+                "bot.commands.whitelist.get_cache_entry",
+                new_callable=AsyncMock,
+                return_value={
+                    "username": "Old",
+                    "minecraft_uuid": "069a79f4-44e9-4726-a5be-fca90e38aaf5",
+                },
+            ),
+            patch(
+                "bot.commands.whitelist.get_profile_by_uuid",
+                new_callable=AsyncMock,
+                return_value=(
+                    "069a79f4-44e9-4726-a5be-fca90e38aaf5",
+                    "NewName",
+                ),
+            ),
+        ):
+            bot = _whitelist_bot()
+            bot.minecraft_rcon.whitelist_remove = AsyncMock(
+                side_effect=[
+                    "That player is not whitelisted",
+                    "Removed NewName from the whitelist",
+                ]
+            )
+            bot.db_pool, _ = mock_db_pool()
+            cog = WhitelistCommands(bot)
+            i = mock_interaction(user_id=2)
+            await invoke(
+                cog,
+                "whitelist_cmd",
+                None,
+                i,
+                operation=_op_choice("remove"),
+                username="Old",
+            )
+            assert bot.minecraft_rcon.whitelist_remove.await_count == 2
+            bot.minecraft_rcon.whitelist_remove.assert_any_call("NewName")
+
+    @pytest.mark.asyncio
+    async def test_remove_stale_without_uuid_prompts_repair(self):
+        with (
+            patch("bot.commands.whitelist.remove_from_cache", new_callable=AsyncMock) as rm,
+            patch(
+                "bot.commands.whitelist.get_cache_entry", new_callable=AsyncMock, return_value=None
+            ),
+        ):
+            bot = _whitelist_bot()
+            bot.minecraft_rcon.whitelist_remove = AsyncMock(
+                return_value="Nothing changed. Not whitelisted."
+            )
+            bot.db_pool, _ = mock_db_pool()
+            cog = WhitelistCommands(bot)
+            i = mock_interaction(user_id=2)
+            await invoke(
+                cog,
+                "whitelist_cmd",
+                None,
+                i,
+                operation=_op_choice("remove"),
+                username="Ghost",
+            )
+            rm.assert_not_awaited()
+            assert_followup_contains(i, "Repair", case_sensitive=False)
+
 
 class TestWhitelistSync:
     @pytest.mark.asyncio
@@ -523,6 +591,29 @@ class TestWhitelistSync:
             username=None,
         )
         assert_followup_contains(i, "not configured", case_sensitive=False)
+
+
+class TestWhitelistRepair:
+    @pytest.mark.asyncio
+    async def test_repair_shows_renamed_summary(self):
+        with patch(
+            "bot.commands.whitelist.reconcile_whitelist_cache",
+            new_callable=AsyncMock,
+            return_value={"updated": ["Old → New"], "uuid_filled": [], "pruned": []},
+        ):
+            bot = _whitelist_bot()
+            bot.db_pool, _ = mock_db_pool()
+            cog = WhitelistCommands(bot)
+            i = mock_interaction(user_id=2)
+            await invoke(
+                cog,
+                "whitelist_cmd",
+                None,
+                i,
+                operation=_op_choice("repair"),
+                username=None,
+            )
+            assert_followup_contains(i, "Renamed", case_sensitive=False)
 
 
 class TestWhitelistPush:

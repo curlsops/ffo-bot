@@ -16,6 +16,7 @@ def mock_settings():
     s.feature_quotebook = False
     s.feature_conversion = False
     s.feature_minecraft_whitelist = False
+    s.whitelist_cache_reconcile_interval_hours = 24.0
     s.feature_faq = False
     s.feature_music = False
     s.health_check_port = 8080

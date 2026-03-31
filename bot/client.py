@@ -188,6 +188,11 @@ class FFOBot(commands.Bot):
             "bot.tasks.giveaway_manager",
             "bot.tasks.status_rotator",
         ]
+        if (
+            self.settings.feature_minecraft_whitelist
+            and self.settings.whitelist_cache_reconcile_interval_hours > 0
+        ):
+            extensions.append("bot.tasks.whitelist_cache_reconcile")
         for ext, enabled in [
             ("bot.commands.quotebook", self.settings.feature_quotebook),
             ("bot.commands.whitelist", self.settings.feature_minecraft_whitelist),
@@ -227,11 +232,11 @@ class FFOBot(commands.Bot):
 
             async with self.db_pool.acquire() as conn:
                 rows = await conn.fetch(
-                    "SELECT channel_id, message_id FROM anonymous_post_channels"
+                    "SELECT message_id, post_channel_id FROM anonymous_post_channels"
                 )
                 for row in rows:
                     self.add_view(
-                        AnonymousPostButtonView(row["channel_id"], self),
+                        AnonymousPostButtonView(row["post_channel_id"], self),
                         message_id=row["message_id"],
                     )
         if self.settings.feature_giveaways:

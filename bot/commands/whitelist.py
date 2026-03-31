@@ -6,11 +6,13 @@ from discord.ext import commands
 
 from bot.auth.command_helpers import require_admin, require_mod, require_rcon
 from bot.services.minecraft_rcon import MinecraftRCONError, parse_whitelist_list_response
-from bot.services.mojang import get_profile, get_profiles_batch
+from bot.services.mojang import get_profile, get_profile_by_uuid, get_profiles_batch
 from bot.utils.pagination import ListPaginatedView, truncate_for_discord
 from bot.utils.whitelist_cache import (
     add_to_cache,
+    get_cache_entry,
     get_cached_usernames,
+    reconcile_whitelist_cache,
     remove_from_cache,
     sync_from_rcon,
 )
@@ -18,8 +20,8 @@ from bot.utils.whitelist_channel import get_whitelist_channel_id, set_whitelist_
 
 logger = logging.getLogger(__name__)
 
-WHITELIST_APPROVE_EMOJI = "\u2705"  # ✅
-WHITELIST_REJECT_EMOJI = "\u274c"  # ❌
+WHITELIST_APPROVE_EMOJI = "\u2705"
+WHITELIST_REJECT_EMOJI = "\u274c"
 
 OPERATION_CHOICES = [
     app_commands.Choice(name="Add", value="add"),
@@ -28,13 +30,14 @@ OPERATION_CHOICES = [
     app_commands.Choice(name="Off", value="off"),
     app_commands.Choice(name="On", value="on"),
     app_commands.Choice(name="Push", value="push"),
+    app_commands.Choice(name="Repair", value="repair"),
     app_commands.Choice(name="Remove", value="remove"),
     app_commands.Choice(name="Set", value="set"),
     app_commands.Choice(name="Sync", value="sync"),
 ]
 
 TOGGLE_OPERATIONS = {"off", "on"}
-MODERATION_OPERATIONS = {"add", "list", "push", "remove", "sync"}
+MODERATION_OPERATIONS = {"add", "list", "push", "repair", "remove", "sync"}
 
 
 async def _whitelist_username_autocomplete(
@@ -69,6 +72,23 @@ def _validate_username(username: str) -> str | None:
     return s if s.replace("_", "").isalnum() else None
 
 
+def _rcon_remove_sounds_failed(resp: str) -> bool:
+    s = (resp or "").lower()
+    return any(
+        phrase in s
+        for phrase in (
+            "not whitelisted",
+            "isn't whitelisted",
+            "nothing changed",
+            "unknown player",
+            "cannot find",
+            "no player",
+            "is not on the whitelist",
+            "that player isn't",
+        )
+    )
+
+
 def _whitelist_command(cog: "WhitelistCommands"):
     @app_commands.command(
         name="whitelist",
@@ -76,7 +96,7 @@ def _whitelist_command(cog: "WhitelistCommands"):
     )
     @app_commands.guild_only()
     @app_commands.describe(
-        operation="Add, ClearChannel, List, Off, On, Push, Remove, Set, Sync",
+        operation="Add, ClearChannel, List, Off, On, Push, Repair, Remove, Set, Sync",
         username="Minecraft username (Add/Remove only)",
         channel="Channel for IGN posts (admin; required for Set, omit with ClearChannel to disable)",
     )
@@ -119,7 +139,7 @@ class WhitelistCommands(commands.Cog):
 
         if op is None:
             await interaction.followup.send(
-                "Provide operation (Add, ClearChannel, List, Off, On, Push, Remove, Set, Sync) "
+                "Provide operation (Add, ClearChannel, List, Off, On, Push, Repair, Remove, Set, Sync) "
                 "or channel to set.",
                 ephemeral=True,
             )
@@ -161,6 +181,8 @@ class WhitelistCommands(commands.Cog):
             await self._handle_list(interaction)
         elif op == "push":
             await self._handle_push(interaction)
+        elif op == "repair":
+            await self._handle_repair(interaction)
         else:
             await self._handle_sync(interaction)
 
@@ -376,6 +398,38 @@ class WhitelistCommands(commands.Cog):
             )
         await interaction.followup.send(summary, ephemeral=True)
 
+    async def _handle_repair(self, interaction: discord.Interaction):
+        summary = await reconcile_whitelist_cache(
+            self.bot.db_pool, interaction.guild_id, cache=self.bot.cache
+        )
+        lines: list[str] = []
+        if summary["updated"]:
+            lines.append(
+                "Renamed in cache (Mojang): "
+                + ", ".join(summary["updated"][:40])
+                + (" …" if len(summary["updated"]) > 40 else "")
+            )
+        if summary["uuid_filled"]:
+            lines.append(f"UUID saved for {len(summary['uuid_filled'])} account(s).")
+        if summary["pruned"]:
+            lines.append(
+                "Removed stale names (no Mojang profile): "
+                + ", ".join(summary["pruned"][:40])
+                + (" …" if len(summary["pruned"]) > 40 else "")
+            )
+        if not lines:
+            lines.append(
+                "No cache changes (entries match Mojang UUID lookup, or APIs did not respond)."
+            )
+        msg = truncate_for_discord("\n".join(lines))
+        if self.bot.notifier and self.bot.settings.feature_notify_moderation:
+            await self.bot.notifier.notify_whitelist(
+                interaction.guild_id,
+                "Repair",
+                interaction.user.id,
+            )
+        await interaction.followup.send(msg, ephemeral=True)
+
     async def _handle_remove(self, interaction: discord.Interaction, username: str | None):
         if not username:
             await interaction.followup.send(
@@ -392,6 +446,21 @@ class WhitelistCommands(commands.Cog):
             return
         try:
             resp = await self.bot.minecraft_rcon.whitelist_remove(valid)
+            if _rcon_remove_sounds_failed(resp):
+                entry = await get_cache_entry(self.bot.db_pool, interaction.guild_id, valid)
+                uid = entry.get("minecraft_uuid") if entry else None
+                if uid:
+                    prof = await get_profile_by_uuid(uid)
+                    if prof and prof[1].lower() != valid.lower():
+                        resp = await self.bot.minecraft_rcon.whitelist_remove(prof[1])
+            if _rcon_remove_sounds_failed(resp):
+                await interaction.followup.send(
+                    "Could not remove that name on the server (it may be outdated after a "
+                    "Mojang rename). Try **Repair**, then Remove again with the updated name, "
+                    f"or Sync from RCON. Last response: {resp[:300]}",
+                    ephemeral=True,
+                )
+                return
             await remove_from_cache(
                 self.bot.db_pool, interaction.guild_id, valid, cache=self.bot.cache
             )
