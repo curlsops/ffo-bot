@@ -6,7 +6,7 @@ import os
 import signal
 import sys
 
-from bot.client import FFOBot
+from bot.client import FFOBot, FFOShardedBot, create_ffo_bot
 from bot.utils.telemetry import configure_tracing
 from config.logging_config import setup_logging
 from config.settings import Settings
@@ -15,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 class GracefulShutdown:
-    def __init__(self, bot: FFOBot):
+    def __init__(self, bot: FFOBot | FFOShardedBot):
         self.bot = bot
         self.shutdown_initiated = False
 
@@ -61,7 +61,7 @@ async def main():
         version = "unknown"
     logger.info("Starting v%s (env=%s)", version, settings.environment)
 
-    bot = FFOBot(settings)
+    bot = create_ffo_bot(settings)
     GracefulShutdown(bot).setup_signals()
 
     try:

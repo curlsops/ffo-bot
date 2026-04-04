@@ -33,89 +33,54 @@ logger = logging.getLogger(__name__)
 _tracer = trace.get_tracer(__name__)
 
 
-class MetricsCommandTree(app_commands.CommandTree):
-    async def _call(self, interaction: discord.Interaction) -> None:
-        from bot.client import FFOBot
-
-        bot = cast(FFOBot, self.client)
-        start = time.perf_counter()
-        command_name = "unknown"
-        server_id = str(interaction.guild_id) if interaction.guild_id else "0"
-        data = interaction.data or {}
-        if data.get("type", 1) == 1:
-            command, _ = self._get_app_command_options(data)
-            command_name = command.qualified_name if command else "unknown"
-        else:
-            command_name = data.get("name", "unknown")
-
-        with _tracer.start_as_current_span("discord.interaction") as span:
-            span.set_attribute("discord.command", command_name)
-            span.set_attribute("discord.guild_id", server_id)
-            if interaction.channel_id:
-                span.set_attribute("discord.channel_id", str(interaction.channel_id))
-            span.set_attribute("discord.user_id", str(interaction.user.id))
-            try:
-                if bot.rate_limiter and interaction.guild_id:
-                    allowed, reason = await bot.rate_limiter.check_rate_limit(
-                        interaction.user.id, interaction.guild_id
-                    )
-                    if not allowed:
-                        span.set_attribute("discord.rate_limited", True)
-                        if bot.settings.feature_notify_rate_limit and bot.notifier:
-                            await bot.notifier.notify_rate_limit_hit(
-                                interaction.guild_id,
-                                interaction.user.id,
-                                reason,
-                                command_name,
-                            )
-                        await send_ephemeral(interaction, reason)
-                        interaction.command_failed = True
-                        return
-
-                await super()._call(interaction)
-            finally:
-                if getattr(interaction, "command_failed", False):
-                    span.set_status(Status(StatusCode.ERROR))
-                if bot.metrics:
-                    status = "error" if getattr(interaction, "command_failed", False) else "success"
-                    bot.metrics.commands_executed.labels(
-                        command_name=command_name,
-                        server_id=server_id,
-                        status=status,
-                    ).inc()
-                    bot.metrics.command_duration.labels(command_name=command_name).observe(
-                        time.perf_counter() - start
-                    )
+def _parse_discord_shard_ids(raw: str | None) -> list[int] | None:
+    if not raw or not raw.strip():
+        return None
+    return [int(x.strip()) for x in raw.split(",") if x.strip()]
 
 
-class FFOBot(commands.Bot):
-    def __init__(self, settings: Settings):
-        intents = discord.Intents.default()
-        for k in ("message_content", "guilds", "members", "reactions", "bans", "voice_states"):
-            setattr(intents, k, True)
-        super().__init__(
-            command_prefix="!",
-            intents=intents,
-            help_command=None,
-            tree_cls=MetricsCommandTree,
-        )
+def _discord_intents() -> discord.Intents:
+    intents = discord.Intents.default()
+    for k in ("message_content", "guilds", "members", "reactions", "bans", "voice_states"):
+        setattr(intents, k, True)
+    return intents
 
+
+class _FFOBotMixin(commands.Bot):
+    settings: Settings
+    db_pool: DatabasePool | None
+    cache: InMemoryCache | None
+    metrics: BotMetrics | None
+    phrase_matcher: PhraseMatcher | None
+    media_downloader: object | None
+    voice_transcriber: object | None
+    permission_checker: PermissionChecker | None
+    rate_limiter: RateLimiter | None
+    notifier: AdminNotifier | None
+    minecraft_rcon: object | None
+    pool: NodePool | None
+    _lavalink_node_created: bool
+    _shutdown_event: asyncio.Event
+    _health_server: web.AppRunner | None
+    _message_handler_tasks: set[asyncio.Task]
+
+    def _init_ffobot_state(self, settings: Settings) -> None:
         self.settings = settings
-        self.db_pool: DatabasePool | None = None
-        self.cache: InMemoryCache | None = None
-        self.metrics: BotMetrics | None = None
-        self.phrase_matcher: PhraseMatcher | None = None
-        self.media_downloader: object | None = None
-        self.voice_transcriber: object | None = None
-        self.permission_checker: PermissionChecker | None = None
-        self.rate_limiter: RateLimiter | None = None
-        self.notifier: AdminNotifier | None = None
-        self.minecraft_rcon: object | None = None
-        self.pool: NodePool | None = None
+        self.db_pool = None
+        self.cache = None
+        self.metrics = None
+        self.phrase_matcher = None
+        self.media_downloader = None
+        self.voice_transcriber = None
+        self.permission_checker = None
+        self.rate_limiter = None
+        self.notifier = None
+        self.minecraft_rcon = None
+        self.pool = None
         self._lavalink_node_created = False
         self._shutdown_event = asyncio.Event()
-        self._health_server: web.AppRunner | None = None
-        self._message_handler_tasks: set[asyncio.Task] = set()
+        self._health_server = None
+        self._message_handler_tasks = set()
 
     async def setup_hook(self):
         with _tracer.start_as_current_span("bot.setup_hook"):
@@ -279,7 +244,14 @@ class FFOBot(commands.Bot):
                         message_id=row["message_id"],
                     )
 
+    async def on_shard_ready(self, shard_id: int):
+        if (getattr(self, "shard_count", None) or 0) > 1:
+            logger.info("Shard %s connected", shard_id)
+
     async def on_ready(self):
+        if (getattr(self, "shard_count", None) or 0) > 1 and not self.is_ready():
+            return
+
         logger.info(
             "Connected as %s (ID: %s) to %d servers", self.user, self.user.id, len(self.guilds)
         )
@@ -442,3 +414,87 @@ class FFOBot(commands.Bot):
                 channel_id=interaction.channel_id,
             )
         await send_ephemeral(interaction, "An error occurred.")
+
+
+class MetricsCommandTree(app_commands.CommandTree):
+    async def _call(self, interaction: discord.Interaction) -> None:
+        bot = cast(_FFOBotMixin, self.client)
+        start = time.perf_counter()
+        command_name = "unknown"
+        server_id = str(interaction.guild_id) if interaction.guild_id else "0"
+        data = interaction.data or {}
+        if data.get("type", 1) == 1:
+            command, _ = self._get_app_command_options(data)
+            command_name = command.qualified_name if command else "unknown"
+        else:
+            command_name = data.get("name", "unknown")
+
+        with _tracer.start_as_current_span("discord.interaction") as span:
+            span.set_attribute("discord.command", command_name)
+            span.set_attribute("discord.guild_id", server_id)
+            if interaction.channel_id:
+                span.set_attribute("discord.channel_id", str(interaction.channel_id))
+            span.set_attribute("discord.user_id", str(interaction.user.id))
+            try:
+                if bot.rate_limiter and interaction.guild_id:
+                    allowed, reason = await bot.rate_limiter.check_rate_limit(
+                        interaction.user.id, interaction.guild_id
+                    )
+                    if not allowed:
+                        span.set_attribute("discord.rate_limited", True)
+                        if bot.settings.feature_notify_rate_limit and bot.notifier:
+                            await bot.notifier.notify_rate_limit_hit(
+                                interaction.guild_id,
+                                interaction.user.id,
+                                reason,
+                                command_name,
+                            )
+                        await send_ephemeral(interaction, reason)
+                        interaction.command_failed = True
+                        return
+
+                await super()._call(interaction)
+            finally:
+                if getattr(interaction, "command_failed", False):
+                    span.set_status(Status(StatusCode.ERROR))
+                if bot.metrics:
+                    status = "error" if getattr(interaction, "command_failed", False) else "success"
+                    bot.metrics.commands_executed.labels(
+                        command_name=command_name,
+                        server_id=server_id,
+                        status=status,
+                    ).inc()
+                    bot.metrics.command_duration.labels(command_name=command_name).observe(
+                        time.perf_counter() - start
+                    )
+
+
+class FFOBot(_FFOBotMixin):
+    def __init__(self, settings: Settings):
+        super().__init__(
+            command_prefix="!",
+            intents=_discord_intents(),
+            help_command=None,
+            tree_cls=MetricsCommandTree,
+        )
+        self._init_ffobot_state(settings)
+
+
+class FFOShardedBot(_FFOBotMixin, commands.AutoShardedBot):
+    def __init__(self, settings: Settings):
+        shard_ids = _parse_discord_shard_ids(settings.discord_shard_ids)
+        super().__init__(
+            command_prefix="!",
+            intents=_discord_intents(),
+            help_command=None,
+            tree_cls=MetricsCommandTree,
+            shard_count=settings.discord_shard_count,
+            shard_ids=shard_ids,
+        )
+        self._init_ffobot_state(settings)
+
+
+def create_ffo_bot(settings: Settings) -> FFOBot | FFOShardedBot:
+    if settings.discord_sharding_enabled:
+        return FFOShardedBot(settings)
+    return FFOBot(settings)

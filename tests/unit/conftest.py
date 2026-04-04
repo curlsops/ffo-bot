@@ -31,6 +31,9 @@ def mock_settings():
     s.otel_tracing_enabled = False
     s.otel_service_name = None
     s.otel_trace_discord_messages = False
+    s.discord_sharding_enabled = False
+    s.discord_shard_count = None
+    s.discord_shard_ids = None
     return s
 
 

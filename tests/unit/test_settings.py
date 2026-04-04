@@ -99,6 +99,7 @@ class TestSettingsDefaults:
             ("whitelist_cache_reconcile_interval_hours", 24.0),
             ("feature_anonymous_post", False),
             ("feature_music", False),
+            ("discord_sharding_enabled", False),
         ],
     )
     def test_settings_default_values(self, field, expected):
@@ -189,3 +190,46 @@ class TestSettingsDefaults:
             with patch.dict(os.environ, env, clear=True):
                 with pytest.raises(ValueError, match="DATABASE_URL or all of"):
                     Settings()
+
+    def test_settings_sharding_shard_ids_without_count_raises_when_enabled(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            env = {
+                **make_env(tmpdir),
+                "DISCORD_SHARDING_ENABLED": "true",
+                "DISCORD_SHARD_IDS": "0,1",
+            }
+            with patch.dict(os.environ, env, clear=True):
+                with pytest.raises(ValueError, match="DISCORD_SHARD_COUNT required"):
+                    Settings()
+
+    def test_settings_sharding_shard_ids_ok_with_count(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            env = {
+                **make_env(tmpdir),
+                "DISCORD_SHARDING_ENABLED": "true",
+                "DISCORD_SHARD_IDS": "0,1",
+                "DISCORD_SHARD_COUNT": "8",
+            }
+            with patch.dict(os.environ, env, clear=True):
+                s = Settings()
+                assert s.discord_sharding_enabled is True
+                assert s.discord_shard_count == 8
+
+    def test_settings_sharding_shard_ids_ignored_when_disabled(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            env = {
+                **make_env(tmpdir),
+                "DISCORD_SHARDING_ENABLED": "false",
+                "DISCORD_SHARD_IDS": "0,1",
+            }
+            with patch.dict(os.environ, env, clear=True):
+                s = Settings()
+                assert s.discord_sharding_enabled is False
+
+    def test_settings_sharding_enabled_without_shard_ids_ok(self):
+        with tempfile.TemporaryDirectory() as tmpdir:
+            env = {**make_env(tmpdir), "DISCORD_SHARDING_ENABLED": "true"}
+            with patch.dict(os.environ, env, clear=True):
+                s = Settings()
+                assert s.discord_sharding_enabled is True
+                assert s.discord_shard_ids is None

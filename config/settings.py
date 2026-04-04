@@ -23,6 +23,17 @@ class Settings(BaseSettings):
 
     discord_bot_token: str = Field(..., description="Discord bot token")
     discord_public_key: str = Field(..., description="Discord public key for webhook verification")
+    discord_sharding_enabled: bool = Field(
+        default=False, description="Enable gateway sharding (AutoShardedBot)"
+    )
+    discord_shard_count: Optional[int] = Field(
+        default=None,
+        description="Total shards; omit for Discord default. Required if discord_shard_ids is set",
+    )
+    discord_shard_ids: Optional[str] = Field(
+        default=None,
+        description="Comma-separated shard IDs for this process (clustering)",
+    )
 
     database_url: Optional[str] = Field(
         default=None,
@@ -186,6 +197,15 @@ class Settings(BaseSettings):
         raise ValueError(
             "Provide DATABASE_URL or all of DB_HOST, DB_NAME, DB_USER (and optionally DB_PORT, DB_PASSWORD)"
         )
+
+    @model_validator(mode="after")
+    def validate_discord_sharding(self) -> "Settings":
+        if not self.discord_sharding_enabled:
+            return self
+        if self.discord_shard_ids and self.discord_shard_ids.strip():
+            if self.discord_shard_count is None:
+                raise ValueError("DISCORD_SHARD_COUNT required when DISCORD_SHARD_IDS is set")
+        return self
 
     @field_validator("log_level")
     @classmethod

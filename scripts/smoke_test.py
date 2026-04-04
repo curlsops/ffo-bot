@@ -5,7 +5,7 @@ import config
 import database
 from bot.auth.permissions import PermissionChecker
 from bot.cache.memory import InMemoryCache
-from bot.client import FFOBot
+from bot.client import create_ffo_bot
 from bot.commands.admin import AdminCommands
 from bot.commands.anonymous import AnonymousCommands, AnonymousPostModal
 from bot.commands.faq import FAQCommands
