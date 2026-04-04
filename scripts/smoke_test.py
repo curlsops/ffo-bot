@@ -1,5 +1,6 @@
 #!/usr/bin/env python3
 import bot.utils.channel_config
+import bot.utils.telemetry
 import config
 import database
 from bot.auth.permissions import PermissionChecker

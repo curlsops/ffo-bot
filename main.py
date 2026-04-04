@@ -7,6 +7,7 @@ import signal
 import sys
 
 from bot.client import FFOBot
+from bot.utils.telemetry import configure_tracing
 from config.logging_config import setup_logging
 from config.settings import Settings
 
@@ -49,6 +50,11 @@ async def main():
         sys.exit(1)
 
     setup_logging(log_level=settings.log_level, log_format=settings.log_format)
+    configure_tracing(
+        enabled=settings.otel_tracing_enabled,
+        service_name=settings.otel_service_name,
+        environment=settings.environment,
+    )
     try:
         version = os.environ.get("FFO_BOT_VERSION") or importlib.metadata.version("ffo-bot")
     except importlib.metadata.PackageNotFoundError:

@@ -25,6 +25,8 @@ def _build_bot():
     bot.settings = MagicMock()
     bot.settings.feature_conversion = True
     bot.settings.feature_minecraft_whitelist = False
+    bot.is_shutting_down = MagicMock(return_value=False)
+    bot._message_handler_tasks = set()
     return bot
 
 
@@ -101,3 +103,31 @@ async def test_handle_message_serializes_db_heavy_operations():
     assert max_db_heavy == 1
     handler._process_phrase_matching.assert_awaited_once_with(message)
     handler._download_media.assert_awaited_once_with(message)
+
+
+@pytest.mark.asyncio
+async def test_on_message_flood_many_concurrent_posters():
+    flood_n = 500
+    bot = _build_bot()
+    bot.metrics = MagicMock()
+    bot.metrics.messages_processed.labels.return_value.inc = MagicMock()
+    bot.voice_transcriber = MagicMock(enabled=False)
+    bot.settings.feature_conversion = False
+
+    handler = MessageHandler(bot)
+    handler._check_user_opt_out = AsyncMock(return_value=False)
+
+    messages = []
+    for i in range(flood_n):
+        msg = MagicMock()
+        msg.author = MagicMock(bot=False, id=10_000 + i)
+        msg.guild = MagicMock(id=1)
+        msg.channel = MagicMock(id=2)
+        msg.content = f"flood-{i}"
+        msg.attachments = []
+        messages.append(msg)
+
+    await asyncio.gather(*(handler.on_message(m) for m in messages))
+
+    assert bot.metrics.messages_processed.labels.return_value.inc.call_count == flood_n
+    assert bot._message_handler_tasks == set()

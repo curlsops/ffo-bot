@@ -10,6 +10,8 @@ import discord
 from aiohttp import web
 from discord import app_commands
 from discord.ext import commands
+from opentelemetry import trace
+from opentelemetry.trace import Status, StatusCode
 
 from bot.auth.permissions import PermissionChecker
 from bot.cache.memory import InMemoryCache
@@ -20,6 +22,7 @@ from bot.utils.interaction import send_ephemeral
 from bot.utils.metrics import BotMetrics
 from bot.utils.notifier import AdminNotifier
 from bot.utils.rate_limiter import RateLimiter
+from bot.utils.telemetry import shutdown_tracing
 from config.settings import Settings
 from database.connection import DatabasePool
 
@@ -27,6 +30,7 @@ if TYPE_CHECKING:
     from mafic import NodePool
 
 logger = logging.getLogger(__name__)
+_tracer = trace.get_tracer(__name__)
 
 
 class MetricsCommandTree(app_commands.CommandTree):
@@ -37,42 +41,51 @@ class MetricsCommandTree(app_commands.CommandTree):
         start = time.perf_counter()
         command_name = "unknown"
         server_id = str(interaction.guild_id) if interaction.guild_id else "0"
-        try:
-            data = interaction.data or {}
-            if data.get("type", 1) == 1:
-                command, _ = self._get_app_command_options(data)
-                command_name = command.qualified_name if command else "unknown"
-            else:
-                command_name = data.get("name", "unknown")
+        data = interaction.data or {}
+        if data.get("type", 1) == 1:
+            command, _ = self._get_app_command_options(data)
+            command_name = command.qualified_name if command else "unknown"
+        else:
+            command_name = data.get("name", "unknown")
 
-            if bot.rate_limiter and interaction.guild_id:
-                allowed, reason = await bot.rate_limiter.check_rate_limit(
-                    interaction.user.id, interaction.guild_id
-                )
-                if not allowed:
-                    if bot.settings.feature_notify_rate_limit and bot.notifier:
-                        await bot.notifier.notify_rate_limit_hit(
-                            interaction.guild_id,
-                            interaction.user.id,
-                            reason,
-                            command_name,
-                        )
-                    await send_ephemeral(interaction, reason)
-                    interaction.command_failed = True
-                    return
+        with _tracer.start_as_current_span("discord.interaction") as span:
+            span.set_attribute("discord.command", command_name)
+            span.set_attribute("discord.guild_id", server_id)
+            if interaction.channel_id:
+                span.set_attribute("discord.channel_id", str(interaction.channel_id))
+            span.set_attribute("discord.user_id", str(interaction.user.id))
+            try:
+                if bot.rate_limiter and interaction.guild_id:
+                    allowed, reason = await bot.rate_limiter.check_rate_limit(
+                        interaction.user.id, interaction.guild_id
+                    )
+                    if not allowed:
+                        span.set_attribute("discord.rate_limited", True)
+                        if bot.settings.feature_notify_rate_limit and bot.notifier:
+                            await bot.notifier.notify_rate_limit_hit(
+                                interaction.guild_id,
+                                interaction.user.id,
+                                reason,
+                                command_name,
+                            )
+                        await send_ephemeral(interaction, reason)
+                        interaction.command_failed = True
+                        return
 
-            await super()._call(interaction)
-        finally:
-            if bot.metrics:
-                status = "error" if getattr(interaction, "command_failed", False) else "success"
-                bot.metrics.commands_executed.labels(
-                    command_name=command_name,
-                    server_id=server_id,
-                    status=status,
-                ).inc()
-                bot.metrics.command_duration.labels(command_name=command_name).observe(
-                    time.perf_counter() - start
-                )
+                await super()._call(interaction)
+            finally:
+                if getattr(interaction, "command_failed", False):
+                    span.set_status(Status(StatusCode.ERROR))
+                if bot.metrics:
+                    status = "error" if getattr(interaction, "command_failed", False) else "success"
+                    bot.metrics.commands_executed.labels(
+                        command_name=command_name,
+                        server_id=server_id,
+                        status=status,
+                    ).inc()
+                    bot.metrics.command_duration.labels(command_name=command_name).observe(
+                        time.perf_counter() - start
+                    )
 
 
 class FFOBot(commands.Bot):
@@ -105,71 +118,72 @@ class FFOBot(commands.Bot):
         self._message_handler_tasks: set[asyncio.Task] = set()
 
     async def setup_hook(self):
-        logger.info("Initializing...")
-        db_url = self.settings.database_url
-        if not db_url:
-            raise ValueError("Database URL not configured")
-        self.metrics = BotMetrics()
-        self.db_pool = await DatabasePool.create(
-            db_url,
-            min_size=self.settings.db_pool_min_size,
-            max_size=self.settings.db_pool_max_size,
-            connection_timeout=self.settings.db_connection_timeout,
-            acquire_timeout=self.settings.db_acquire_timeout,
-            metrics=self.metrics,
-        )
-        max_memory_bytes = (
-            int(self.settings.cache_max_memory_mb * 1024 * 1024)
-            if self.settings.cache_max_memory_mb > 0
-            else 0
-        )
-        self.cache = InMemoryCache(
-            max_size=self.settings.cache_max_size,
-            default_ttl=self.settings.cache_default_ttl,
-            max_memory_bytes=max_memory_bytes,
-        )
-        set_session(create_session())
+        with _tracer.start_as_current_span("bot.setup_hook"):
+            logger.info("Initializing...")
+            db_url = self.settings.database_url
+            if not db_url:
+                raise ValueError("Database URL not configured")
+            self.metrics = BotMetrics()
+            self.db_pool = await DatabasePool.create(
+                db_url,
+                min_size=self.settings.db_pool_min_size,
+                max_size=self.settings.db_pool_max_size,
+                connection_timeout=self.settings.db_connection_timeout,
+                acquire_timeout=self.settings.db_acquire_timeout,
+                metrics=self.metrics,
+            )
+            max_memory_bytes = (
+                int(self.settings.cache_max_memory_mb * 1024 * 1024)
+                if self.settings.cache_max_memory_mb > 0
+                else 0
+            )
+            self.cache = InMemoryCache(
+                max_size=self.settings.cache_max_size,
+                default_ttl=self.settings.cache_default_ttl,
+                max_memory_bytes=max_memory_bytes,
+            )
+            set_session(create_session())
 
-        self.phrase_matcher = PhraseMatcher(self.db_pool, self.cache)
+            self.phrase_matcher = PhraseMatcher(self.db_pool, self.cache)
 
-        if self.settings.feature_media_download and self.db_pool and self.metrics:
-            from bot.processors.media_downloader import MediaDownloader
+            if self.settings.feature_media_download and self.db_pool and self.metrics:
+                from bot.processors.media_downloader import MediaDownloader
 
-            md = MediaDownloader(self.db_pool, self.settings.media_storage_path, self.metrics)
-            await md.initialize()
-            self.media_downloader = md
+                md = MediaDownloader(self.db_pool, self.settings.media_storage_path, self.metrics)
+                await md.initialize()
+                self.media_downloader = md
 
-        if self.settings.feature_voice_transcription and self.settings.openai_api_key:
-            from bot.processors.voice_transcriber import VoiceTranscriber
+            if self.settings.feature_voice_transcription and self.settings.openai_api_key:
+                from bot.processors.voice_transcriber import VoiceTranscriber
 
-            vt = VoiceTranscriber(api_key=self.settings.openai_api_key)
-            self.voice_transcriber = vt
+                vt = VoiceTranscriber(api_key=self.settings.openai_api_key)
+                self.voice_transcriber = vt
 
-        assert self.db_pool is not None and self.cache is not None
-        self.permission_checker = PermissionChecker(self.db_pool, self.cache, self)
-        self.rate_limiter = RateLimiter(
-            user_capacity=self.settings.rate_limit_user_capacity,
-            server_capacity=self.settings.rate_limit_server_capacity,
-        )
-        self.notifier = AdminNotifier(self)
-        from bot.utils.edit_tracker import EditTracker
+            assert self.db_pool is not None and self.cache is not None
+            self.permission_checker = PermissionChecker(self.db_pool, self.cache, self)
+            self.rate_limiter = RateLimiter(
+                user_capacity=self.settings.rate_limit_user_capacity,
+                server_capacity=self.settings.rate_limit_server_capacity,
+            )
+            self.notifier = AdminNotifier(self)
+            from bot.utils.edit_tracker import EditTracker
 
-        self.edit_tracker = EditTracker()
-        if self.settings.feature_minecraft_whitelist:
-            from bot.services.minecraft_rcon import MinecraftRCONClient
+            self.edit_tracker = EditTracker()
+            if self.settings.feature_minecraft_whitelist:
+                from bot.services.minecraft_rcon import MinecraftRCONClient
 
-            rcon = MinecraftRCONClient(self.settings)
-            self.minecraft_rcon = rcon
-        if self.settings.feature_music and self.settings.lavalink_password:
-            from mafic import NodePool
+                rcon = MinecraftRCONClient(self.settings)
+                self.minecraft_rcon = rcon
+            if self.settings.feature_music and self.settings.lavalink_password:
+                from mafic import NodePool
 
-            self.pool = NodePool(self)
-        self.tree.on_error = self._on_app_command_error
+                self.pool = NodePool(self)
+            self.tree.on_error = self._on_app_command_error
 
-        await self._start_health_server()
-        await self._load_extensions()
-        await self._register_persistent_views()
-        logger.info("Ready")
+            await self._start_health_server()
+            await self._load_extensions()
+            await self._register_persistent_views()
+            logger.info("Ready")
 
     async def _load_extensions(self):
         extensions = [
@@ -203,11 +217,17 @@ class FFOBot(commands.Bot):
             if enabled:
                 extensions.append(ext)
 
-        for extension in extensions:
-            try:
-                await self.load_extension(extension)
-            except Exception as e:
-                logger.error("Failed to load extension %s: %s", extension, e, exc_info=True)
+        with _tracer.start_as_current_span("bot.load_extensions"):
+            for extension in extensions:
+                with _tracer.start_as_current_span(
+                    "bot.load_extension",
+                    attributes={"extension.module": extension},
+                ) as ext_span:
+                    try:
+                        await self.load_extension(extension)
+                    except Exception as e:
+                        ext_span.record_exception(e)
+                        logger.error("Failed to load extension %s: %s", extension, e, exc_info=True)
 
     async def _start_health_server(self):
         public_key = (
@@ -278,22 +298,24 @@ class FFOBot(commands.Bot):
                 self.pool = None
 
         if getattr(self.settings, "sync_commands_on_boot", True):
-            clear_commands_on_boot = getattr(self.settings, "clear_commands_on_boot", True)
-            if clear_commands_on_boot:
-                await self._connection.http.bulk_upsert_global_commands(self.application_id, [])
-            if self.guilds:
-                await asyncio.gather(*[self._register_server(g) for g in self.guilds])
-            for guild in self.guilds:
+            with _tracer.start_as_current_span("discord.sync_commands") as sync_span:
+                sync_span.set_attribute("discord.guild_count", len(self.guilds))
+                clear_commands_on_boot = getattr(self.settings, "clear_commands_on_boot", True)
                 if clear_commands_on_boot:
-                    await self._connection.http.bulk_upsert_guild_commands(
-                        self.application_id, guild.id, []
-                    )
-                self.tree.copy_global_to(guild=guild)
-                await self.tree.sync(guild=guild)
-            if self.guilds:
-                logger.info("Synced slash commands to %d guild(s)", len(self.guilds))
-            else:
-                await self.tree.sync()
+                    await self._connection.http.bulk_upsert_global_commands(self.application_id, [])
+                if self.guilds:
+                    await asyncio.gather(*[self._register_server(g) for g in self.guilds])
+                for guild in self.guilds:
+                    if clear_commands_on_boot:
+                        await self._connection.http.bulk_upsert_guild_commands(
+                            self.application_id, guild.id, []
+                        )
+                    self.tree.copy_global_to(guild=guild)
+                    await self.tree.sync(guild=guild)
+                if self.guilds:
+                    logger.info("Synced slash commands to %d guild(s)", len(self.guilds))
+                else:
+                    await self.tree.sync()
 
         if self.metrics:
             self.metrics.set_guild_count(len(self.guilds))
@@ -377,6 +399,7 @@ class FFOBot(commands.Bot):
             await self.pool.close()
 
         await super().close()
+        shutdown_tracing()
         logger.info("Shutdown complete")
 
     async def _drain_message_queue(self):

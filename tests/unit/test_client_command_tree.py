@@ -75,6 +75,7 @@ class TestMetricsCommandTree:
         i = MagicMock()
         i.data = {"type": 2, "name": "Copy ID"}
         i.guild_id = 1
+        i.channel_id = None
         i.command_failed = False
 
         with patch("bot.client.app_commands.CommandTree._call", new_callable=AsyncMock):

@@ -28,6 +28,9 @@ def mock_settings():
     s.shutdown_timeout_seconds = 5
     s.media_storage_path = "/tmp/media"
     s.clear_commands_on_boot = True
+    s.otel_tracing_enabled = False
+    s.otel_service_name = None
+    s.otel_trace_discord_messages = False
     return s
 
 

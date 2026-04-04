@@ -71,6 +71,19 @@ class Settings(BaseSettings):
     log_level: str = Field(default="INFO", description="Log level")
     log_format: str = Field(default="json", description="Log format (json or text)")
 
+    otel_tracing_enabled: bool = Field(
+        default=False,
+        description="Export traces via OTLP HTTP (OTEL_EXPORTER_OTLP_*)",
+    )
+    otel_service_name: Optional[str] = Field(
+        default=None,
+        description="Trace resource service.name (default OTEL_SERVICE_NAME or ffo-bot)",
+    )
+    otel_trace_discord_messages: bool = Field(
+        default=False,
+        description="Span per guild message (high volume)",
+    )
+
     health_check_port: int = Field(default=8080, description="Health check HTTP port")
     health_check_host: str = Field(
         default="0.0.0.0",

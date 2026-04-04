@@ -5,6 +5,7 @@ from typing import Awaitable, cast
 import asyncpg
 import discord
 from discord.ext import commands
+from opentelemetry import trace
 
 from bot.commands.whitelist import WHITELIST_APPROVE_EMOJI, WHITELIST_REJECT_EMOJI
 from bot.processors.media_downloader import MediaAttachment
@@ -17,6 +18,7 @@ from bot.utils.whitelist_channel import get_whitelist_channel_id
 from config.constants import Constants
 
 logger = logging.getLogger(__name__)
+_message_tracer = trace.get_tracer(__name__)
 
 MOJANG_CACHE_TTL = 300
 MOJANG_CACHE_KEY = "mojang:profile:{username}"
@@ -38,7 +40,13 @@ class MessageHandler(commands.Cog):
         if task and not task.done():
             self.bot._message_handler_tasks.add(task)
         try:
-            await self._handle_message(message)
+            if getattr(self.bot.settings, "otel_trace_discord_messages", False):
+                with _message_tracer.start_as_current_span("discord.message") as span:
+                    span.set_attribute("discord.guild_id", str(message.guild.id))
+                    span.set_attribute("discord.channel_id", str(message.channel.id))
+                    await self._handle_message(message)
+            else:
+                await self._handle_message(message)
         finally:
             if task:
                 self.bot._message_handler_tasks.discard(task)
@@ -84,7 +92,13 @@ class MessageHandler(commands.Cog):
         if self.bot.metrics:
             self.bot.metrics.messages_processed.labels(server_id=str(after.guild.id)).inc()
 
-        await self._process_phrase_matching_edit(after)
+        if getattr(self.bot.settings, "otel_trace_discord_messages", False):
+            with _message_tracer.start_as_current_span("discord.message_edit") as span:
+                span.set_attribute("discord.guild_id", str(after.guild.id))
+                span.set_attribute("discord.channel_id", str(after.channel.id))
+                await self._process_phrase_matching_edit(after)
+        else:
+            await self._process_phrase_matching_edit(after)
 
     async def _process_phrase_matching_edit(self, message: discord.Message):
         try:

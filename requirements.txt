@@ -14,6 +14,10 @@ pynacl>=1.5.0,<2.0.0
 
 # Monitoring
 prometheus-client>=0.19.0,<1.0.0
+opentelemetry-api>=1.28.0,<2.0.0
+opentelemetry-sdk>=1.28.0,<2.0.0
+opentelemetry-exporter-otlp-proto-http>=1.28.0,<2.0.0
+opentelemetry-instrumentation-asyncpg>=0.49b0,<1.0.0
 
 # Logging
 python-json-logger>=4.0.0,<4.1.0
