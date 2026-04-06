@@ -27,7 +27,8 @@ spec:
           emptyDir: {}
       containers:
         - name: ffo-bot
-          image: ghcr.io/mrcurlsttv/ffo-bot:latest
+          # Release: :latest / v* ; edge branch CI: :edge or :edge-<sha> on ghcr.io/curlsops/ffo-bot
+          image: ghcr.io/curlsops/ffo-bot:latest
           imagePullPolicy: Always
           ports:
             - name: http

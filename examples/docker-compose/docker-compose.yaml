@@ -1,6 +1,6 @@
 services:
   ffo-bot:
-    image: ghcr.io/mrcurlsttv/ffo-bot:latest
+    image: ghcr.io/curlsops/ffo-bot:latest
     container_name: ffo-bot
     restart: unless-stopped
     ports:

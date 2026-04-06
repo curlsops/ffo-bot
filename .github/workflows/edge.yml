@@ -111,9 +111,10 @@ jobs:
           username: ${{ secrets.DOCKERHUB_USERNAME }}
           password: ${{ secrets.DOCKERHUB_TOKEN }}
 
-      - name: Get short SHA
+      # Use GITHUB_SHA so tags match the commit that triggered this run (not a divergent git HEAD).
+      - name: Short SHA for tags
         id: sha
-        run: echo "short=$(git rev-parse --short HEAD)" >> $GITHUB_OUTPUT
+        run: echo "short=$(echo "${GITHUB_SHA}" | cut -c1-7)" >> "${GITHUB_OUTPUT}"
 
       - name: Build and push edge image
         uses: docker/build-push-action@d08e5c354a6adb9ed34480a06d141179aa583294 # v7
