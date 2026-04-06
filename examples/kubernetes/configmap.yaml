@@ -4,27 +4,63 @@ metadata:
   name: ffo-bot
   namespace: ffo-bot
 data:
-  # Logging configuration
   LOG_LEVEL: "INFO"
   LOG_FORMAT: "json"
 
-  # Health check server port
   HEALTH_CHECK_PORT: "8080"
+  HEALTH_CHECK_HOST: "0.0.0.0"
+  INTERACTIONS_ENDPOINT_ENABLED: "false"
 
-  # Feature flags
-  FEATURE_MEDIA_DOWNLOAD: "false"
+  SYNC_COMMANDS_ON_BOOT: "true"
+  CLEAR_COMMANDS_ON_BOOT: "true"
+
+  DISCORD_SHARDING_ENABLED: "false"
+  # DISCORD_SHARD_COUNT: "2"
+  # DISCORD_SHARD_IDS: "0"
+
+  OTEL_TRACING_ENABLED: "false"
+  OTEL_TRACE_DISCORD_MESSAGES: "false"
+  # OTEL_SERVICE_NAME: "ffo-bot"
+  # OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector.opentelemetry.svc:4318"
+
+  FEATURE_REACTION_ROLES: "true"
+  FEATURE_ROTATING_STATUS: "false"
+  FEATURE_GIVEAWAYS: "true"
+  FEATURE_VOICE_TRANSCRIPTION: "false"
+  FEATURE_QUOTEBOOK: "true"
+  FEATURE_CONVERSION: "false"
+  FEATURE_MINECRAFT_WHITELIST: "false"
+  FEATURE_FAQ: "true"
+  FEATURE_FAQ_SUBMISSIONS: "true"
+  FEATURE_NOTIFY_MODERATION: "true"
+  FEATURE_NOTIFY_RATE_LIMIT: "false"
+  FEATURE_ANONYMOUS_POST: "false"
+  FEATURE_MUSIC: "false"
+
+  # BOT_OWNER_SERVER_ID: "123456789012345678"
+  # BOT_OWNER_NOTIFY_CHANNEL_ID: "123456789012345678"
 
   # Rate limiting
   RATE_LIMIT_USER_CAPACITY: "10"
   RATE_LIMIT_SERVER_CAPACITY: "100"
 
-  # Cache settings
   CACHE_MAX_SIZE: "10000"
+  CACHE_MAX_MEMORY_MB: "0"
   CACHE_DEFAULT_TTL: "86400"
 
-  # Database pool
   DB_POOL_MIN_SIZE: "2"
   DB_POOL_MAX_SIZE: "10"
+  DB_CONNECTION_TIMEOUT: "10"
+  DB_ACQUIRE_TIMEOUT: "5"
 
-  # Shutdown timeout (seconds)
   SHUTDOWN_TIMEOUT_SECONDS: "30"
+
+  # Used when FEATURE_MUSIC=true (Lavalink Deployment/Service in-cluster)
+  LAVALINK_HOST: "lavalink"
+  LAVALINK_PORT: "2333"
+
+  # Used when FEATURE_MINECRAFT_WHITELIST=true
+  MINECRAFT_RCON_PORT: "25575"
+  # MINECRAFT_RCON_HOST: "minecraft.tools.svc.cluster.local"
+  # MINECRAFT_RCON_TARGETS: '[{"id":"main","host":"minecraft.tools.svc.cluster.local","port":25575}]'
+  WHITELIST_CACHE_RECONCILE_INTERVAL_HOURS: "24"

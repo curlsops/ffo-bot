@@ -12,6 +12,9 @@ logger = logging.getLogger(__name__)
 
 PROFILE_URL = "https://api.minecraftservices.com/minecraft/profile/lookup/name/{username}"
 FALLBACK_URL = "https://api.mojang.com/minecraft/profile/lookup/name/{username}"
+SESSION_PROFILE_BY_UUID_URL = (
+    "https://sessionserver.mojang.com/session/minecraft/profile/{uuid_no_dashes}"
+)
 BATCH_URL = "https://api.minecraftservices.com/minecraft/profile/lookup/bulk/byname"
 BATCH_FALLBACK_URL = "https://api.mojang.com/profiles/minecraft"
 NAMEMC_PROFILE_URL = "https://namemc.com/profile/{username}"
@@ -93,6 +96,34 @@ def _parse_namemc_html(html: str, username: str) -> tuple[str | None, str] | Non
     if title_match and title_match.group(1).strip().lower() != "namemc":
         return (None, title_match.group(1).strip())
     return None
+
+
+def _uuid_without_dashes(uuid_raw: str) -> str:
+    return re.sub(r"[^a-fA-F0-9]", "", str(uuid_raw)).lower()
+
+
+async def get_profile_by_uuid(uuid_str: str) -> tuple[str, str] | None:
+    u = _uuid_without_dashes(uuid_str)
+    if len(u) != 32:
+        return None
+    url = SESSION_PROFILE_BY_UUID_URL.format(uuid_no_dashes=u)
+    try:
+        async with session_scope(session=get_session()) as session:
+            async with session.get(url) as resp:
+                if resp.status == 200:
+                    data = await resp.json()
+                    id_raw = data.get("id")
+                    name = data.get("name")
+                    if id_raw and name:
+                        return (_format_uuid(id_raw), name)
+                    return None
+                if resp.status in (204, 404):
+                    return None
+                logger.debug("Session server profile lookup %s for uuid", resp.status)
+                return None
+    except aiohttp.ClientError as e:
+        logger.debug("Session server request failed: %s", e)
+        return None
 
 
 async def get_profile(username: str) -> tuple[str, str] | None:

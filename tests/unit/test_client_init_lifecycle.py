@@ -12,7 +12,6 @@ class TestFFOBotInit:
         assert bot.cache is None
         assert bot.metrics is None
         assert bot.phrase_matcher is None
-        assert bot.media_downloader is None
         assert bot.permission_checker is None
         assert bot.rate_limiter is None
         assert bot._health_server is None
@@ -45,7 +44,6 @@ class TestFFOBotLifecycle:
         bot.db_pool = AsyncMock()
         bot.cache = MagicMock()
         bot.metrics = MagicMock()
-        bot.media_downloader = AsyncMock()
         bot._health_server = AsyncMock()
 
         with patch.object(bot, "_drain_message_queue", new_callable=AsyncMock):
@@ -54,7 +52,6 @@ class TestFFOBotLifecycle:
 
         bot.db_pool.close.assert_called_once()
         bot.cache.clear.assert_called_once()
-        bot.media_downloader.close.assert_called_once()
         bot._health_server.cleanup.assert_called_once()
         bot.metrics.set_connection_status.assert_called_with(0)
 
@@ -76,10 +73,9 @@ class TestFFOBotLifecycle:
         assert "Drain timeout" in caplog.text
 
     @pytest.mark.asyncio
-    async def test_close_media_downloader_none(self, bot):
+    async def test_close_health_server_none(self, bot):
         bot.db_pool = AsyncMock()
         bot.cache = MagicMock()
-        bot.media_downloader = None
         bot._health_server = None
         with patch.object(bot, "_drain_message_queue", new_callable=AsyncMock):
             with patch("discord.ext.commands.Bot.close", new_callable=AsyncMock):
@@ -90,7 +86,6 @@ class TestFFOBotLifecycle:
     async def test_close_db_pool_none(self, bot):
         bot.db_pool = None
         bot.cache = MagicMock()
-        bot.media_downloader = None
         bot._health_server = None
         with patch.object(bot, "_drain_message_queue", new_callable=AsyncMock):
             with patch("discord.ext.commands.Bot.close", new_callable=AsyncMock):
@@ -100,7 +95,6 @@ class TestFFOBotLifecycle:
     async def test_close_cache_none(self, bot):
         bot.db_pool = AsyncMock()
         bot.cache = None
-        bot.media_downloader = None
         bot._health_server = None
         with patch.object(bot, "_drain_message_queue", new_callable=AsyncMock):
             with patch("discord.ext.commands.Bot.close", new_callable=AsyncMock):
@@ -110,7 +104,6 @@ class TestFFOBotLifecycle:
     async def test_close_closes_pool_when_present(self, bot):
         bot.db_pool = AsyncMock()
         bot.cache = MagicMock()
-        bot.media_downloader = None
         bot._health_server = None
         bot.pool = MagicMock(close=AsyncMock())
         with patch.object(bot, "_drain_message_queue", new_callable=AsyncMock):

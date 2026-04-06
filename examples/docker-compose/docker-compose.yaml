@@ -1,6 +1,6 @@
 services:
   ffo-bot:
-    image: ghcr.io/mrcurlsttv/ffo-bot:latest
+    image: ghcr.io/curlsops/ffo-bot:latest
     container_name: ffo-bot
     restart: unless-stopped
     ports:
@@ -15,13 +15,6 @@ services:
       LOG_LEVEL: INFO
       LOG_FORMAT: json
 
-      # Features (set to "true" to enable)
-      FEATURE_MEDIA_DOWNLOAD: "false"
-
-      # Optional: Media storage path (if FEATURE_MEDIA_DOWNLOAD is enabled)
-      # MEDIA_STORAGE_PATH: /media
-    # volumes:
-    #   - ./media:/media  # Uncomment if using media download feature
     healthcheck:
       test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/healthz')"]
       interval: 30s

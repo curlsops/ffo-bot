@@ -21,14 +21,6 @@ class BotMetrics:
         self.command_duration = Histogram(
             "bot_command_duration_seconds", "Command execution duration", ["command_name"]
         )
-        self.media_downloads = Counter(
-            "bot_media_downloads_total",
-            "Total media downloads",
-            ["server_id", "file_type", "status"],
-        )
-        self.media_download_duration = Histogram(
-            "bot_media_download_duration_seconds", "Media download duration", ["file_type"]
-        )
         self.db_query_duration = Histogram(
             "bot_db_query_duration_seconds", "Database query duration", ["query_type"]
         )

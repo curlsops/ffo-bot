@@ -4,7 +4,6 @@ import config
 import database
 from bot.auth.permissions import PermissionChecker
 from bot.cache.memory import InMemoryCache
-from bot.client import FFOBot
 from bot.commands.admin import AdminCommands
 from bot.commands.anonymous import AnonymousCommands, AnonymousPostModal
 from bot.commands.faq import FAQCommands
@@ -21,7 +20,6 @@ from bot.commands.whitelist import WhitelistCommands
 from bot.handlers.messages import MessageHandler
 from bot.handlers.moderation import ModerationHandler
 from bot.handlers.reactions import ReactionHandler
-from bot.processors.media_downloader import MediaDownloader
 from bot.processors.phrase_matcher import PhraseMatcher
 from bot.processors.unit_converter import detect_and_convert
 from bot.processors.voice_transcriber import VoiceTranscriber
@@ -50,6 +48,7 @@ from bot.utils.validation import InputValidator
 from bot.utils.whitelist_cache import (
     add_to_cache,
     get_cached_usernames,
+    reconcile_whitelist_cache,
     remove_from_cache,
     sync_from_rcon,
 )

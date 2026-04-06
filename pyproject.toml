@@ -23,40 +23,6 @@ Homepage = "https://github.com/MrCurlsTTV/ffo-bot"
 Repository = "https://github.com/MrCurlsTTV/ffo-bot"
 Issues = "https://github.com/MrCurlsTTV/ffo-bot/issues"
 
-[project.optional-dependencies]
-anonymous = [
-    "spacy>=3.7.0,<4.0.0",
-]
-
-[tool.semantic_release]
-version_toml = ["pyproject.toml:project.version"]
-tag_format = "v{version}"
-changelog_file = "docs/CHANGELOG.md"
-commit_parser = "conventional"
-
-[tool.semantic_release.branches.main]
-match = "(main|master)"
-prerelease = false
-
-[tool.semantic_release.branches.edge]
-match = "edge"
-prerelease = true
-prerelease_token = "edge"
-
-[tool.semantic_release.changelog]
-template_dir = ".github/changelog_templates"
-mode = "init"
-exclude_commit_patterns = [
-    "chore(?:\\([^)]*\\))?: .+",
-    "ci(?:\\([^)]*\\))?: .+",
-    "refactor(?:\\([^)]*\\))?: .+",
-    "style(?:\\([^)]*\\))?: .+",
-    "test(?:\\([^)]*\\))?: .+",
-    "docs(?:\\([^)]*\\))?: .+",
-    "build(?:\\((?!deps\\))[^)]*\\))?: .+",
-    "Initial [Cc]ommit.*",
-]
-
 [tool.black]
 line-length = 100
 target-version = ['py312']

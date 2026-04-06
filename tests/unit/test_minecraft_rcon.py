@@ -4,7 +4,6 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from bot.services.minecraft_rcon import (
-    RCON_PACKET_COMMAND,
     RCON_PACKET_LOGIN,
     MinecraftRCONClient,
     MinecraftRCONError,
@@ -73,6 +72,22 @@ class TestRconPacketFunctions:
             result = _rcon_command("localhost", 25575, "secret", "test cmd")
             assert result == "command result"
             mock_sock.close.assert_called_once()
+
+    def test_rcon_command_connect_timeout_wraps(self):
+        with patch("bot.services.minecraft_rcon.socket.socket") as mock_socket_cls:
+            mock_sock = MagicMock()
+            mock_socket_cls.return_value = mock_sock
+            mock_sock.connect.side_effect = TimeoutError("timed out")
+            with pytest.raises(MinecraftRCONError, match="timed out.*25575"):
+                _rcon_command("unreachable.example", 25575, "secret", "whitelist list")
+
+    def test_rcon_command_connect_refused_wraps(self):
+        with patch("bot.services.minecraft_rcon.socket.socket") as mock_socket_cls:
+            mock_sock = MagicMock()
+            mock_socket_cls.return_value = mock_sock
+            mock_sock.connect.side_effect = OSError(111, "Connection refused")
+            with pytest.raises(MinecraftRCONError, match="Connection refused"):
+                _rcon_command("localhost", 25575, "secret", "whitelist list")
 
 
 class TestParseWhitelistListResponse:

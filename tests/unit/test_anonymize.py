@@ -1,9 +1,12 @@
+import importlib
 import sys
 from unittest.mock import MagicMock, patch
 
 import pytest
 
 from bot.utils.anonymize import anonymize_text
+
+_ANONYMIZE = importlib.import_module("bot.utils.anonymize")
 
 
 def test_anonymize_empty():
@@ -134,21 +137,30 @@ def test_anonymize_regex_fallback_when_nlp_none():
     assert "called" in result
 
 
-def test_anonymize_get_nlp_oserror_fallback():
-    import bot.utils.anonymize as mod
+def test_anonymize_get_nlp_import_error_fallback():
+    _ANONYMIZE._nlp = None
+    real_import = __import__
 
-    mod._nlp = None
+    def fake_import(name, globals_arg=None, locals_arg=None, fromlist=(), level=0):
+        if name == "spacy" or (isinstance(name, str) and name.startswith("spacy.")):
+            raise ImportError("No module named 'spacy'")
+        return real_import(name, globals_arg, locals_arg, fromlist, level)
+
+    with patch("builtins.__import__", side_effect=fake_import):
+        assert _ANONYMIZE._get_nlp() is None
+
+
+def test_anonymize_get_nlp_oserror_fallback():
+    _ANONYMIZE._nlp = None
     fake_spacy = MagicMock()
     fake_spacy.load.side_effect = OSError("model not found")
     with patch.dict(sys.modules, {"spacy": fake_spacy}):
-        assert mod._get_nlp() is None
+        assert _ANONYMIZE._get_nlp() is None
 
 
 def test_anonymize_get_nlp_generic_exception_fallback():
-    import bot.utils.anonymize as mod
-
-    mod._nlp = None
+    _ANONYMIZE._nlp = None
     fake_spacy = MagicMock()
     fake_spacy.load.side_effect = RuntimeError("other")
     with patch.dict(sys.modules, {"spacy": fake_spacy}):
-        assert mod._get_nlp() is None
+        assert _ANONYMIZE._get_nlp() is None

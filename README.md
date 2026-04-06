@@ -32,13 +32,7 @@ kubectl apply -f examples/kubernetes/
 pip install -r requirements.txt && alembic upgrade head && python main.py
 ```
 
-Optional feature deps:
-
-```bash
-# Better anonymous name detection (FEATURE_ANONYMOUS_POST)
-pip install -r requirements-anonymous.txt
-python -m spacy download en_core_web_sm
-```
+Anonymous posts use spaCy when available; otherwise regex.
 
 ---
 
@@ -64,7 +58,6 @@ https://discord.com/api/oauth2/authorize?client_id=YOUR_CLIENT_ID&permissions=27
 | ❓ FAQ | Admin-managed FAQ topics with `/faq` |
 | 📏 Unit Conversion | Auto-converts imperial units to SI in chat |
 | ⛏️ Minecraft | Whitelist management via RCON with UUID validation |
-| 📁 Media | Optional archival (disabled by default) |
 | 🎵 Music | Lavalink playback: `/music join`, `play`, `leave`, `pause`, `resume`, `skip`, `queue` |
 | 🔐 Permissions | Super admin, admin, moderator roles |
 | 🙈 Anonymous Post | Button + modal for anonymous messages; anonymizes names |
@@ -90,12 +83,11 @@ https://discord.com/api/oauth2/authorize?client_id=YOUR_CLIENT_ID&permissions=27
 | `FEATURE_FAQ` | false | Enable FAQ commands |
 | `FEATURE_CONVERSION` | false | Auto-convert imperial to SI |
 | `FEATURE_MINECRAFT_WHITELIST` | false | Enable MC whitelist commands |
-| `FEATURE_MEDIA_DOWNLOAD` | false | Archive media links |
 | `FEATURE_VOICE_TRANSCRIPTION` | false | Transcribe voice messages |
 | `FEATURE_FAQ_SUBMISSIONS` | true | Allow users to submit FAQ questions |
 | `FEATURE_NOTIFY_MODERATION` | true | Notify on kicks, bans, nickname changes |
 | `FEATURE_NOTIFY_RATE_LIMIT` | false | Notify when users hit rate limit |
-| `FEATURE_ANONYMOUS_POST` | false | Enable anonymous post button with modal and anonymization (regex fallback by default; spaCy NER when optional deps are installed) |
+| `FEATURE_ANONYMOUS_POST` | false | Enable anonymous post button with modal and anonymization (spaCy NER when available, else regex) |
 | `INTERACTIONS_ENDPOINT_ENABLED` | false | Enable POST /interactions for Discord Interactions Endpoint URL (PING only) |
 | `FEATURE_MUSIC` | false | Enable Lavalink music commands |
 | `LAVALINK_HOST` | 127.0.0.1 | Lavalink server host |

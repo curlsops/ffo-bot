@@ -284,7 +284,6 @@ def upgrade() -> None:
         sa.Column("user_id", sa.BigInteger(), nullable=False),
         sa.Column("phrase_matched", sa.String(length=500), nullable=True),
         sa.Column("reaction_added", sa.String(length=255), nullable=True),
-        sa.Column("has_media", sa.Boolean(), nullable=False, server_default=sa.text("false")),
         sa.Column(
             "processed_at",
             sa.TIMESTAMP(timezone=True),
@@ -358,56 +357,6 @@ def upgrade() -> None:
         unique=False,
         postgresql_where=sa.text("message_tracking_opt_out = true"),
     )
-
-    op.create_table(
-        "media_files",
-        sa.Column(
-            "id",
-            postgresql.UUID(as_uuid=True),
-            server_default=sa.text("uuid_generate_v4()"),
-            nullable=False,
-        ),
-        sa.Column("server_id", sa.BigInteger(), nullable=False),
-        sa.Column("message_id", sa.BigInteger(), nullable=False),
-        sa.Column("channel_id", sa.BigInteger(), nullable=False),
-        sa.Column("uploader_id", sa.BigInteger(), nullable=False),
-        sa.Column("file_name", sa.String(length=500), nullable=False),
-        sa.Column("file_type", sa.String(length=50), nullable=False),
-        sa.Column("file_extension", sa.String(length=20), nullable=False),
-        sa.Column("file_size_bytes", sa.BigInteger(), nullable=False),
-        sa.Column("storage_path", sa.Text(), nullable=False),
-        sa.Column("download_url", sa.Text(), nullable=False),
-        sa.Column(
-            "downloaded_at",
-            sa.TIMESTAMP(timezone=True),
-            server_default=sa.text("NOW()"),
-            nullable=False,
-        ),
-        sa.Column("checksum_sha256", sa.String(length=64), nullable=True),
-        sa.Column(
-            "created_at",
-            sa.TIMESTAMP(timezone=True),
-            server_default=sa.text("NOW()"),
-            nullable=False,
-        ),
-        sa.ForeignKeyConstraint(["server_id"], ["servers.server_id"], ondelete="CASCADE"),
-        sa.PrimaryKeyConstraint("id"),
-        sa.UniqueConstraint("message_id", "file_name", name="_message_file_uc"),
-    )
-    op.create_index(
-        "idx_media_files_server",
-        "media_files",
-        ["server_id", sa.text("downloaded_at DESC")],
-        unique=False,
-    )
-    op.create_index("idx_media_files_message", "media_files", ["message_id"], unique=False)
-    op.create_index(
-        "idx_media_files_uploader",
-        "media_files",
-        ["server_id", "uploader_id", sa.text("downloaded_at DESC")],
-        unique=False,
-    )
-    op.create_index("idx_media_files_storage", "media_files", ["storage_path"], unique=False)
 
     op.create_table(
         "notifiarr_failures",
@@ -562,7 +511,6 @@ def downgrade() -> None:
     op.drop_table("audit_log")
     op.drop_table("bot_config")
     op.drop_table("notifiarr_failures")
-    op.drop_table("media_files")
     op.drop_table("user_preferences")
     op.drop_table("message_metadata")
     op.drop_table("phrase_reactions")

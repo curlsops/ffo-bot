@@ -6,7 +6,8 @@ import os
 import signal
 import sys
 
-from bot.client import FFOBot
+from bot.client import FFOBot, FFOShardedBot, create_ffo_bot
+from bot.utils.telemetry import configure_tracing
 from config.logging_config import setup_logging
 from config.settings import Settings
 
@@ -14,7 +15,7 @@ logger = logging.getLogger(__name__)
 
 
 class GracefulShutdown:
-    def __init__(self, bot: FFOBot):
+    def __init__(self, bot: FFOBot | FFOShardedBot):
         self.bot = bot
         self.shutdown_initiated = False
 
@@ -49,13 +50,18 @@ async def main():
         sys.exit(1)
 
     setup_logging(log_level=settings.log_level, log_format=settings.log_format)
+    configure_tracing(
+        enabled=settings.otel_tracing_enabled,
+        service_name=settings.otel_service_name,
+        environment=settings.environment,
+    )
     try:
         version = os.environ.get("FFO_BOT_VERSION") or importlib.metadata.version("ffo-bot")
     except importlib.metadata.PackageNotFoundError:
         version = "unknown"
     logger.info("Starting v%s (env=%s)", version, settings.environment)
 
-    bot = FFOBot(settings)
+    bot = create_ffo_bot(settings)
     GracefulShutdown(bot).setup_signals()
 
     try:

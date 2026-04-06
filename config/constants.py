@@ -11,9 +11,6 @@ class Constants:
     MAX_COMMAND_NAME_LENGTH = 100
     MAX_NOTES_LENGTH = 1000
 
-    MEDIA_CHUNK_SIZE = 8192
-    MEDIA_DOWNLOAD_TIMEOUT = 300
-
     MESSAGE_RETENTION_DAYS = 365
     AUDIT_LOG_RETENTION_DAYS = 730
 
@@ -33,12 +30,6 @@ class Role(str, Enum):
     def hierarchy(self) -> int:
         hierarchy_map = {Role.SUPER_ADMIN: 3, Role.ADMIN: 2, Role.MODERATOR: 1}
         return hierarchy_map[self]
-
-
-class FileType(str, Enum):
-    IMAGE = "image"
-    VIDEO = "video"
-    GIF = "gif"
 
 
 class AuditAction(str, Enum):

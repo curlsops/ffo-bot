@@ -5,9 +5,11 @@ import pytest
 
 from bot.commands.anonymous import (
     ANONYMOUS_BUTTON_CUSTOM_ID,
+    ANONYMOUS_EMBED_COLOR,
     AnonymousCommands,
     AnonymousPostButtonView,
     AnonymousPostModal,
+    _anonymous_submission_embed,
     _prepare_anonymous_submission,
     _process_anonymous_submission,
     _truncate_for_discord,
@@ -64,7 +66,7 @@ def db_ctx():
 
 @pytest.mark.asyncio
 async def test_post_button_sends_modal(cog, mock_bot):
-    view = AnonymousPostButtonView(channel_id=123, bot=mock_bot)
+    view = AnonymousPostButtonView(post_channel_id=123, bot=mock_bot)
     i = MagicMock()
     i.response.send_modal = AsyncMock()
     for item in view.children:
@@ -74,7 +76,7 @@ async def test_post_button_sends_modal(cog, mock_bot):
     i.response.send_modal.assert_called_once()
     modal = i.response.send_modal.call_args[0][0]
     assert isinstance(modal, AnonymousPostModal)
-    assert modal.channel_id == 123
+    assert modal.post_channel_id == 123
 
 
 def test_process_submission_empty(mock_bot):
@@ -129,7 +131,7 @@ async def test_modal_on_submit_success(cog, mock_bot):
     channel.send = AsyncMock()
     mock_bot.get_channel.return_value = channel
 
-    modal = AnonymousPostModal(channel_id=1, bot=mock_bot)
+    modal = AnonymousPostModal(post_channel_id=1, bot=mock_bot)
     with patch.object(type(modal.children[0]), "value", "Hello world"):
         i = MagicMock()
         i.user = MagicMock()
@@ -137,10 +139,22 @@ async def test_modal_on_submit_success(cog, mock_bot):
         i.response.send_message = AsyncMock()
         await modal.on_submit(i)
 
-    channel.send.assert_called_once_with("Hello world")
+    channel.send.assert_called_once()
+    _, kwargs = channel.send.call_args
+    assert "embed" in kwargs
+    assert kwargs["embed"].title == "Anonymous"
+    assert kwargs["embed"].description == "Hello world"
+    assert kwargs["embed"].color == ANONYMOUS_EMBED_COLOR
     i.response.send_message.assert_called_once_with(
         "Your message was posted anonymously.", ephemeral=True
     )
+
+
+def test_anonymous_submission_embed():
+    emb = _anonymous_submission_embed("hello")
+    assert emb.title == "Anonymous"
+    assert emb.description == "hello"
+    assert emb.color == ANONYMOUS_EMBED_COLOR
 
 
 def test_cog_unload(cog):

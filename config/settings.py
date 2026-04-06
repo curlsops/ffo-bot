@@ -1,4 +1,3 @@
-from pathlib import Path
 from typing import Optional
 from urllib.parse import quote_plus
 
@@ -23,6 +22,17 @@ class Settings(BaseSettings):
 
     discord_bot_token: str = Field(..., description="Discord bot token")
     discord_public_key: str = Field(..., description="Discord public key for webhook verification")
+    discord_sharding_enabled: bool = Field(
+        default=False, description="Enable gateway sharding (AutoShardedBot)"
+    )
+    discord_shard_count: Optional[int] = Field(
+        default=None,
+        description="Total shards; omit for Discord default. Required if discord_shard_ids is set",
+    )
+    discord_shard_ids: Optional[str] = Field(
+        default=None,
+        description="Comma-separated shard IDs for this process (clustering)",
+    )
 
     database_url: Optional[str] = Field(
         default=None,
@@ -50,11 +60,6 @@ class Settings(BaseSettings):
         default=5.0, description="Timeout in seconds for acquiring a connection from the pool"
     )
 
-    media_storage_path: str = Field(default="/media", description="Base path for media storage")
-    media_max_file_size: int = Field(
-        default=104857600, description="Max file size in bytes (100MB)"
-    )
-
     cache_max_size: int = Field(default=10000, description="Maximum cache entries")
     cache_max_memory_mb: float = Field(
         default=0.0,
@@ -70,6 +75,19 @@ class Settings(BaseSettings):
 
     log_level: str = Field(default="INFO", description="Log level")
     log_format: str = Field(default="json", description="Log format (json or text)")
+
+    otel_tracing_enabled: bool = Field(
+        default=False,
+        description="Export traces via OTLP HTTP (OTEL_EXPORTER_OTLP_*); requires a collector endpoint",
+    )
+    otel_service_name: Optional[str] = Field(
+        default=None,
+        description="Trace resource service.name (default OTEL_SERVICE_NAME or ffo-bot)",
+    )
+    otel_trace_discord_messages: bool = Field(
+        default=False,
+        description="Span per guild message (high volume)",
+    )
 
     health_check_port: int = Field(default=8080, description="Health check HTTP port")
     health_check_host: str = Field(
@@ -91,7 +109,6 @@ class Settings(BaseSettings):
         description="Clear global/guild slash commands before sync on boot. Set false to skip clears and do sync-only.",
     )
 
-    feature_media_download: bool = Field(default=True, description="Enable media download")
     feature_reaction_roles: bool = Field(default=True, description="Enable reaction roles")
     feature_rotating_status: bool = Field(default=False, description="Enable rotating status")
     feature_giveaways: bool = Field(default=True, description="Enable giveaway system")
@@ -154,6 +171,11 @@ class Settings(BaseSettings):
             "non-empty list overrides MINECRAFT_RCON_HOST for multi-server RCON"
         ),
     )
+    whitelist_cache_reconcile_interval_hours: float = Field(
+        default=24.0,
+        ge=0,
+        description="Interval (hours) for whitelist DB cache reconcile vs Mojang; 0 disables.",
+    )
 
     @model_validator(mode="after")
     def resolve_database_url(self) -> "Settings":
@@ -168,6 +190,15 @@ class Settings(BaseSettings):
         raise ValueError(
             "Provide DATABASE_URL or all of DB_HOST, DB_NAME, DB_USER (and optionally DB_PORT, DB_PASSWORD)"
         )
+
+    @model_validator(mode="after")
+    def validate_discord_sharding(self) -> "Settings":
+        if not self.discord_sharding_enabled:
+            return self
+        if self.discord_shard_ids and self.discord_shard_ids.strip():
+            if self.discord_shard_count is None:
+                raise ValueError("DISCORD_SHARD_COUNT required when DISCORD_SHARD_IDS is set")
+        return self
 
     @field_validator("log_level")
     @classmethod
@@ -186,10 +217,3 @@ class Settings(BaseSettings):
         if v_lower not in valid_formats:
             raise ValueError(f"Log format must be one of {valid_formats}")
         return v_lower
-
-    @field_validator("media_storage_path")
-    @classmethod
-    def validate_storage_path(cls, v: str) -> str:
-        path = Path(v)
-        path.mkdir(parents=True, exist_ok=True)
-        return str(path.absolute())

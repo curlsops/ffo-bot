@@ -19,17 +19,24 @@ spec:
     spec:
       securityContext:
         runAsNonRoot: true
-        runAsUser: 1000
-        runAsGroup: 1000
-        fsGroup: 1000
+        runAsUser: 10001
+        runAsGroup: 10001
+        fsGroup: 10001
+      volumes:
+        - name: bot-tmp
+          emptyDir: {}
       containers:
         - name: ffo-bot
-          image: ghcr.io/mrcurlsttv/ffo-bot:latest
+          # Release: :latest / v* ; edge branch CI: :edge or :edge-<sha> on ghcr.io/curlsops/ffo-bot
+          image: ghcr.io/curlsops/ffo-bot:latest
           imagePullPolicy: Always
           ports:
             - name: http
               containerPort: 8080
               protocol: TCP
+          volumeMounts:
+            - name: bot-tmp
+              mountPath: /tmp/bot
           envFrom:
             - configMapRef:
                 name: ffo-bot

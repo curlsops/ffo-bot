@@ -1,3 +1,4 @@
+import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import aiohttp
@@ -9,6 +10,7 @@ from bot.services.mojang import (
     _get_profile_from_mojang,
     _get_profile_from_namemc,
     get_profile,
+    get_profile_by_uuid,
     get_profiles_batch,
     username_exists,
 )
@@ -52,6 +54,72 @@ class TestFormatUuid:
     )
     def test_format_uuid_variants(self, raw, expected):
         assert _format_uuid(raw) == expected
+
+
+class TestGetProfileByUuid:
+    @pytest.mark.asyncio
+    async def test_200_returns_formatted_uuid_and_name(self):
+        resp = make_response_mock(200, {"id": "069a79f444e94726a5befca90e38aaf5", "name": "Steve"})
+        ctx = MagicMock(
+            __aenter__=AsyncMock(return_value=resp), __aexit__=AsyncMock(return_value=None)
+        )
+        mock_session = MagicMock()
+        mock_session.get.return_value = ctx
+        with patch("bot.services.mojang.get_session", return_value=mock_session):
+            result = await get_profile_by_uuid("069a79f4-44e9-4726-a5be-fca90e38aaf5")
+            assert result == ("069a79f4-44e9-4726-a5be-fca90e38aaf5", "Steve")
+
+    @pytest.mark.asyncio
+    async def test_204_returns_none(self):
+        resp = make_response_mock(204)
+        ctx = MagicMock(
+            __aenter__=AsyncMock(return_value=resp), __aexit__=AsyncMock(return_value=None)
+        )
+        mock_session = MagicMock()
+        mock_session.get.return_value = ctx
+        with patch("bot.services.mojang.get_session", return_value=mock_session):
+            assert await get_profile_by_uuid("069a79f4-44e9-4726-a5be-fca90e38aaf5") is None
+
+    @pytest.mark.asyncio
+    async def test_bad_uuid_length_returns_none(self):
+        assert await get_profile_by_uuid("not-a-uuid") is None
+
+    @pytest.mark.asyncio
+    async def test_200_missing_id_or_name_returns_none(self):
+        resp = make_response_mock(200, {"id": None, "name": "Steve"})
+        ctx = MagicMock(
+            __aenter__=AsyncMock(return_value=resp), __aexit__=AsyncMock(return_value=None)
+        )
+        mock_session = MagicMock()
+        mock_session.get.return_value = ctx
+        with patch("bot.services.mojang.get_session", return_value=mock_session):
+            assert await get_profile_by_uuid("069a79f4-44e9-4726-a5be-fca90e38aaf5") is None
+
+    @pytest.mark.asyncio
+    async def test_non_success_status_other_than_204_404_returns_none(self, caplog):
+        caplog.set_level(logging.DEBUG, logger="bot.services.mojang")
+        resp = make_response_mock(502)
+        ctx = MagicMock(
+            __aenter__=AsyncMock(return_value=resp), __aexit__=AsyncMock(return_value=None)
+        )
+        mock_session = MagicMock()
+        mock_session.get.return_value = ctx
+        with patch("bot.services.mojang.get_session", return_value=mock_session):
+            assert await get_profile_by_uuid("069a79f4-44e9-4726-a5be-fca90e38aaf5") is None
+        assert "Session server profile lookup" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_client_error_returns_none(self, caplog):
+        caplog.set_level(logging.DEBUG, logger="bot.services.mojang")
+        ctx = MagicMock(
+            __aenter__=AsyncMock(side_effect=aiohttp.ClientError("network")),
+            __aexit__=AsyncMock(return_value=None),
+        )
+        mock_session = MagicMock()
+        mock_session.get.return_value = ctx
+        with patch("bot.services.mojang.get_session", return_value=mock_session):
+            assert await get_profile_by_uuid("069a79f4-44e9-4726-a5be-fca90e38aaf5") is None
+        assert "Session server request failed" in caplog.text
 
 
 class TestGetProfileFromMojang:

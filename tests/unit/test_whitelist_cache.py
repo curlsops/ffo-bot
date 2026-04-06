@@ -1,11 +1,14 @@
 import logging
-from unittest.mock import AsyncMock, MagicMock
+import uuid
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
 from bot.utils.whitelist_cache import (
     add_to_cache,
+    get_cache_entry,
     get_cached_usernames,
+    reconcile_whitelist_cache,
     remove_from_cache,
     sync_from_rcon,
 )
@@ -295,3 +298,144 @@ async def test_sync_from_rcon_batch_fetch_exception(caplog):
     result = await sync_from_rcon(pool, 123, rcon, batch_fetch=batch_fetch)
     assert result is True
     assert "Batch UUID fetch failed" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_get_cache_entry_success():
+    conn = AsyncMock()
+    u = uuid.UUID("069a79f4-44e9-4726-a5be-fca90e38aaf5")
+    conn.fetchrow = AsyncMock(return_value={"username": "Steve", "minecraft_uuid": u})
+    pool = make_pool(conn)
+
+    result = await get_cache_entry(pool, 1, "Steve")
+    assert result is not None
+    assert result["username"] == "Steve"
+    assert result["minecraft_uuid"] == "069a79f4-44e9-4726-a5be-fca90e38aaf5"
+
+
+@pytest.mark.asyncio
+async def test_get_cache_entry_not_found():
+    conn = AsyncMock()
+    conn.fetchrow = AsyncMock(return_value=None)
+    pool = make_pool(conn)
+    assert await get_cache_entry(pool, 1, "Nobody") is None
+
+
+@pytest.mark.asyncio
+async def test_get_cache_entry_row_without_uuid():
+    conn = AsyncMock()
+    conn.fetchrow = AsyncMock(return_value={"username": "Steve", "minecraft_uuid": None})
+    pool = make_pool(conn)
+    result = await get_cache_entry(pool, 1, "Steve")
+    assert result["minecraft_uuid"] is None
+
+
+@pytest.mark.asyncio
+async def test_get_cache_entry_exception(caplog):
+    caplog.set_level(logging.WARNING, logger="bot.utils.whitelist_cache")
+    pool = MagicMock()
+    ctx = MagicMock()
+    ctx.__aenter__ = AsyncMock(side_effect=RuntimeError("db down"))
+    ctx.__aexit__ = AsyncMock(return_value=None)
+    pool.acquire.return_value = ctx
+    assert await get_cache_entry(pool, 1, "x") is None
+    assert "Failed to fetch whitelist cache entry" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_reconcile_renames_row_when_uuid_maps_to_new_name():
+    conn = AsyncMock()
+    conn.fetch = AsyncMock(return_value=[{"username": "Old", "minecraft_uuid": uuid.uuid4()}])
+    conn.execute = AsyncMock()
+    pool = make_pool(conn)
+    with patch(
+        "bot.utils.whitelist_cache.get_profile_by_uuid",
+        new_callable=AsyncMock,
+        return_value=("069a79f4-44e9-4726-a5be-fca90e38aaf5", "New"),
+    ):
+        out = await reconcile_whitelist_cache(pool, 99)
+    assert any("Old → New" in x for x in out["updated"])
+    assert conn.execute.await_count >= 2
+
+
+@pytest.mark.asyncio
+async def test_reconcile_prunes_when_username_has_no_mojang_profile():
+    conn = AsyncMock()
+    conn.fetch = AsyncMock(return_value=[{"username": "Ghost", "minecraft_uuid": None}])
+    conn.execute = AsyncMock()
+    pool = make_pool(conn)
+    with patch("bot.utils.whitelist_cache.get_profile", new_callable=AsyncMock, return_value=None):
+        out = await reconcile_whitelist_cache(pool, 3)
+    assert "Ghost" in out["pruned"]
+    conn.execute.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_reconcile_backfills_uuid_when_name_valid():
+    conn = AsyncMock()
+    conn.fetch = AsyncMock(return_value=[{"username": "Steve", "minecraft_uuid": None}])
+    conn.execute = AsyncMock()
+    pool = make_pool(conn)
+    with patch(
+        "bot.utils.whitelist_cache.get_profile",
+        new_callable=AsyncMock,
+        return_value=("069a79f4-44e9-4726-a5be-fca90e38aaf5", "Steve"),
+    ):
+        out = await reconcile_whitelist_cache(pool, 3)
+    assert "Steve" in out["uuid_filled"]
+    conn.execute.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_reconcile_uuid_row_unchanged_when_mojang_name_matches():
+    conn = AsyncMock()
+    u = uuid.uuid4()
+    conn.fetch = AsyncMock(return_value=[{"username": "Steve", "minecraft_uuid": u}])
+    pool = make_pool(conn)
+    with patch(
+        "bot.utils.whitelist_cache.get_profile_by_uuid",
+        new_callable=AsyncMock,
+        return_value=("069a79f4-44e9-4726-a5be-fca90e38aaf5", "Steve"),
+    ):
+        out = await reconcile_whitelist_cache(pool, 3)
+    assert out == {"updated": [], "uuid_filled": [], "pruned": []}
+
+
+@pytest.mark.asyncio
+async def test_reconcile_uuid_row_skips_when_session_returns_no_profile():
+    conn = AsyncMock()
+    conn.fetch = AsyncMock(return_value=[{"username": "Steve", "minecraft_uuid": uuid.uuid4()}])
+    pool = make_pool(conn)
+    with patch(
+        "bot.utils.whitelist_cache.get_profile_by_uuid",
+        new_callable=AsyncMock,
+        return_value=None,
+    ):
+        out = await reconcile_whitelist_cache(pool, 3)
+    assert out == {"updated": [], "uuid_filled": [], "pruned": []}
+
+
+@pytest.mark.asyncio
+async def test_reconcile_no_uuid_row_renamed_via_mojang_lookup():
+    conn = AsyncMock()
+    conn.fetch = AsyncMock(return_value=[{"username": "oldn", "minecraft_uuid": None}])
+    conn.execute = AsyncMock()
+    pool = make_pool(conn)
+    with patch(
+        "bot.utils.whitelist_cache.get_profile",
+        new_callable=AsyncMock,
+        return_value=("069a79f4-44e9-4726-a5be-fca90e38aaf5", "NewN"),
+    ):
+        out = await reconcile_whitelist_cache(pool, 3)
+    assert any("oldn → NewN" in x for x in out["updated"])
+
+
+@pytest.mark.asyncio
+async def test_reconcile_logs_on_fetch_failure(caplog):
+    caplog.set_level(logging.WARNING, logger="bot.utils.whitelist_cache")
+    conn = AsyncMock()
+    conn.fetch = AsyncMock(side_effect=RuntimeError("fetch failed"))
+    pool = make_pool(conn)
+    out = await reconcile_whitelist_cache(pool, 3)
+    assert out == {"updated": [], "uuid_filled": [], "pruned": []}
+    assert "reconcile failed" in caplog.text

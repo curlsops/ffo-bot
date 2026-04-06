@@ -13,7 +13,6 @@ def handler():
     bot.settings.feature_conversion = True
     bot.metrics = None
     bot.phrase_matcher = None
-    bot.media_downloader = None
     bot.voice_transcriber = None
     return MessageHandler(bot)
 

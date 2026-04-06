@@ -54,7 +54,6 @@ async def test_message_handler_user_opted_out_skips_processing():
     bot = _bot_with_metrics()
     bot.db_pool = db_pool
     bot.phrase_matcher = MagicMock(match_phrases=AsyncMock(return_value=[]))
-    bot.media_downloader = None
     bot.voice_transcriber = None
     handler = MessageHandler(bot)
     msg = MagicMock()
@@ -82,7 +81,6 @@ async def test_message_handler_voice_transcription(transcribe_result, should_rep
     bot = _bot_with_metrics()
     bot.cache = None
     bot.phrase_matcher = None
-    bot.media_downloader = None
     bot.db_pool = db_pool
     vt = MagicMock()
     vt.enabled = True
@@ -115,61 +113,10 @@ async def test_message_handler_voice_transcription(transcribe_result, should_rep
 
 
 @pytest.mark.asyncio
-@pytest.mark.parametrize(
-    "monitored_config,should_download",
-    [
-        ({"monitored_channels": {"2": True}}, True),
-        ({"monitored_channels": {"999": True}}, False),
-        (None, False),
-        ({}, False),
-    ],
-)
-async def test_message_handler_monitored_channel_media_download(monitored_config, should_download):
-    conn = MagicMock()
-    conn.fetchval = AsyncMock(return_value=None)
-    conn.fetchrow = AsyncMock(
-        return_value=(
-            {"config": monitored_config} if monitored_config is not None else {"config": None}
-        )
-    )
-    conn.execute = AsyncMock()
-
-    @asynccontextmanager
-    async def acquire():
-        yield conn
-
-    pool = MagicMock()
-    pool.acquire = acquire
-    bot = _bot_with_metrics()
-    bot.db_pool = pool
-    bot.cache = None
-    bot.phrase_matcher = None
-    bot.voice_transcriber = None
-    md = MagicMock()
-    md.download_media = AsyncMock()
-    bot.media_downloader = md
-    handler = MessageHandler(bot)
-    msg = MagicMock()
-    msg.author.bot = False
-    msg.author.id = 42
-    msg.id = 100
-    msg.content = ""
-    msg.guild.id = 1
-    msg.channel.id = 2
-    msg.attachments = [MagicMock(url="u", filename="x.png", content_type="image/png", size=100)]
-    await handler.on_message(msg)
-    if should_download:
-        md.download_media.assert_awaited_once()
-    else:
-        md.download_media.assert_not_awaited()
-
-
-@pytest.mark.asyncio
 async def test_message_handler_non_voice_attachment_no_transcription():
     db_pool, _ = make_db_pool(fetchval_result=None)
     bot = _bot_with_metrics()
     bot.phrase_matcher = None
-    bot.media_downloader = None
     bot.db_pool = db_pool
     vt = MagicMock()
     vt.enabled = True
@@ -194,43 +141,6 @@ async def test_message_handler_non_voice_attachment_no_transcription():
 
 
 @pytest.mark.asyncio
-async def test_message_handler_media_download_error_logged():
-    conn = MagicMock()
-    conn.fetchval = AsyncMock(return_value=None)
-    conn.fetchrow = AsyncMock(return_value={"config": {"monitored_channels": {"2": True}}})
-    conn.execute = AsyncMock()
-
-    @asynccontextmanager
-    async def acquire():
-        yield conn
-
-    pool = MagicMock()
-    pool.acquire = acquire
-    bot = _bot_with_metrics()
-    bot.cache = None
-    bot.metrics.errors_total = MagicMock()
-    bot.metrics.errors_total.labels.return_value.inc = MagicMock()
-    bot.db_pool = pool
-    bot.phrase_matcher = None
-    bot.voice_transcriber = None
-    md = MagicMock()
-    md.download_media = AsyncMock(side_effect=Exception("download failed"))
-    bot.media_downloader = md
-    handler = MessageHandler(bot)
-    msg = MagicMock()
-    msg.author.bot = False
-    msg.author.id = 42
-    msg.id = 100
-    msg.content = ""
-    msg.guild.id = 1
-    msg.channel.id = 2
-    msg.attachments = [MagicMock(url="u", filename="x.png", content_type="image/png", size=100)]
-    await handler.on_message(msg)
-    bot.metrics.errors_total.labels.assert_called_with(error_type="media_download")
-    bot.metrics.errors_total.labels.return_value.inc.assert_called_once()
-
-
-@pytest.mark.asyncio
 async def test_message_handler_check_user_opt_out_error_continues_processing():
     pool, conn = make_db_pool(fetchval_result=None)
     conn.fetchval = AsyncMock(side_effect=asyncpg.PostgresConnectionError("DB"))
@@ -238,7 +148,6 @@ async def test_message_handler_check_user_opt_out_error_continues_processing():
     bot.cache = None
     bot.db_pool = pool
     bot.phrase_matcher = MagicMock(match_phrases=AsyncMock(return_value=[]))
-    bot.media_downloader = None
     bot.voice_transcriber = None
     handler = MessageHandler(bot)
     msg = MagicMock()

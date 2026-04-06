@@ -10,7 +10,7 @@
     ":semanticCommits",
   ],
   dependencyDashboard: true,
-  dependencyDashboardTitle: "Renovate Dashboard 🤖",
+  dependencyDashboardTitle: "Renovate Dashboard",
   schedule: ["every weekend"],
   lockFileMaintenance: { enabled: true },
   automerge: true,
@@ -48,11 +48,22 @@
     },
     {
       matchManagers: ["pip_requirements", "pep621"],
-      matchPackageNames: ["cryptography", "pyjwt", "urllib3", "requests", "aiohttp"],
+      matchPackageNames: [
+        "aiohttp",
+        "authlib",
+        "cryptography",
+        "filelock",
+        "marshmallow",
+        "pyjwt",
+        "requests",
+        "setuptools",
+        "urllib3",
+        "zipp",
+      ],
       minimumReleaseAge: "0 days",
       prPriority: 10,
     },
-    // GitHub Actions (includes paths-filter)
+    // GitHub Actions
     {
       matchManagers: ["github-actions"],
       semanticCommitType: "ci",

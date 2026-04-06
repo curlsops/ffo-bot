@@ -73,6 +73,9 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Install Python dependencies
+        run: pip install --no-cache-dir -r requirements-dev.txt
+
       - name: Run linters
         run: |
           flake8 bot/ config/ database/ main.py --count --statistics

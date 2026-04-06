@@ -21,6 +21,8 @@ class TestMigrationMetadataStyle:
             _load_migration("012_drop_servers_config_gin.py", "migration_012"),
             _load_migration("013_query_performance_indexes.py", "migration_013"),
             _load_migration("014_repair_servers_config_array.py", "migration_014"),
+            _load_migration("015_anon_post_dest_channel.py", "migration_015"),
+            _load_migration("016_drop_media_files.py", "migration_016"),
         ]
 
         for module in modules:
@@ -28,18 +30,29 @@ class TestMigrationMetadataStyle:
             assert hasattr(module, "down_revision")
             assert hasattr(module, "__all__")
             assert module.__all__ == [module.revision, module.down_revision]
+            assert (
+                len(module.revision) <= 32
+            ), "revision must fit alembic_version.version_num (varchar(32)): " + repr(
+                module.revision
+            )
 
     def test_revision_chain_is_unchanged_for_latest_steps(self):
         migration_010 = _load_migration("010_servers_config_jsonb.py", "migration_010_chain")
         migration_012 = _load_migration("012_drop_servers_config_gin.py", "migration_012_chain")
         migration_013 = _load_migration("013_query_performance_indexes.py", "migration_013_chain")
         migration_014 = _load_migration("014_repair_servers_config_array.py", "migration_014_chain")
+        migration_015 = _load_migration("015_anon_post_dest_channel.py", "migration_015_chain")
+        migration_016 = _load_migration("016_drop_media_files.py", "migration_016_chain")
 
         assert migration_010.down_revision == "009_anonymous_post_channels"
         assert migration_012.down_revision == "011_quotebook_quote_idx"
         assert migration_013.down_revision == "012_drop_servers_config_gin"
         assert migration_014.down_revision == "013_query_performance_indexes"
         assert migration_014.revision == "014_repair_servers_config_array"
+        assert migration_015.down_revision == "014_repair_servers_config_array"
+        assert migration_015.revision == "015_anon_post_dest_channel"
+        assert migration_016.down_revision == "015_anon_post_dest_channel"
+        assert migration_016.revision == "016_drop_media_files"
 
 
 class TestMigration010Compatibility:

@@ -1,26 +1,54 @@
 ---
 # Areas
+- name: area/auth
+  color: "d93f0b"
+- name: area/bot
+  color: "5319e7"
 - name: area/bootstrap
   color: "0e8a16"
+- name: area/cache
+  color: "bfd4f2"
+- name: area/ci
+  color: "1d76db"
+- name: area/commands
+  color: "c2e0c6"
+- name: area/config
+  color: "d4c5f9"
+- name: area/database
+  color: "006b75"
+- name: area/deps
+  color: "fbca04"
+- name: area/docker
+  color: "2492ed"
 - name: area/docs
   color: "0e8a16"
 - name: area/github
   color: "0e8a16"
+- name: area/handlers
+  color: "84b6eb"
 - name: area/kubernetes
   color: "0e8a16"
 - name: area/mise
   color: "0e8a16"
+- name: area/processors
+  color: "f9d0c4"
 - name: area/renovate
   color: "0e8a16"
 - name: area/scripts
   color: "0e8a16"
+- name: area/tasks
+  color: "008672"
 - name: area/talos
   color: "0e8a16"
 - name: area/templates
   color: "0e8a16"
 - name: area/taskfile
   color: "0e8a16"
-# Renovate Typess
+- name: area/tests
+  color: "2ea44f"
+- name: area/utils
+  color: "7057ff"
+# Renovate types
 - name: renovate/container
   color: "027fa0"
 - name: renovate/github-action

@@ -101,14 +101,21 @@ def _rcon_command(host: str, port: int, password: str, command: str, timeout: fl
     sock = socket.socket(socket.AF_INET, socket.SOCK_STREAM)
     sock.settimeout(timeout)
     try:
-        sock.connect((host, port))
-        _send_rcon_packet(sock, RCON_PACKET_LOGIN, password, 1)
-        req_id, _, _ = _recv_rcon_packet(sock)
-        if req_id == -1:
-            raise MinecraftRCONError("RCON authentication failed")
-        _send_rcon_packet(sock, RCON_PACKET_COMMAND, command, 2)
-        _, _, response = _recv_rcon_packet(sock)
-        return response
+        try:
+            sock.connect((host, port))
+            _send_rcon_packet(sock, RCON_PACKET_LOGIN, password, 1)
+            req_id, _, _ = _recv_rcon_packet(sock)
+            if req_id == -1:
+                raise MinecraftRCONError("RCON authentication failed")
+            _send_rcon_packet(sock, RCON_PACKET_COMMAND, command, 2)
+            _, _, response = _recv_rcon_packet(sock)
+            return response
+        except TimeoutError as e:
+            raise MinecraftRCONError(
+                f"RCON connection timed out ({host}:{port}); check host, port, firewall, and pod network"
+            ) from e
+        except OSError as e:
+            raise MinecraftRCONError(f"RCON connection failed ({host}:{port}): {e}") from e
     finally:
         sock.close()
 
