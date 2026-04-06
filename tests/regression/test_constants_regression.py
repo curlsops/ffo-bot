@@ -1,6 +1,6 @@
 import pytest
 
-from config.constants import AuditAction, Constants, Role
+from config.constants import Constants, Role
 
 
 class TestRoleRegression:

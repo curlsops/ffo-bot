@@ -3,6 +3,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
+import bot.utils.anonymize as anonymize_mod
 from bot.utils.anonymize import anonymize_text
 
 
@@ -135,9 +136,7 @@ def test_anonymize_regex_fallback_when_nlp_none():
 
 
 def test_anonymize_get_nlp_import_error_fallback():
-    import bot.utils.anonymize as mod
-
-    mod._nlp = None
+    anonymize_mod._nlp = None
     real_import = __import__
 
     def fake_import(name, globals_arg=None, locals_arg=None, fromlist=(), level=0):
@@ -146,24 +145,20 @@ def test_anonymize_get_nlp_import_error_fallback():
         return real_import(name, globals_arg, locals_arg, fromlist, level)
 
     with patch("builtins.__import__", side_effect=fake_import):
-        assert mod._get_nlp() is None
+        assert anonymize_mod._get_nlp() is None
 
 
 def test_anonymize_get_nlp_oserror_fallback():
-    import bot.utils.anonymize as mod
-
-    mod._nlp = None
+    anonymize_mod._nlp = None
     fake_spacy = MagicMock()
     fake_spacy.load.side_effect = OSError("model not found")
     with patch.dict(sys.modules, {"spacy": fake_spacy}):
-        assert mod._get_nlp() is None
+        assert anonymize_mod._get_nlp() is None
 
 
 def test_anonymize_get_nlp_generic_exception_fallback():
-    import bot.utils.anonymize as mod
-
-    mod._nlp = None
+    anonymize_mod._nlp = None
     fake_spacy = MagicMock()
     fake_spacy.load.side_effect = RuntimeError("other")
     with patch.dict(sys.modules, {"spacy": fake_spacy}):
-        assert mod._get_nlp() is None
+        assert anonymize_mod._get_nlp() is None
