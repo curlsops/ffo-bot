@@ -3,7 +3,6 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-import bot.utils.anonymize as anonymize_mod
 from bot.utils.anonymize import anonymize_text
 
 
