@@ -34,7 +34,7 @@ from bot.services.tidal import (
 )
 from bot.tasks.giveaway_manager import GiveawayManager
 from bot.tasks.status_rotator import StatusRotator
-from bot.tasks.whitelist_cache_reconcile import WhitelistCacheReconciler
+import bot.tasks.whitelist_cache_reconcile
 from bot.utils.collector import wait_for_message, wait_for_reaction
 from bot.utils.cooldown import CommandCooldown, with_cooldown
 from bot.utils.db import TRANSIENT_DB_ERRORS, cached_or_fallback
