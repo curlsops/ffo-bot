@@ -48,7 +48,7 @@
   color: "2ea44f"
 - name: area/utils
   color: "7057ff"
-# Renovate Typess
+# Renovate types
 - name: renovate/container
   color: "027fa0"
 - name: renovate/github-action

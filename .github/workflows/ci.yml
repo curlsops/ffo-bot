@@ -73,8 +73,6 @@ jobs:
         with:
           persist-credentials: false
 
-      # Prebuilt ghcr CI image can lag behind requirements*.txt on this branch; mypy needs
-      # the same packages the repo declares (e.g. opentelemetry-*), not only the image snapshot.
       - name: Install Python dependencies
         run: pip install --no-cache-dir -r requirements-dev.txt
 
