@@ -1,6 +1,6 @@
 import pytest
 
-from config.constants import AuditAction, Constants, FileType, Role
+from config.constants import AuditAction, Constants, Role
 
 
 class TestRole:
@@ -21,20 +21,6 @@ class TestRole:
     def test_role_hierarchy_ordering(self):
         assert Role.SUPER_ADMIN.hierarchy > Role.ADMIN.hierarchy
         assert Role.ADMIN.hierarchy > Role.MODERATOR.hierarchy
-
-
-class TestFileType:
-    @pytest.mark.parametrize(
-        "file_type,expected",
-        [
-            (FileType.IMAGE, "image"),
-            (FileType.VIDEO, "video"),
-            (FileType.GIF, "gif"),
-        ],
-    )
-    def test_file_type_values(self, file_type, expected):
-        assert file_type.value == expected
-        assert file_type.value in ("image", "video", "gif")
 
 
 class TestAuditAction:
@@ -67,8 +53,6 @@ class TestConstants:
             ("MAX_PHRASE_LENGTH", 500),
             ("MAX_COMMAND_NAME_LENGTH", 100),
             ("MAX_NOTES_LENGTH", 1000),
-            ("MEDIA_CHUNK_SIZE", 8192),
-            ("MEDIA_DOWNLOAD_TIMEOUT", 300),
             ("MESSAGE_RETENTION_DAYS", 365),
             ("AUDIT_LOG_RETENTION_DAYS", 730),
             ("CACHE_TTL", 86400),
@@ -102,8 +86,6 @@ class TestConstants:
         [
             "REGEX_TIMEOUT_SECONDS",
             "MAX_PATTERN_LENGTH",
-            "MEDIA_CHUNK_SIZE",
-            "MEDIA_DOWNLOAD_TIMEOUT",
             "MESSAGE_RETENTION_DAYS",
             "AUDIT_LOG_RETENTION_DAYS",
             "CACHE_TTL",

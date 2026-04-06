@@ -1,4 +1,3 @@
-from pathlib import Path
 from typing import Optional
 from urllib.parse import quote_plus
 
@@ -61,11 +60,6 @@ class Settings(BaseSettings):
         default=5.0, description="Timeout in seconds for acquiring a connection from the pool"
     )
 
-    media_storage_path: str = Field(default="/media", description="Base path for media storage")
-    media_max_file_size: int = Field(
-        default=104857600, description="Max file size in bytes (100MB)"
-    )
-
     cache_max_size: int = Field(default=10000, description="Maximum cache entries")
     cache_max_memory_mb: float = Field(
         default=0.0,
@@ -84,7 +78,7 @@ class Settings(BaseSettings):
 
     otel_tracing_enabled: bool = Field(
         default=False,
-        description="Export traces via OTLP HTTP (OTEL_EXPORTER_OTLP_*)",
+        description="Export traces via OTLP HTTP (OTEL_EXPORTER_OTLP_*); requires a collector endpoint",
     )
     otel_service_name: Optional[str] = Field(
         default=None,
@@ -115,7 +109,6 @@ class Settings(BaseSettings):
         description="Clear global/guild slash commands before sync on boot. Set false to skip clears and do sync-only.",
     )
 
-    feature_media_download: bool = Field(default=True, description="Enable media download")
     feature_reaction_roles: bool = Field(default=True, description="Enable reaction roles")
     feature_rotating_status: bool = Field(default=False, description="Enable rotating status")
     feature_giveaways: bool = Field(default=True, description="Enable giveaway system")
@@ -224,10 +217,3 @@ class Settings(BaseSettings):
         if v_lower not in valid_formats:
             raise ValueError(f"Log format must be one of {valid_formats}")
         return v_lower
-
-    @field_validator("media_storage_path")
-    @classmethod
-    def validate_storage_path(cls, v: str) -> str:
-        path = Path(v)
-        path.mkdir(parents=True, exist_ok=True)
-        return str(path.absolute())

@@ -8,11 +8,9 @@ from discord.ext import commands
 from opentelemetry import trace
 
 from bot.commands.whitelist import WHITELIST_APPROVE_EMOJI, WHITELIST_REJECT_EMOJI
-from bot.processors.media_downloader import MediaAttachment
 from bot.processors.unit_converter import detect_and_convert
 from bot.services.mojang import get_profile
 from bot.utils.pagination import truncate_for_discord
-from bot.utils.server_config import get_servers_config
 from bot.utils.user_preferences import OPT_OUT_CACHE_KEY
 from bot.utils.whitelist_channel import get_whitelist_channel_id
 from config.constants import Constants
@@ -61,10 +59,6 @@ class MessageHandler(commands.Cog):
         operations: list[tuple[bool, Awaitable[None]]] = []
         if message.content and self.bot.phrase_matcher:
             operations.append((True, self._process_phrase_matching(message)))
-
-        if message.attachments and self.bot.media_downloader:
-            if await self._is_monitored_channel(message.guild.id, message.channel.id):
-                operations.append((True, self._download_media(message)))
 
         vt = getattr(self.bot, "voice_transcriber", None)
         if message.attachments and vt and vt.enabled:
@@ -277,29 +271,6 @@ class MessageHandler(commands.Cog):
             )
         return profile
 
-    async def _download_media(self, message: discord.Message):
-        try:
-            attachments = [
-                MediaAttachment(
-                    url=att.url,
-                    filename=att.filename,
-                    content_type=att.content_type or "application/octet-stream",
-                    size_bytes=att.size,
-                )
-                for att in message.attachments
-            ]
-            await self.bot.media_downloader.download_media(
-                message_id=message.id,
-                channel_id=message.channel.id,
-                server_id=message.guild.id,
-                uploader_id=message.author.id,
-                attachments=attachments,
-            )
-        except Exception as e:
-            logger.error("Media download error: %s", e, exc_info=True)
-            if self.bot.metrics:
-                self.bot.metrics.errors_total.labels(error_type="media_download").inc()
-
     async def _log_phrase_matches_batch(
         self,
         rows: list[tuple[int, int, int, int, str, str]],
@@ -386,10 +357,6 @@ class MessageHandler(commands.Cog):
                 )
                 embed.set_footer(text="Transcribed automatically")
                 await message.reply(embed=embed)
-
-    async def _is_monitored_channel(self, server_id: int, channel_id: int) -> bool:
-        cfg = await get_servers_config(self.bot.db_pool, server_id, self.bot.cache)
-        return bool(cfg.get("monitored_channels") and str(channel_id) in cfg["monitored_channels"])
 
     async def _check_user_opt_out(self, server_id: int, user_id: int) -> bool:
         cache_key = OPT_OUT_CACHE_KEY.format(server_id=server_id, user_id=user_id)

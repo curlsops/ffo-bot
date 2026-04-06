@@ -33,14 +33,8 @@ def _get_nlp():
             import spacy
 
             _nlp = spacy.load("en_core_web_sm")
-        except OSError as e:
-            logger.warning(
-                "spaCy model en_core_web_sm not found: %s. Run: python -m spacy download en_core_web_sm",
-                e,
-            )
-            _nlp = False
         except Exception as e:
-            logger.warning("spaCy unavailable (%s), using regex fallback", e)
+            logger.warning("spaCy NER unavailable (%s), using regex fallback", e)
             _nlp = False
     return _nlp if _nlp else None
 

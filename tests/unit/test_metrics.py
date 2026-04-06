@@ -14,8 +14,6 @@ class TestBotMetricsInit:
         assert metrics.phrase_matches is not None
         assert metrics.commands_executed is not None
         assert metrics.command_duration is not None
-        assert metrics.media_downloads is not None
-        assert metrics.media_download_duration is not None
         assert metrics.db_query_duration is not None
         assert metrics.db_connection_errors is not None
         assert metrics.active_connections is not None
@@ -58,9 +56,6 @@ class TestBotMetricsCounters:
             command_name="test", server_id="123", status="success"
         ).inc()
 
-    def test_media_downloads_counter(self, metrics):
-        metrics.media_downloads.labels(server_id="123", file_type="image", status="success").inc()
-
     def test_db_connection_errors_counter(self, metrics):
         metrics.db_connection_errors.inc()
 
@@ -77,9 +72,6 @@ class TestBotMetricsCounters:
 class TestBotMetricsHistograms:
     def test_command_duration_histogram(self, metrics):
         metrics.command_duration.labels(command_name="test").observe(0.5)
-
-    def test_media_download_duration_histogram(self, metrics):
-        metrics.media_download_duration.labels(file_type="image").observe(2.5)
 
     def test_db_query_duration_histogram(self, metrics):
         metrics.db_query_duration.labels(query_type="select").observe(0.01)
@@ -115,7 +107,3 @@ class TestBotMetricsLabels:
         metrics.commands_executed.labels(
             command_name="permissions", server_id="1", status="error"
         ).inc()
-
-    def test_media_downloads_labels(self, metrics):
-        metrics.media_downloads.labels(server_id="1", file_type="video", status="success").inc()
-        metrics.media_downloads.labels(server_id="1", file_type="gif", status="error").inc()

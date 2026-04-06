@@ -12,7 +12,6 @@ def mock_settings():
     s.cache_max_size = 100
     s.cache_max_memory_mb = 0.0
     s.cache_default_ttl = 60
-    s.feature_media_download = False
     s.feature_quotebook = False
     s.feature_conversion = False
     s.feature_minecraft_whitelist = False
@@ -26,7 +25,6 @@ def mock_settings():
     s.rate_limit_user_capacity = 10
     s.rate_limit_server_capacity = 100
     s.shutdown_timeout_seconds = 5
-    s.media_storage_path = "/tmp/media"
     s.clear_commands_on_boot = True
     s.otel_tracing_enabled = False
     s.otel_service_name = None

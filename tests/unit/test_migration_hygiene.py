@@ -22,6 +22,7 @@ class TestMigrationMetadataStyle:
             _load_migration("013_query_performance_indexes.py", "migration_013"),
             _load_migration("014_repair_servers_config_array.py", "migration_014"),
             _load_migration("015_anon_post_dest_channel.py", "migration_015"),
+            _load_migration("016_drop_media_files.py", "migration_016"),
         ]
 
         for module in modules:
@@ -41,6 +42,7 @@ class TestMigrationMetadataStyle:
         migration_013 = _load_migration("013_query_performance_indexes.py", "migration_013_chain")
         migration_014 = _load_migration("014_repair_servers_config_array.py", "migration_014_chain")
         migration_015 = _load_migration("015_anon_post_dest_channel.py", "migration_015_chain")
+        migration_016 = _load_migration("016_drop_media_files.py", "migration_016_chain")
 
         assert migration_010.down_revision == "009_anonymous_post_channels"
         assert migration_012.down_revision == "011_quotebook_quote_idx"
@@ -49,6 +51,8 @@ class TestMigrationMetadataStyle:
         assert migration_014.revision == "014_repair_servers_config_array"
         assert migration_015.down_revision == "014_repair_servers_config_array"
         assert migration_015.revision == "015_anon_post_dest_channel"
+        assert migration_016.down_revision == "015_anon_post_dest_channel"
+        assert migration_016.revision == "016_drop_media_files"
 
 
 class TestMigration010Compatibility:

@@ -23,11 +23,6 @@ Homepage = "https://github.com/MrCurlsTTV/ffo-bot"
 Repository = "https://github.com/MrCurlsTTV/ffo-bot"
 Issues = "https://github.com/MrCurlsTTV/ffo-bot/issues"
 
-[project.optional-dependencies]
-anonymous = [
-    "spacy>=3.7.0,<4.0.0",
-]
-
 [tool.semantic_release]
 version_toml = ["pyproject.toml:project.version"]
 tag_format = "v{version}"

@@ -44,7 +44,6 @@ async def test_message_handler_processes_phrase_match():
     db_pool, conn = make_db_pool()
     conn.executemany = AsyncMock()
     bot.db_pool = db_pool
-    bot.media_downloader = None
 
     handler = MessageHandler(bot)
     msg = MagicMock()
@@ -79,7 +78,6 @@ async def test_message_handler_phrase_match_log_failure_still_reacts(caplog):
     bot.metrics.phrase_matches.labels.return_value.inc = MagicMock()
     bot.phrase_matcher.match_phrases = AsyncMock(return_value=[("id-1", "✅")])
     bot.db_pool = db_pool
-    bot.media_downloader = None
     bot.voice_transcriber = None
     handler = MessageHandler(bot)
     msg = MagicMock()
@@ -246,7 +244,6 @@ async def test_message_handler_phrase_match_http_exception_logged(caplog):
     bot.phrase_matcher.match_phrases = AsyncMock(return_value=[("id-1", "✅")])
     db_pool, _ = make_db_pool()
     bot.db_pool = db_pool
-    bot.media_downloader = None
     bot.voice_transcriber = None
     handler = MessageHandler(bot)
     msg = MagicMock()

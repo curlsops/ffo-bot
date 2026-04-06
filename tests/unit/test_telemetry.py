@@ -73,7 +73,6 @@ async def test_tracing_exports_spans_and_reconfigure_warnings(caplog):
         bot = MagicMock()
         bot.metrics = None
         bot.phrase_matcher = None
-        bot.media_downloader = None
         bot.voice_transcriber = MagicMock(enabled=False)
         bot.settings = MagicMock()
         bot.settings.feature_conversion = False

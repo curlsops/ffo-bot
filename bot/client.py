@@ -52,7 +52,6 @@ class _FFOBotMixin(commands.Bot):
     cache: InMemoryCache | None
     metrics: BotMetrics | None
     phrase_matcher: PhraseMatcher | None
-    media_downloader: object | None
     voice_transcriber: object | None
     permission_checker: PermissionChecker | None
     rate_limiter: RateLimiter | None
@@ -70,7 +69,6 @@ class _FFOBotMixin(commands.Bot):
         self.cache = None
         self.metrics = None
         self.phrase_matcher = None
-        self.media_downloader = None
         self.voice_transcriber = None
         self.permission_checker = None
         self.rate_limiter = None
@@ -110,13 +108,6 @@ class _FFOBotMixin(commands.Bot):
             set_session(create_session())
 
             self.phrase_matcher = PhraseMatcher(self.db_pool, self.cache)
-
-            if self.settings.feature_media_download and self.db_pool and self.metrics:
-                from bot.processors.media_downloader import MediaDownloader
-
-                md = MediaDownloader(self.db_pool, self.settings.media_storage_path, self.metrics)
-                await md.initialize()
-                self.media_downloader = md
 
             if self.settings.feature_voice_transcription and self.settings.openai_api_key:
                 from bot.processors.voice_transcriber import VoiceTranscriber
@@ -361,8 +352,6 @@ class _FFOBotMixin(commands.Bot):
         if self._health_server:
             await self._health_server.cleanup()
         await close_session()
-        if self.media_downloader:
-            await self.media_downloader.close()  # type: ignore[attr-defined]
         if self.db_pool:
             await self.db_pool.close()
         if self.cache:

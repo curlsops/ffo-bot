@@ -1,6 +1,6 @@
 import pytest
 
-from config.constants import AuditAction, Constants, FileType, Role
+from config.constants import AuditAction, Constants, Role
 
 
 class TestRoleRegression:
@@ -19,9 +19,3 @@ class TestConstantsRegression:
 
     def test_regex_timeout_positive(self):
         assert Constants.REGEX_TIMEOUT_SECONDS > 0
-
-    def test_media_timeout_positive(self):
-        assert Constants.MEDIA_DOWNLOAD_TIMEOUT > 0
-
-    def test_chunk_size_positive(self):
-        assert Constants.MEDIA_CHUNK_SIZE > 0

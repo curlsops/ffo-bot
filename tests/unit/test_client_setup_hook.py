@@ -46,41 +46,6 @@ class TestFFOBotSetupHook:
         assert bot.rate_limiter is not None
 
     @pytest.mark.asyncio
-    async def test_setup_hook_with_media_download(self, mock_settings):
-        from bot.client import FFOBot
-
-        mock_settings.feature_media_download = True
-        bot = FFOBot(mock_settings)
-
-        mock_downloader = MagicMock(initialize=AsyncMock())
-        patches = [
-            patch(
-                "bot.client.DatabasePool.create", new_callable=AsyncMock, return_value=MagicMock()
-            ),
-            patch("bot.client.InMemoryCache"),
-            patch("bot.client.BotMetrics"),
-            patch("bot.client.PhraseMatcher"),
-            patch("bot.processors.media_downloader.MediaDownloader", return_value=mock_downloader),
-            patch("bot.client.PermissionChecker"),
-            patch("bot.client.RateLimiter"),
-            patch.object(bot, "_start_health_server", new_callable=AsyncMock),
-            patch.object(bot, "_load_extensions", new_callable=AsyncMock),
-        ]
-        mock_tree = MagicMock(sync=AsyncMock())
-
-        for p in patches:
-            p.start()
-        try:
-            with patch.object(type(bot), "tree", new_callable=PropertyMock, return_value=mock_tree):
-                await bot.setup_hook()
-        finally:
-            for p in patches:
-                p.stop()
-
-        assert bot.media_downloader is not None
-        mock_downloader.initialize.assert_called_once()
-
-    @pytest.mark.asyncio
     async def test_setup_hook_with_voice_transcription(self, mock_settings):
         from bot.client import FFOBot
 

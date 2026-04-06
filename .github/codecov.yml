@@ -38,14 +38,6 @@ component_management:
       - type: project
         target: 100%
   individual_components:
-    - component_id: media_downloader
-      name: Media Downloader
-      paths:
-        - bot/processors/media_downloader.py
-      statuses:
-        - type: project
-          target: 50%
-          threshold: 5%
     - component_id: client
       name: Bot Client
       paths:

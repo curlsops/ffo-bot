@@ -22,7 +22,6 @@ from bot.commands.whitelist import WhitelistCommands
 from bot.handlers.messages import MessageHandler
 from bot.handlers.moderation import ModerationHandler
 from bot.handlers.reactions import ReactionHandler
-from bot.processors.media_downloader import MediaDownloader
 from bot.processors.phrase_matcher import PhraseMatcher
 from bot.processors.unit_converter import detect_and_convert
 from bot.processors.voice_transcriber import VoiceTranscriber
