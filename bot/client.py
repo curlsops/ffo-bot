@@ -409,7 +409,6 @@ class MetricsCommandTree(app_commands.CommandTree):
     async def _call(self, interaction: discord.Interaction) -> None:
         bot = cast(_FFOBotMixin, self.client)
         start = time.perf_counter()
-        command_name = "unknown"
         server_id = str(interaction.guild_id) if interaction.guild_id else "0"
         data = interaction.data or {}
         if data.get("type", 1) == 1:

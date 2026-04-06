@@ -140,10 +140,10 @@ def test_anonymize_get_nlp_import_error_fallback():
     mod._nlp = None
     real_import = __import__
 
-    def fake_import(name, globals=None, locals=None, fromlist=(), level=0):
+    def fake_import(name, globals_arg=None, locals_arg=None, fromlist=(), level=0):
         if name == "spacy" or (isinstance(name, str) and name.startswith("spacy.")):
             raise ImportError("No module named 'spacy'")
-        return real_import(name, globals, locals, fromlist, level)
+        return real_import(name, globals_arg, locals_arg, fromlist, level)
 
     with patch("builtins.__import__", side_effect=fake_import):
         assert mod._get_nlp() is None
