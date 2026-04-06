@@ -20,7 +20,7 @@ opentelemetry-exporter-otlp-proto-http==1.40.0
 opentelemetry-instrumentation-asyncpg==0.61b0
 
 # Logging
-python-json-logger==4.0.0
+python-json-logger==4.1.0
 
 # Configuration
 python-dotenv==1.2.2
