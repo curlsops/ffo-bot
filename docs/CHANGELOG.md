@@ -1,5 +1,34 @@
 # Changelog
 
+## [4.1.0](https://github.com/curlsops/ffo-bot/compare/v4.0.0...v4.1.0) (2026-04-07)
+
+
+### Features
+
+* **python:** update dependency marshmallow ( 4.2.2 ➔ 4.3.0 ) ([#158](https://github.com/curlsops/ffo-bot/issues/158)) ([3829476](https://github.com/curlsops/ffo-bot/commit/382947607ea02baf174631059a28655729bd9c08))
+* **python:** update dependency pytest-cov ( 7.0.0 ➔ 7.1.0 ) ([#166](https://github.com/curlsops/ffo-bot/issues/166)) ([b508175](https://github.com/curlsops/ffo-bot/commit/b5081750f908f496fbae6474d37defbea045a8d5))
+* **python:** update dependency requests ( 2.32.5 ➔ 2.33.1 ) ([#159](https://github.com/curlsops/ffo-bot/issues/159)) ([973335b](https://github.com/curlsops/ffo-bot/commit/973335b76fef7fdd4582c8161d6ba73f69b6f3e0))
+* **python:** update linting ([07618ed](https://github.com/curlsops/ffo-bot/commit/07618edcefef0fe62b45b85425e3202c4a20e722))
+* **python:** update linting ([245becc](https://github.com/curlsops/ffo-bot/commit/245becc59788b7daf726b8042e699a8d1838506c))
+
+
+### Bug Fixes
+
+* **python:** update dependency aiohttp ( 3.13.3 ➔ 3.13.5 ) ([5892b51](https://github.com/curlsops/ffo-bot/commit/5892b51979566cbc500cd9d26b95712f1cfdbbff))
+* **python:** update dependency aiohttp ( 3.13.3 ➔ 3.13.5 ) ([d214846](https://github.com/curlsops/ffo-bot/commit/d21484633a1c663a660f469e725e36bd7eeaaad1))
+* **python:** update dependency cryptography ( 46.0.5 ➔ 46.0.6 ) ([e46f3c3](https://github.com/curlsops/ffo-bot/commit/e46f3c32ba115c2aac3c4300e9b487bd5e3fb792))
+* **python:** update dependency cryptography ( 46.0.5 ➔ 46.0.6 ) ([62b53eb](https://github.com/curlsops/ffo-bot/commit/62b53eb220211884a5cff81702370471e9f76597))
+* **python:** update dependency filelock ( 3.25.1 ➔ 3.25.2 ) ([e37260c](https://github.com/curlsops/ffo-bot/commit/e37260c68d5e10dc01fa47e1d7ad397df62f6ad9))
+* **python:** update dependency filelock ( 3.25.1 ➔ 3.25.2 ) ([732c172](https://github.com/curlsops/ffo-bot/commit/732c172c2c893e598ad11f9bd3436e6bf25a3645))
+* **python:** update dependency spacy ( 3.8.11 ➔ 3.8.14 ) ([5d684e0](https://github.com/curlsops/ffo-bot/commit/5d684e001429693d865e9b0607b8e89cba43dd9e))
+* **python:** update dependency spacy ( 3.8.11 ➔ 3.8.14 ) ([c9e1137](https://github.com/curlsops/ffo-bot/commit/c9e11373ba61d25734dc1e41a45d54e3423181e2))
+* **python:** update dependency sqlalchemy ( 2.0.48 ➔ 2.0.49 ) ([0e18ee7](https://github.com/curlsops/ffo-bot/commit/0e18ee73f9e5de305e21547c39e23af4e9f34787))
+* **python:** update dependency sqlalchemy ( 2.0.48 ➔ 2.0.49 ) ([af15ebd](https://github.com/curlsops/ffo-bot/commit/af15ebd8061a32b4b9765211152ea6f84a22012c))
+* **python:** update dependency testcontainers ( 4.14.1 ➔ 4.14.2 ) ([da7a3ec](https://github.com/curlsops/ffo-bot/commit/da7a3ec0b0070f5c45228c6e343276a0cfb67f91))
+* **python:** update dependency testcontainers ( 4.14.1 ➔ 4.14.2 ) ([a64796d](https://github.com/curlsops/ffo-bot/commit/a64796d29ab994c02659d02fd2f0f1229497b953))
+* **python:** update dependency types-python-dateutil ( 2.9.0.20260305 ➔ 2.9.0.20260402 ) ([#165](https://github.com/curlsops/ffo-bot/issues/165)) ([b0811fe](https://github.com/curlsops/ffo-bot/commit/b0811fe78865a7098afc5af6804a55703d8c4a0d))
+* **test:** resolve anonymize_mod NameError in xdist CI ([f32bd75](https://github.com/curlsops/ffo-bot/commit/f32bd75d344fa8cf4ae1ec5cf2c7979ca8386650))
+
 ## [4.0.0](https://github.com/curlsops/ffo-bot/compare/v3.1.0...v4.0.0) (2026-04-06)
 
 
