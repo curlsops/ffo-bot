@@ -39,7 +39,7 @@ mafic @ git+https://github.com/ArtiArtem8/mafic.git@b1079d54597240e3e7984914df58
 authlib==1.6.9
 cryptography==46.0.5
 filelock==3.25.1
-marshmallow==4.2.2
+marshmallow==4.3.0
 mpmath==1.4.1
 requests==2.32.5
 setuptools==82.0.1
