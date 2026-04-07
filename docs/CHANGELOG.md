@@ -1,5 +1,27 @@
 # Changelog
 
+## [4.0.0](https://github.com/curlsops/ffo-bot/compare/v3.1.0...v4.0.0) (2026-04-06)
+
+
+### ⚠ BREAKING CHANGES
+
+* remove media download feature
+* **deps:** Update codecov/codecov-action action ( v5 ➔ v6 )
+
+### Features
+
+* **bot:** add opt-in Discord gateway sharding ([f4d0cba](https://github.com/curlsops/ffo-bot/commit/f4d0cba067b6551a47913cca72e395aa50b6f96f))
+* **deps:** Update codecov/codecov-action action ( v5 ➔ v6 ) ([6be76b3](https://github.com/curlsops/ffo-bot/commit/6be76b393432035f3b90c0ad28d9f5b1ff7b6383))
+* per-command /help, whitelist cache reconcile, anon destination channel ([2e100b2](https://github.com/curlsops/ffo-bot/commit/2e100b276d66976fdd2154f2a3b6d3f616ac0dcc))
+* **python:** update dependency python-json-logger ( 4.0.0 ➔ 4.1.0 ) ([#151](https://github.com/curlsops/ffo-bot/issues/151)) ([3a91ab8](https://github.com/curlsops/ffo-bot/commit/3a91ab884e5568bae2b05d8e206e0f90d6f1b31c))
+* remove media download feature ([0b37e38](https://github.com/curlsops/ffo-bot/commit/0b37e38f37fa808b1edfd0cb24db9353d9dfefe0))
+* **telemetry:** add OTLP tracing and message flood test ([358b280](https://github.com/curlsops/ffo-bot/commit/358b2809cf3f30e1572637e38df25bf587a87be9))
+
+
+### Bug Fixes
+
+* **test:** resolve anonymize_mod NameError in xdist CI ([f32bd75](https://github.com/curlsops/ffo-bot/commit/f32bd75d344fa8cf4ae1ec5cf2c7979ca8386650))
+
 ## [3.0.1](https://github.com/curlsops/ffo-bot/compare/v3.0.0...v3.0.1) (2026-03-18)
 
 
