@@ -38,7 +38,7 @@ mafic @ git+https://github.com/ArtiArtem8/mafic.git@b1079d54597240e3e7984914df58
 # Transitive pins
 authlib==1.6.9
 cryptography==46.0.6
-filelock==3.25.1
+filelock==3.25.2
 marshmallow==4.3.0
 mpmath==1.4.1
 requests==2.33.1
