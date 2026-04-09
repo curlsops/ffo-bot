@@ -18,12 +18,33 @@ class MinecraftRCONError(Exception):
     pass
 
 
+def _log_rcon_target_failure(target: RconTarget, err: BaseException, *, context: str) -> None:
+    logger.warning(
+        "%s: unable to reach RCON target_id=%s host=%s port=%s: %s",
+        context,
+        target.id,
+        target.host,
+        target.port,
+        err,
+    )
+
+
 @dataclass
 class RconTarget:
     id: str
     host: str
     port: int
     password: str
+
+    def __repr__(self) -> str:
+        return f"RconTarget(id={self.id!r}, host={self.host!r}, port={self.port})"
+
+
+@dataclass(frozen=True)
+class WhitelistListMergeResult:
+    usernames: list[str]
+    reachable_target_ids: tuple[str, ...]
+    unreachable_target_ids: tuple[str, ...]
 
 
 @dataclass
@@ -123,6 +144,12 @@ def _rcon_command(host: str, port: int, password: str, command: str, timeout: fl
 class MinecraftRCONClient:
     def __init__(self, settings: Settings):
         self._targets: list[RconTarget] = _parse_rcon_targets(settings)
+        raw_timeout = getattr(settings, "minecraft_rcon_connect_timeout_seconds", 10.0)
+        if isinstance(raw_timeout, (int, float)) and not isinstance(raw_timeout, bool):
+            t = float(raw_timeout)
+        else:
+            t = 10.0
+        self._connect_timeout = max(1.0, min(120.0, t))
 
     def _is_configured(self) -> bool:
         return bool(self._targets)
@@ -137,6 +164,7 @@ class MinecraftRCONClient:
                 target.port,
                 target.password,
                 command,
+                timeout=self._connect_timeout,
             )
 
         loop = asyncio.get_event_loop()
@@ -150,14 +178,23 @@ class MinecraftRCONClient:
     async def _broadcast_command(self, command: str) -> str:
         if not self._targets:
             raise MinecraftRCONError("Minecraft RCON not configured")
-        successes: list[tuple[str, str]] = []
-        failures: list[tuple[str, str]] = []
-        for t in self._targets:
+
+        async def _one(t: RconTarget) -> tuple[RconTarget, str | None, MinecraftRCONError | None]:
             try:
                 r = await self._run_rcon_on(t, command)
-                successes.append((t.id, r))
+                return (t, r, None)
             except MinecraftRCONError as e:
-                failures.append((t.id, str(e)))
+                _log_rcon_target_failure(t, e, context="rcon_broadcast")
+                return (t, None, e)
+
+        rows = await asyncio.gather(*[_one(t) for t in self._targets])
+        successes: list[tuple[str, str]] = []
+        failures: list[tuple[str, str]] = []
+        for t, r, err in rows:
+            if err is not None:
+                failures.append((t.id, str(err)))
+            else:
+                successes.append((t.id, r))
         if not successes:
             raise MinecraftRCONError(
                 "All targets failed: " + "; ".join(f"{k}: {v}" for k, v in failures)
@@ -176,6 +213,38 @@ class MinecraftRCONClient:
     async def whitelist_list(self) -> str:
         return await self._run_rcon("whitelist list")
 
+    async def whitelist_list_merge(self) -> WhitelistListMergeResult:
+        if not self._is_configured():
+            raise MinecraftRCONError("Minecraft RCON not configured")
+
+        async def _one(t: RconTarget) -> tuple[RconTarget, str | None, BaseException | None]:
+            try:
+                r = await self._run_rcon_on(t, "whitelist list")
+                return (t, r, None)
+            except Exception as e:
+                _log_rcon_target_failure(t, e, context="whitelist_list_merge")
+                return (t, None, e)
+
+        rows = await asyncio.gather(*[_one(t) for t in self._targets])
+        by_lower: dict[str, str] = {}
+        reachable: list[str] = []
+        unreachable: list[str] = []
+        for t, resp, err in rows:
+            if err is not None:
+                unreachable.append(t.id)
+                continue
+            reachable.append(t.id)
+            for name in parse_whitelist_list_response(resp or ""):
+                low = name.lower()
+                if low not in by_lower:
+                    by_lower[low] = name
+        usernames = sorted(by_lower.values(), key=str.lower)
+        return WhitelistListMergeResult(
+            usernames=usernames,
+            reachable_target_ids=tuple(reachable),
+            unreachable_target_ids=tuple(unreachable),
+        )
+
     async def whitelist_on(self) -> str:
         return await self._broadcast_command("whitelist on")
 
@@ -187,8 +256,8 @@ class MinecraftRCONClient:
             raise MinecraftRCONError("Minecraft RCON not configured")
         master_by_lower = {u.lower(): u for u in master_usernames}
         master_lower = set(master_by_lower.keys())
-        results: list[TargetPushResult] = []
-        for t in self._targets:
+
+        async def _push_one(t: RconTarget) -> TargetPushResult:
             tr = TargetPushResult(target_id=t.id)
             try:
                 resp = await self._run_rcon_on(t, "whitelist list")
@@ -205,9 +274,10 @@ class MinecraftRCONClient:
                         tr.added.append(canon)
             except Exception as e:
                 tr.error = str(e)
-                logger.warning("push_master_whitelist failed for %s: %s", t.id, e)
-            results.append(tr)
-        return results
+                _log_rcon_target_failure(t, e, context="push_master_whitelist")
+            return tr
+
+        return list(await asyncio.gather(*[_push_one(t) for t in self._targets]))
 
 
 def parse_whitelist_list_response(response: str) -> list[str]:

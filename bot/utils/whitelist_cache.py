@@ -1,7 +1,7 @@
 import logging
+from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
-from bot.services.minecraft_rcon import parse_whitelist_list_response
 from bot.services.mojang import get_profile, get_profile_by_uuid
 from config.constants import Constants
 
@@ -11,6 +11,17 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 CACHE_KEY_WHITELIST = "whitelist_usernames:{server_id}"
+
+
+@dataclass(frozen=True)
+class SyncFromRconResult:
+    ok: bool
+    player_count: int = 0
+    reachable_targets: int = 0
+    unreachable_target_ids: tuple[str, ...] = ()
+
+    def __bool__(self) -> bool:
+        return self.ok
 
 
 def _invalidate_whitelist_cache(cache: "InMemoryCache | None", server_id: int) -> None:
@@ -218,11 +229,24 @@ async def sync_from_rcon(
     fetch_uuid=None,
     batch_fetch=None,
     cache: "InMemoryCache | None" = None,
-) -> bool:
+) -> SyncFromRconResult:
     try:
-        resp = await rcon_client.whitelist_list()
-        usernames = parse_whitelist_list_response(resp)
+        merge = await rcon_client.whitelist_list_merge()
+    except Exception as e:
+        logger.warning("Failed to sync whitelist from RCON: %s", e)
+        return SyncFromRconResult(ok=False)
+    if not merge.reachable_target_ids:
+        logger.warning(
+            "Failed to sync whitelist from RCON: no reachable RCON targets (unreachable=%s)",
+            ",".join(merge.unreachable_target_ids) if merge.unreachable_target_ids else "(none)",
+        )
+        return SyncFromRconResult(
+            ok=False,
+            unreachable_target_ids=merge.unreachable_target_ids,
+        )
+    usernames = merge.usernames
 
+    try:
         uuid_map: dict[str, str] = {}
         if batch_fetch:
             try:
@@ -254,7 +278,15 @@ async def sync_from_rcon(
                     rows,
                 )
         _invalidate_whitelist_cache(cache, server_id)
-        return True
+        return SyncFromRconResult(
+            ok=True,
+            player_count=len(usernames),
+            reachable_targets=len(merge.reachable_target_ids),
+            unreachable_target_ids=merge.unreachable_target_ids,
+        )
     except Exception as e:
         logger.warning("Failed to sync whitelist from RCON: %s", e)
-        return False
+        return SyncFromRconResult(
+            ok=False,
+            unreachable_target_ids=merge.unreachable_target_ids,
+        )

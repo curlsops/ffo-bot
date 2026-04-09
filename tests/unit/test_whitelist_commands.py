@@ -5,6 +5,7 @@ from discord import app_commands
 
 from bot.commands.whitelist import OPERATION_CHOICES, WhitelistCommands, _validate_username
 from bot.services.minecraft_rcon import MinecraftRCONError, TargetPushResult
+from bot.utils.whitelist_cache import SyncFromRconResult
 from tests.helpers import (
     assert_followup_contains,
     build_whitelist_bot,
@@ -532,7 +533,9 @@ class TestWhitelistSync:
             patch(
                 "bot.commands.whitelist.sync_from_rcon",
                 new_callable=AsyncMock,
-                return_value=True,
+                return_value=SyncFromRconResult(
+                    ok=True, player_count=2, reachable_targets=1, unreachable_target_ids=()
+                ),
             ),
             patch(
                 "bot.commands.whitelist.get_cached_usernames",
@@ -559,7 +562,7 @@ class TestWhitelistSync:
         with patch(
             "bot.commands.whitelist.sync_from_rcon",
             new_callable=AsyncMock,
-            return_value=False,
+            return_value=SyncFromRconResult(ok=False),
         ):
             bot = _whitelist_bot()
             bot.db_pool, _ = mock_db_pool()
@@ -574,6 +577,40 @@ class TestWhitelistSync:
                 username=None,
             )
             assert_followup_contains(i, "Failed")
+
+    @pytest.mark.asyncio
+    async def test_reload_warns_when_some_servers_unreachable(self):
+        with (
+            patch(
+                "bot.commands.whitelist.sync_from_rcon",
+                new_callable=AsyncMock,
+                return_value=SyncFromRconResult(
+                    ok=True,
+                    player_count=1,
+                    reachable_targets=1,
+                    unreachable_target_ids=("offline",),
+                ),
+            ),
+            patch(
+                "bot.commands.whitelist.get_cached_usernames",
+                new_callable=AsyncMock,
+                return_value=["Steve"],
+            ),
+        ):
+            bot = _whitelist_bot()
+            bot.db_pool, _ = mock_db_pool()
+            cog = WhitelistCommands(bot)
+            i = mock_interaction(user_id=2)
+            await invoke(
+                cog,
+                "whitelist_cmd",
+                None,
+                i,
+                operation=_op_choice("sync"),
+                username=None,
+            )
+            assert_followup_contains(i, "unreachable", case_sensitive=False)
+            assert_followup_contains(i, "logs", case_sensitive=False)
 
     @pytest.mark.asyncio
     async def test_reload_no_rcon(self):
