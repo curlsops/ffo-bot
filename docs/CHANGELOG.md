@@ -1,5 +1,21 @@
 # Changelog
 
+## [4.2.0](https://github.com/curlsops/ffo-bot/compare/v4.1.0...v4.2.0) (2026-04-12)
+
+
+### Features
+
+* **python:** update dependency prometheus-client ( 0.24.1 ➔ 0.25.0 ) ([#181](https://github.com/curlsops/ffo-bot/issues/181)) ([294a559](https://github.com/curlsops/ffo-bot/commit/294a559085b9a0299aead1219f3125c93018132a))
+
+
+### Bug Fixes
+
+* **python:** update dependency cryptography ( 46.0.6 ➔ 46.0.7 ) ([#172](https://github.com/curlsops/ffo-bot/issues/172)) ([97a7941](https://github.com/curlsops/ffo-bot/commit/97a79412a8a68125fcf0da95ff81386dda65d973))
+* **python:** update dependency pytest ( 9.0.2 ➔ 9.0.3 ) ([#174](https://github.com/curlsops/ffo-bot/issues/174)) ([2e6e2a5](https://github.com/curlsops/ffo-bot/commit/2e6e2a568bc9a8ed5ab096c9eb5dacace079fe02))
+* **python:** update dependency types-aiofiles ( 25.1.0.20251011 ➔ 25.1.0.20260408 ) ([#175](https://github.com/curlsops/ffo-bot/issues/175)) ([9646020](https://github.com/curlsops/ffo-bot/commit/9646020fd440ca2bdc931c82ff6e848b0fabaed9))
+* **python:** update dependency types-aiofiles ( 25.1.0.20260408 ➔ 25.1.0.20260409 ) ([#179](https://github.com/curlsops/ffo-bot/issues/179)) ([31fc2b7](https://github.com/curlsops/ffo-bot/commit/31fc2b72bea246fb809b12758d923c11ecb756da))
+* **python:** update dependency types-python-dateutil ( 2.9.0.20260402 ➔ 2.9.0.20260408 ) ([#176](https://github.com/curlsops/ffo-bot/issues/176)) ([18564a4](https://github.com/curlsops/ffo-bot/commit/18564a41ec4fbee5de5363f4e1588faf6b3c0e6b))
+
 ## [4.1.0](https://github.com/curlsops/ffo-bot/compare/v4.0.0...v4.1.0) (2026-04-07)
 
 
