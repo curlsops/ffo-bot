@@ -194,6 +194,7 @@ class MinecraftRCONClient:
             if err is not None:
                 failures.append((t.id, str(err)))
             else:
+                assert r is not None
                 successes.append((t.id, r))
         if not successes:
             raise MinecraftRCONError(
