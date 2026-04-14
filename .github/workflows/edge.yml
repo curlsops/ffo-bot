@@ -6,8 +6,8 @@ on:
       - main
       - edge
     paths-ignore:
-      - "**/*.md"
-      - "docs/**"
+      - '**/*.md'
+      - 'docs/**'
   workflow_dispatch:
 
 concurrency:
@@ -40,7 +40,6 @@ jobs:
           n=$(gh pr list --repo "${{ github.repository }}" --head edge --base main --state open --json number --jq 'length')
           if [[ "${n}" -gt 0 ]]; then
             echo "mode=delegate" >> "$GITHUB_OUTPUT"
-            echo "Open PR edge→main: pytest runs in CI; this workflow will wait for CI then push."
           else
             echo "mode=full" >> "$GITHUB_OUTPUT"
           fi
@@ -100,26 +99,23 @@ jobs:
           for attempt in $(seq 1 120); do
             rid=$(gh run list --repo "$repo" --commit "$sha" --workflow "CI" --json databaseId \
               | jq -r 'if (type == "array" and length > 0) then .[0].databaseId else empty end' 2>/dev/null || true)
-            rid=$(printf '%s' "$rid" | tr -d '\n')
             if [[ -z "$rid" || "$rid" == "null" ]]; then
-              echo "Waiting for CI run to appear ($attempt/120)..."
+              echo "waiting for CI run ($attempt/120)"
               sleep 10
               continue
             fi
             status=$(gh run view "$rid" --repo "$repo" --json status -q .status)
             conc=$(gh run view "$rid" --repo "$repo" --json conclusion -q .conclusion)
-            echo "CI run $rid status=$status conclusion=${conc:-}"
             if [[ "$status" == "completed" ]]; then
               if [[ "$conc" == "success" ]]; then
-                echo "CI passed."
                 exit 0
               fi
-              echo "CI completed with conclusion=$conc"
+              echo "CI finished with conclusion=$conc" >&2
               exit 1
             fi
             sleep 10
           done
-          echo "Timed out waiting for CI"
+          echo "timed out waiting for CI" >&2
           exit 1
 
   build-and-push:
