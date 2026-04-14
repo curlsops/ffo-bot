@@ -1,3 +1,4 @@
+import logging
 import struct
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -238,7 +239,9 @@ class TestMinecraftRCONClient:
             result = await client._run_rcon("whitelist list")
 
         assert result == "ok"
-        mock_cmd.assert_called_once_with("localhost", 25575, "secret", "whitelist list")
+        mock_cmd.assert_called_once_with(
+            "localhost", 25575, "secret", "whitelist list", timeout=10.0
+        )
 
     def test_targets_json_skips_non_dict_entries(self):
         s = MagicMock()
@@ -307,8 +310,14 @@ class TestMinecraftRCONClient:
             '{"id":"b","host":"h2","port":25575,"password":"p2"}]'
         )
         client = MinecraftRCONClient(s)
+
+        async def run_side(t, _cmd):
+            if t.id == "a":
+                return "ok"
+            raise MinecraftRCONError("down")
+
         with patch.object(client, "_run_rcon_on", new_callable=AsyncMock) as m:
-            m.side_effect = ["ok", MinecraftRCONError("down")]
+            m.side_effect = run_side
             result = await client.whitelist_add("Steve")
         assert "a: ok" in result
         assert "b: failed" in result
@@ -388,3 +397,112 @@ class TestMinecraftRCONClient:
         s.minecraft_rcon_host = None
         s.minecraft_rcon_password = None
         assert len(MinecraftRCONClient(s)._targets) == 0
+
+    def test_rcon_target_repr_omits_password(self):
+        t = RconTarget(id="x", host="h.example", port=25575, password="topsecret")
+        r = repr(t)
+        assert "topsecret" not in r
+        assert "x" in r and "h.example" in r and "25575" in r
+
+    @pytest.mark.asyncio
+    async def test_whitelist_list_merge_duplicate_name_keeps_first_casing(self):
+        s = MagicMock()
+        s.feature_minecraft_whitelist = True
+        s.minecraft_rcon_targets = (
+            '[{"id":"a","host":"h1","port":25575,"password":"p1"},'
+            '{"id":"b","host":"h2","port":25575,"password":"p2"}]'
+        )
+        client = MinecraftRCONClient(s)
+
+        async def run_side(t, _cmd):
+            if t.id == "a":
+                return "There are 1 whitelisted players: Steve"
+            return "There are 1 whitelisted players: steve"
+
+        with patch.object(client, "_run_rcon_on", new_callable=AsyncMock) as m:
+            m.side_effect = run_side
+            out = await client.whitelist_list_merge()
+        assert out.usernames == ["Steve"]
+
+    @pytest.mark.asyncio
+    async def test_whitelist_list_merge_unions_two_servers(self):
+        s = MagicMock()
+        s.feature_minecraft_whitelist = True
+        s.minecraft_rcon_targets = (
+            '[{"id":"a","host":"h1","port":25575,"password":"p1"},'
+            '{"id":"b","host":"h2","port":25575,"password":"p2"}]'
+        )
+        client = MinecraftRCONClient(s)
+
+        async def run_side(t, _cmd):
+            if t.id == "a":
+                return "There are 1 whitelisted players: Steve"
+            return "There are 1 whitelisted players: Alex"
+
+        with patch.object(client, "_run_rcon_on", new_callable=AsyncMock) as m:
+            m.side_effect = run_side
+            out = await client.whitelist_list_merge()
+        assert set(out.usernames) == {"Steve", "Alex"}
+        assert out.reachable_target_ids == ("a", "b")
+        assert out.unreachable_target_ids == ()
+
+    @pytest.mark.asyncio
+    async def test_whitelist_list_merge_not_configured(self, unconfigured_settings):
+        client = MinecraftRCONClient(unconfigured_settings)
+        with pytest.raises(MinecraftRCONError, match="not configured"):
+            await client.whitelist_list_merge()
+
+    @pytest.mark.asyncio
+    async def test_whitelist_list_merge_none_response_treated_as_empty(self, configured_settings):
+        client = MinecraftRCONClient(configured_settings)
+        with patch.object(client, "_run_rcon_on", new_callable=AsyncMock, return_value=None):
+            out = await client.whitelist_list_merge()
+        assert out.usernames == []
+        assert out.reachable_target_ids == ("default",)
+
+    def test_client_respects_numeric_connect_timeout(self):
+        s = MagicMock()
+        s.feature_minecraft_whitelist = True
+        s.minecraft_rcon_targets = None
+        s.minecraft_rcon_host = "localhost"
+        s.minecraft_rcon_port = 25575
+        s.minecraft_rcon_password = "secret"
+        s.minecraft_rcon_connect_timeout_seconds = 8.5
+        client = MinecraftRCONClient(s)
+        assert client._connect_timeout == 8.5
+
+    def test_client_connect_timeout_clamped_to_bounds(self):
+        s = MagicMock()
+        s.feature_minecraft_whitelist = True
+        s.minecraft_rcon_targets = None
+        s.minecraft_rcon_host = "localhost"
+        s.minecraft_rcon_port = 25575
+        s.minecraft_rcon_password = "secret"
+        s.minecraft_rcon_connect_timeout_seconds = 500
+        assert MinecraftRCONClient(s)._connect_timeout == 120.0
+        s.minecraft_rcon_connect_timeout_seconds = 0.2
+        assert MinecraftRCONClient(s)._connect_timeout == 1.0
+
+    @pytest.mark.asyncio
+    async def test_whitelist_list_merge_one_unreachable(self, caplog):
+        caplog.set_level(logging.WARNING)
+        s = MagicMock()
+        s.feature_minecraft_whitelist = True
+        s.minecraft_rcon_targets = (
+            '[{"id":"a","host":"h1","port":25575,"password":"p1"},'
+            '{"id":"b","host":"h2","port":25575,"password":"p2"}]'
+        )
+        client = MinecraftRCONClient(s)
+
+        async def run_side(t, _cmd):
+            if t.id == "a":
+                return "There are 1 whitelisted players: Steve"
+            raise MinecraftRCONError("down")
+
+        with patch.object(client, "_run_rcon_on", new_callable=AsyncMock) as m:
+            m.side_effect = run_side
+            out = await client.whitelist_list_merge()
+        assert out.usernames == ["Steve"]
+        assert out.reachable_target_ids == ("a",)
+        assert out.unreachable_target_ids == ("b",)
+        assert any("target_id=b" in r.getMessage() for r in caplog.records)

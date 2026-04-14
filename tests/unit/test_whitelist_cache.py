@@ -4,7 +4,9 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from bot.services.minecraft_rcon import WhitelistListMergeResult
 from bot.utils.whitelist_cache import (
+    SyncFromRconResult,
     add_to_cache,
     get_cache_entry,
     get_cached_usernames,
@@ -12,6 +14,11 @@ from bot.utils.whitelist_cache import (
     remove_from_cache,
     sync_from_rcon,
 )
+
+
+def test_sync_from_rcon_result_bool():
+    assert bool(SyncFromRconResult(ok=True))
+    assert not bool(SyncFromRconResult(ok=False))
 
 
 def make_pool(conn):
@@ -163,10 +170,18 @@ async def test_sync_from_rcon_success():
     conn.executemany = AsyncMock()
     pool = make_pool(conn)
     rcon = AsyncMock()
-    rcon.whitelist_list.return_value = "There are 2 whitelisted players: Alice, Bob"
+    rcon.whitelist_list_merge = AsyncMock(
+        return_value=WhitelistListMergeResult(
+            usernames=["Alice", "Bob"],
+            reachable_target_ids=("default",),
+            unreachable_target_ids=(),
+        )
+    )
 
     result = await sync_from_rcon(pool, 123, rcon)
-    assert result is True
+    assert result.ok
+    assert result.player_count == 2
+    assert result.reachable_targets == 1
     conn.execute.assert_awaited_once()
     conn.executemany.assert_awaited_once()
 
@@ -176,10 +191,16 @@ async def test_sync_from_rcon_invalidates_cache():
     conn = AsyncMock()
     pool = make_pool(conn)
     rcon = AsyncMock()
-    rcon.whitelist_list.return_value = "There are 1 whitelisted player: Alice"
+    rcon.whitelist_list_merge = AsyncMock(
+        return_value=WhitelistListMergeResult(
+            usernames=["Alice"],
+            reachable_target_ids=("default",),
+            unreachable_target_ids=(),
+        )
+    )
     cache = MagicMock()
     result = await sync_from_rcon(pool, 123, rcon, cache=cache)
-    assert result is True
+    assert result.ok
     cache.delete.assert_called_once_with("whitelist_usernames:123")
 
 
@@ -188,10 +209,17 @@ async def test_sync_from_rcon_empty_list():
     conn = AsyncMock()
     pool = make_pool(conn)
     rcon = AsyncMock()
-    rcon.whitelist_list.return_value = "There are 0 whitelisted players: "
+    rcon.whitelist_list_merge = AsyncMock(
+        return_value=WhitelistListMergeResult(
+            usernames=[],
+            reachable_target_ids=("default",),
+            unreachable_target_ids=(),
+        )
+    )
 
     result = await sync_from_rcon(pool, 123, rcon)
-    assert result is True
+    assert result.ok
+    assert result.player_count == 0
     conn.execute.assert_called_once()
 
 
@@ -202,10 +230,16 @@ async def test_sync_from_rcon_exception_returns_false(caplog):
     conn.execute.side_effect = Exception("DB error")
     pool = make_pool(conn)
     rcon = AsyncMock()
-    rcon.whitelist_list.return_value = "There are 1 whitelisted player: Alice"
+    rcon.whitelist_list_merge = AsyncMock(
+        return_value=WhitelistListMergeResult(
+            usernames=["Alice"],
+            reachable_target_ids=("default",),
+            unreachable_target_ids=(),
+        )
+    )
 
     result = await sync_from_rcon(pool, 123, rcon)
-    assert result is False
+    assert not result.ok
     assert "Failed to sync whitelist from RCON" in caplog.text
 
 
@@ -213,10 +247,10 @@ async def test_sync_from_rcon_exception_returns_false(caplog):
 async def test_sync_from_rcon_rcon_fails():
     pool = make_pool(AsyncMock())
     rcon = AsyncMock()
-    rcon.whitelist_list.side_effect = Exception("RCON failed")
+    rcon.whitelist_list_merge = AsyncMock(side_effect=Exception("RCON failed"))
 
     result = await sync_from_rcon(pool, 123, rcon)
-    assert result is False
+    assert not result.ok
 
 
 @pytest.mark.asyncio
@@ -225,7 +259,13 @@ async def test_sync_from_rcon_with_fetch_uuid():
     conn.executemany = AsyncMock()
     pool = make_pool(conn)
     rcon = AsyncMock()
-    rcon.whitelist_list.return_value = "There are 1 whitelisted player: Steve"
+    rcon.whitelist_list_merge = AsyncMock(
+        return_value=WhitelistListMergeResult(
+            usernames=["Steve"],
+            reachable_target_ids=("default",),
+            unreachable_target_ids=(),
+        )
+    )
 
     async def fetch_uuid(username):
         if username == "Steve":
@@ -233,7 +273,7 @@ async def test_sync_from_rcon_with_fetch_uuid():
         return None
 
     result = await sync_from_rcon(pool, 123, rcon, fetch_uuid=fetch_uuid)
-    assert result is True
+    assert result.ok
     conn.execute.assert_awaited_once()
     conn.executemany.assert_awaited_once()
     rows = conn.executemany.call_args.args[1]
@@ -246,7 +286,13 @@ async def test_sync_from_rcon_fetch_uuid_returns_none_and_raises(caplog):
     conn = AsyncMock()
     pool = make_pool(conn)
     rcon = AsyncMock()
-    rcon.whitelist_list.return_value = "There are 3 whitelisted players: Steve, Fail, Bob"
+    rcon.whitelist_list_merge = AsyncMock(
+        return_value=WhitelistListMergeResult(
+            usernames=["Steve", "Fail", "Bob"],
+            reachable_target_ids=("default",),
+            unreachable_target_ids=(),
+        )
+    )
 
     async def fetch_uuid(username):
         if username == "Steve":
@@ -256,7 +302,7 @@ async def test_sync_from_rcon_fetch_uuid_returns_none_and_raises(caplog):
         return None  # Bob
 
     result = await sync_from_rcon(pool, 123, rcon, fetch_uuid=fetch_uuid)
-    assert result is True
+    assert result.ok
     assert "Could not fetch UUID" in caplog.text
 
 
@@ -266,7 +312,13 @@ async def test_sync_from_rcon_with_batch_fetch():
     conn.executemany = AsyncMock()
     pool = make_pool(conn)
     rcon = AsyncMock()
-    rcon.whitelist_list.return_value = "There are 2 whitelisted players: Steve, Alex"
+    rcon.whitelist_list_merge = AsyncMock(
+        return_value=WhitelistListMergeResult(
+            usernames=["Steve", "Alex"],
+            reachable_target_ids=("default",),
+            unreachable_target_ids=(),
+        )
+    )
 
     async def batch_fetch(usernames):
         return {
@@ -275,7 +327,7 @@ async def test_sync_from_rcon_with_batch_fetch():
         }
 
     result = await sync_from_rcon(pool, 123, rcon, batch_fetch=batch_fetch)
-    assert result is True
+    assert result.ok
     conn.execute.assert_awaited_once()
     conn.executemany.assert_awaited_once()
     rows = conn.executemany.call_args.args[1]
@@ -290,14 +342,56 @@ async def test_sync_from_rcon_batch_fetch_exception(caplog):
     conn = AsyncMock()
     pool = make_pool(conn)
     rcon = AsyncMock()
-    rcon.whitelist_list.return_value = "There are 1 whitelisted player: Steve"
+    rcon.whitelist_list_merge = AsyncMock(
+        return_value=WhitelistListMergeResult(
+            usernames=["Steve"],
+            reachable_target_ids=("default",),
+            unreachable_target_ids=(),
+        )
+    )
 
     async def batch_fetch(usernames):
         raise ValueError("API error")
 
     result = await sync_from_rcon(pool, 123, rcon, batch_fetch=batch_fetch)
-    assert result is True
+    assert result.ok
     assert "Batch UUID fetch failed" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_sync_from_rcon_no_reachable_targets(caplog):
+    caplog.set_level(logging.WARNING, logger="bot.utils.whitelist_cache")
+    pool = make_pool(AsyncMock())
+    rcon = AsyncMock()
+    rcon.whitelist_list_merge = AsyncMock(
+        return_value=WhitelistListMergeResult(
+            usernames=[],
+            reachable_target_ids=(),
+            unreachable_target_ids=("a", "b"),
+        )
+    )
+    result = await sync_from_rcon(pool, 123, rcon)
+    assert not result.ok
+    assert result.unreachable_target_ids == ("a", "b")
+    assert "no reachable RCON targets" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_sync_from_rcon_partial_unreachable_carries_ids():
+    conn = AsyncMock()
+    conn.executemany = AsyncMock()
+    pool = make_pool(conn)
+    rcon = AsyncMock()
+    rcon.whitelist_list_merge = AsyncMock(
+        return_value=WhitelistListMergeResult(
+            usernames=["Steve"],
+            reachable_target_ids=("good",),
+            unreachable_target_ids=("bad",),
+        )
+    )
+    result = await sync_from_rcon(pool, 123, rcon)
+    assert result.ok
+    assert result.unreachable_target_ids == ("bad",)
 
 
 @pytest.mark.asyncio

@@ -339,26 +339,28 @@ class WhitelistCommands(commands.Cog):
             )
 
     async def _handle_sync(self, interaction: discord.Interaction):
-        success = await sync_from_rcon(
+        out = await sync_from_rcon(
             self.bot.db_pool,
             interaction.guild_id,
             self.bot.minecraft_rcon,
             batch_fetch=get_profiles_batch,
             cache=self.bot.cache,
         )
-        if success:
+        if out.ok:
             count = len(
                 await get_cached_usernames(
                     self.bot.db_pool, interaction.guild_id, cache=self.bot.cache
                 )
             )
-            await interaction.followup.send(
-                f"Synced {count} players from Minecraft server.",
-                ephemeral=True,
-            )
+            msg = f"Synced {count} player(s) from {out.reachable_targets} Minecraft server(s)."
+            if out.unreachable_target_ids:
+                msg += (
+                    f" {len(out.unreachable_target_ids)} server(s) unreachable (details in logs)."
+                )
+            await interaction.followup.send(msg, ephemeral=True)
         else:
             await interaction.followup.send(
-                "Failed to sync from Minecraft server.",
+                "Failed to sync from Minecraft. Check RCON settings and logs.",
                 ephemeral=True,
             )
 

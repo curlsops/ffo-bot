@@ -171,6 +171,12 @@ class Settings(BaseSettings):
             "non-empty list overrides MINECRAFT_RCON_HOST for multi-server RCON"
         ),
     )
+    minecraft_rcon_connect_timeout_seconds: float = Field(
+        default=10.0,
+        ge=1.0,
+        le=120.0,
+        description="Per-target RCON TCP/connect timeout (seconds)",
+    )
     whitelist_cache_reconcile_interval_hours: float = Field(
         default=24.0,
         ge=0,
