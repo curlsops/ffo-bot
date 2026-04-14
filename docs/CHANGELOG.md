@@ -1,5 +1,17 @@
 # Changelog
 
+## [4.2.1](https://github.com/curlsops/ffo-bot/compare/v4.2.0...v4.2.1) (2026-04-14)
+
+
+### Bug Fixes
+
+* **docker:** align runtime user with Kubernetes for migrations ([eee8545](https://github.com/curlsops/ffo-bot/commit/eee8545e3e2e87f39519a8c21ed11758d601e807))
+* **docker:** align runtime user with Kubernetes for migrations ([1ce2096](https://github.com/curlsops/ffo-bot/commit/1ce20969497f41334e9249a326ff5096be6e60ae))
+* **github-action:** update action actions/upload-artifact ( v7.0.0 ➔ v7.0.1 ) ([#186](https://github.com/curlsops/ffo-bot/issues/186)) ([7ad2d16](https://github.com/curlsops/ffo-bot/commit/7ad2d16206769e72cdd965e0b158a56341a84136))
+* **minecraft_rcon:** narrow broadcast response before append for mypy ([a3d77eb](https://github.com/curlsops/ffo-bot/commit/a3d77ebe0e274ff4f0f608745c8fdb68609236dd))
+* **python:** update dependency authlib ( 1.6.9 ➔ 1.6.10 ) ([#183](https://github.com/curlsops/ffo-bot/issues/183)) ([8f9f522](https://github.com/curlsops/ffo-bot/commit/8f9f522c2f1a709a4de0271d2a6be6b1e9b874f6))
+* **python:** update dependency zipp ( 3.23.0 ➔ 3.23.1 ) ([#184](https://github.com/curlsops/ffo-bot/issues/184)) ([e666249](https://github.com/curlsops/ffo-bot/commit/e6662491cd5f3db22cced61b1db565beb14aff68))
+
 ## [4.2.0](https://github.com/curlsops/ffo-bot/compare/v4.1.0...v4.2.0) (2026-04-12)
 
 
