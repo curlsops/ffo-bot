@@ -21,8 +21,9 @@ LABEL org.opencontainers.image.source="${IMAGE_SOURCE}"
 LABEL org.opencontainers.image.description="FFO Discord Bot"
 LABEL org.opencontainers.image.licenses="CC-BY-NC-SA-4.0"
 
-RUN addgroup -g 10001 discord && \
-    adduser -D -u 10001 -G discord discord && \
+# UID/GID 1000 must match Kubernetes securityContext (runAsUser/fsGroup) or site-packages are unreadable.
+RUN addgroup -g 1000 discord && \
+    adduser -D -u 1000 -G discord discord && \
     mkdir -p /app /tmp/bot && \
     chown -R discord:discord /app /tmp/bot
 

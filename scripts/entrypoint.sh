@@ -2,7 +2,7 @@
 set -e
 
 echo "Running database migrations..."
-alembic upgrade head
+python -m alembic upgrade head
 echo "Migrations complete"
 
 echo "Starting bot..."
