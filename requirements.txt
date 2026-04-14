@@ -1,19 +1,19 @@
 # Discord Bot Dependencies
 discord.py==2.7.1
-aiohttp==3.13.3
+aiohttp==3.13.5
 asyncpg==0.31.0
 aiofiles==25.1.0
 
 # Database
 alembic==1.18.4
 psycopg2-binary==2.9.11
-sqlalchemy==2.0.48
+sqlalchemy==2.0.49
 
 # Security
 pynacl==1.6.2
 
 # Monitoring
-prometheus-client==0.24.1
+prometheus-client==0.25.0
 opentelemetry-api==1.40.0
 opentelemetry-sdk==1.40.0
 opentelemetry-exporter-otlp-proto-http==1.40.0
@@ -37,11 +37,11 @@ mafic @ git+https://github.com/ArtiArtem8/mafic.git@b1079d54597240e3e7984914df58
 
 # Transitive pins
 authlib==1.6.9
-cryptography==46.0.5
-filelock==3.25.1
-marshmallow==4.2.2
+cryptography==46.0.7
+filelock==3.25.2
+marshmallow==4.3.0
 mpmath==1.4.1
-requests==2.32.5
+requests==2.33.1
 setuptools==82.0.1
 urllib3==2.6.3
 zipp==3.23.0
