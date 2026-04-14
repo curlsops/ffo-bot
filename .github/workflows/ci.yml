@@ -144,3 +144,8 @@ jobs:
 
       - name: Container smoke test
         run: docker run --rm --entrypoint python ffobot:${{ github.sha }} smoke_test.py
+
+      - name: Verify Kubernetes runAsUser 1000 can import deps (alembic)
+        run: |
+          docker run --rm -u 1000:1000 --entrypoint python ffobot:${{ github.sha }} \
+            -c "import alembic; print('alembic import ok')"
