@@ -343,7 +343,7 @@ class MusicGroup(app_commands.Group):
                 await i.followup.send("No results found.", ephemeral=True)
                 return
             tracks = result if isinstance(result, list) else result.tracks
-            if not isinstance(result, list):
+            if not isinstance(result, list) and search_type is None and len(tracks) > 1:
                 playlist = True
         if not tracks:
             await i.followup.send("No tracks found.", ephemeral=True)
