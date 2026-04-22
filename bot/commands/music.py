@@ -29,6 +29,7 @@ from bot.utils.music import (
     _format_duration,
     _get_queue,
     _music_embed,
+    _order_youtube_search_tracks,
     _time_until_track,
     _track_label,
 )
@@ -348,6 +349,14 @@ class MusicGroup(app_commands.Group):
         if not tracks:
             await i.followup.send("No tracks found.", ephemeral=True)
             return
+        if (
+            len(tracks) > 1
+            and not playlist
+            and (search_type == SearchType.YOUTUBE or from_resolved_url)
+        ):
+            tracks = _order_youtube_search_tracks(list(tracks))
+        if from_resolved_url and len(tracks) > 1:
+            tracks = [tracks[0]]
         if force_next:
             ctx = PermissionContext(
                 server_id=i.guild_id or 0, user_id=i.user.id, command_name="music play"
@@ -402,7 +411,7 @@ class MusicGroup(app_commands.Group):
             except PlayerNotConnected:
                 await i.followup.send(CONNECTION_FAILED_MSG, ephemeral=True)
                 return
-            if len(tracks) > 1:
+            if playlist and len(tracks) > 1:
                 queue.extend(tracks[1:])
             desc = f"▶️ **{tracks[0].title}**" + (
                 f"\n📥 +{len(tracks) - 1} queued" if playlist else ""
@@ -614,9 +623,9 @@ class MusicCommands(commands.Cog):
                 await _cancel_leave_task(tasks, guild_id)
                 tasks[guild_id] = asyncio.create_task(_leave_after_idle())
 
-    @commands.Cog.listener("track_end")
+    @commands.Cog.listener("on_track_end")
     async def _on_track_end(self, event: TrackEndEvent) -> None:
-        if event.reason != EndReason.FINISHED:
+        if event.reason not in (EndReason.FINISHED, EndReason.LOAD_FAILED):
             return
         if await _play_next(event.player):
             logger.debug("Playing next track in queue for guild %s", event.player.guild.id)

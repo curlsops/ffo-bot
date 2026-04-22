@@ -1,6 +1,6 @@
 from collections import defaultdict, deque
 from itertools import islice
-from typing import TYPE_CHECKING, Iterable, cast
+from typing import TYPE_CHECKING, Iterable, Sequence, cast
 
 import discord
 from mafic import Player, Track
@@ -10,6 +10,60 @@ if TYPE_CHECKING:
 
 EMBED_COLOR = 0x9B59B6
 TRACK_PICKER_LABEL_MAX = 50
+
+_YT_SEARCH_POSITIVE = (
+    "official music video",
+    "official video",
+    "official audio",
+    "(official",
+    "[official",
+    " - official",
+    " official ",
+)
+_YT_SEARCH_NEGATIVE = (
+    " reaction",
+    " reacts",
+    " cover",
+    "karaoke",
+    "nightcore",
+    "8d audio",
+    " slowed ",
+    " mashup",
+    " tiktok",
+    "read description",
+)
+
+
+def _youtube_search_track_score(track: Track) -> int:
+    title = (track.title or "").lower()
+    author = (getattr(track, "author", None) or "").lower()
+    blob = f" {title} {author} "
+    score = 0
+    for hint in _YT_SEARCH_POSITIVE:
+        if hint in blob:
+            score += 55
+            break
+    if "vevo" in title or "vevo" in author:
+        score += 28
+    for bad in _YT_SEARCH_NEGATIVE:
+        if bad in blob:
+            score -= 20
+    ln = int(getattr(track, "length", None) or 0)
+    if 0 < ln < 45_000:
+        score -= 14
+    return max(score, -80)
+
+
+def _order_youtube_search_tracks(tracks: Sequence[Track]) -> list[Track]:
+    if len(tracks) < 2:
+        return list(tracks)
+    return [
+        t
+        for _, t in sorted(
+            enumerate(tracks),
+            key=lambda it: (-_youtube_search_track_score(it[1]), it[0]),
+        )
+    ]
 
 
 def _format_duration(ms: int) -> str:

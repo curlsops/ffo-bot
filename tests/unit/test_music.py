@@ -4,7 +4,7 @@ from contextlib import contextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from mafic import SearchType
+from mafic import EndReason, SearchType
 from mafic.errors import PlayerNotConnected
 
 from bot.commands.music import (
@@ -19,7 +19,14 @@ from bot.commands.music import (
     _play_next,
     _pop_queue_index,
 )
-from bot.utils.music import _ms, _music_embed, _time_until_track, _track_label
+from bot.utils.music import (
+    _ms,
+    _music_embed,
+    _order_youtube_search_tracks,
+    _time_until_track,
+    _track_label,
+    _youtube_search_track_score,
+)
 
 CHANNEL_ID = 99
 GUILD_ID = 1
@@ -130,6 +137,38 @@ class TestMusicUtils:
     def test_track_label_no_author(self):
         t = MagicMock(title="Song", spec=["title"])
         assert _track_label(t, 1).startswith("1.")
+
+    def test_yt_score_prefers_official_over_reaction(self):
+        low = MagicMock(title="Song REACTION", author="Channel", length=180_000)
+        high = MagicMock(title="Song (Official Video)", author="Artist", length=180_000)
+        assert _youtube_search_track_score(high) > _youtube_search_track_score(low)
+
+    def test_yt_score_vevo(self):
+        t = MagicMock(title="Song", author="ArtistVEVO", length=180_000)
+        assert _youtube_search_track_score(t) >= 28
+
+    def test_yt_score_long_over_short_clip(self):
+        long = MagicMock(title="Live Performance", author="Band", length=200_000)
+        clip = MagicMock(title="Live Performance", author="Band", length=20_000)
+        assert _youtube_search_track_score(long) > _youtube_search_track_score(clip)
+
+    def test_yt_score_clamps_negative(self):
+        t = MagicMock(
+            title=" reaction  cover  karaoke  nightcore  mashup ",
+            author=" x ",
+            length=20_000,
+        )
+        assert _youtube_search_track_score(t) == -80
+
+    def test_yt_order_official_first(self):
+        a = MagicMock(title="Track REACTION", author="X", length=200_000)
+        b = MagicMock(title="Track (Official Video)", author="Y", length=200_000)
+        ordered = _order_youtube_search_tracks([a, b])
+        assert ordered[0] is b and ordered[1] is a
+
+    def test_yt_order_single_unchanged(self):
+        t = MagicMock(title="Only", author="A", length=100_000)
+        assert _order_youtube_search_tracks([t]) == [t]
 
     def test_time_until_track_idx_zero_no_current(self):
         assert _time_until_track(None, None, [], 0) == "—"
@@ -437,10 +476,9 @@ class TestMusicPlay:
 
     @pytest.mark.asyncio
     async def test_play_spotify_url_plays_first_result_no_picker(self, cog):
-        t1, t2 = MagicMock(title="Slave Knight Gael"), MagicMock(
-            title="Slave Knight Gael [Extended]"
-        )
-        i, player = _play_ctx(cog, tracks=[t1, t2])
+        t_react = MagicMock(title="Slave Knight Gael REACTION", author="Fan")
+        t_official = MagicMock(title="Slave Knight Gael (Official Video)", author="From")
+        i, player = _play_ctx(cog, tracks=[t_react, t_official])
         with patch(
             "bot.commands.music.spotify_url_to_search_query",
             AsyncMock(return_value="Yuka Kitamura - Slave Knight Gael"),
@@ -449,8 +487,43 @@ class TestMusicPlay:
                 await cog.music_group.play.callback(
                     cog.music_group, i, "https://open.spotify.com/track/74m8PoL6GZulfVzeYS6W0C"
                 )
-        player.play.assert_called_once_with(t1)
+        player.play.assert_called_once_with(t_official)
         assert i.followup.send.call_args[1].get("view") is None
+        assert len(_get_queue(cog.bot, GUILD_ID)) == 0
+
+    @pytest.mark.asyncio
+    async def test_play_tidal_track_url_queues_only_first_hit(self, cog):
+        t_lyrics = MagicMock(title="Unanswered (Lyrics)", author="Ch")
+        t_official = MagicMock(title="Unanswered (OFFICIAL VIDEO)", author="SS")
+        i, player = _play_ctx(cog, tracks=[t_lyrics, t_official])
+        with patch(
+            "bot.commands.music.tidal_url_to_search_query",
+            AsyncMock(return_value="Suicide Silence - Unanswered"),
+        ):
+            with _patch_player():
+                await cog.music_group.play.callback(
+                    cog.music_group, i, "https://tidal.com/track/51982148/u"
+                )
+        player.play.assert_called_once_with(t_official)
+        assert len(_get_queue(cog.bot, GUILD_ID)) == 0
+
+    @pytest.mark.asyncio
+    async def test_play_spotify_track_url_while_playing_queues_one_hit(self, cog):
+        t_react = MagicMock(title="Unanswered REACTION", author="X")
+        t_official = MagicMock(title="Unanswered (Official Video)", author="Y")
+        i, player = _play_ctx(
+            cog, tracks=[t_react, t_official], current=MagicMock(title="Now Playing"), queue=[]
+        )
+        with patch(
+            "bot.commands.music.spotify_url_to_search_query",
+            AsyncMock(return_value="Suicide Silence - Unanswered"),
+        ):
+            with _patch_player():
+                await cog.music_group.play.callback(
+                    cog.music_group, i, "https://open.spotify.com/track/4iV5W9uYEdYUVa79Axb7Rh"
+                )
+        q = _get_queue(cog.bot, GUILD_ID)
+        assert len(q) == 1 and q[0].title == "Unanswered (Official Video)"
 
     @pytest.mark.asyncio
     async def test_play_force_next_mod_inserts_at_front(self, cog):
@@ -672,3 +745,27 @@ class TestMusicCogUnload:
         cog.bot.tree.remove_command = MagicMock()
         await cog.cog_unload()
         cog.bot.tree.remove_command.assert_called_once_with("music")
+
+
+class TestMusicTrackEndListener:
+    def test_cog_registers_on_track_end(self):
+        assert ("on_track_end", "_on_track_end") in MusicCommands.__cog_listeners__
+
+    @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "reason, expect_play_next",
+        [
+            (EndReason.FINISHED, True),
+            (EndReason.LOAD_FAILED, True),
+            (EndReason.STOPPED, False),
+        ],
+    )
+    async def test_on_track_end(self, cog, reason, expect_play_next):
+        player = MagicMock(guild=MagicMock(id=GUILD_ID), client=cog.bot)
+        event = MagicMock(reason=reason, player=player)
+        with patch("bot.commands.music._play_next", new_callable=AsyncMock) as m:
+            await cog._on_track_end(event)
+        if expect_play_next:
+            m.assert_awaited_once_with(player)
+        else:
+            m.assert_not_called()
