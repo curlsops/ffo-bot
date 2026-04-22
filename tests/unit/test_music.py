@@ -454,6 +454,23 @@ class TestMusicPlay:
         assert len(_get_queue(cog.bot, GUILD_ID)) == 0
 
     @pytest.mark.asyncio
+    async def test_play_tidal_track_url_queues_only_first_hit(self, cog):
+        t1, t2 = MagicMock(title="Unanswered (OFFICIAL VIDEO)"), MagicMock(
+            title="Unanswered (Lyrics)"
+        )
+        i, player = _play_ctx(cog, tracks=[t1, t2])
+        with patch(
+            "bot.commands.music.tidal_url_to_search_query",
+            AsyncMock(return_value="Suicide Silence - Unanswered"),
+        ):
+            with _patch_player():
+                await cog.music_group.play.callback(
+                    cog.music_group, i, "https://tidal.com/track/51982148/u"
+                )
+        player.play.assert_called_once_with(t1)
+        assert len(_get_queue(cog.bot, GUILD_ID)) == 0
+
+    @pytest.mark.asyncio
     async def test_play_spotify_track_url_while_playing_queues_one_hit(self, cog):
         t1, t2 = MagicMock(title="First Hit"), MagicMock(title="Second Hit")
         i, player = _play_ctx(
