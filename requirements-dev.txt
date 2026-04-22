@@ -14,7 +14,7 @@ httpx==0.28.1
 pre-commit==4.5.1
 flake8==7.3.0
 black==26.3.1
-mypy==1.20.0
+mypy==1.20.1
 isort==8.0.1
 
 # Type Stubs
