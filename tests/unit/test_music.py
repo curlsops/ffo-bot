@@ -499,6 +499,48 @@ class TestMusicPlay:
         kw = i.followup.send.call_args[1]
         assert "Pick a track" in kw["embed"].title and kw.get("view") and kw["ephemeral"]
 
+    @pytest.mark.asyncio
+    async def test_play_search_non_list_load_shows_picker_not_full_queue(self, cog):
+        t1, t2, t3 = (
+            MagicMock(title="Hit A", author="X"),
+            MagicMock(title="Hit B", author="Y"),
+            MagicMock(title="Hit C", author="Z"),
+        )
+        load = MagicMock(tracks=[t1, t2, t3])
+        ch = _channel()
+        p = _player(ch, tracks=None)
+        p.fetch_tracks = AsyncMock(return_value=load)
+        i = _interaction(cog.bot, voice_channel=ch)
+        i.guild.voice_client = p
+        with _patch_player():
+            await cog.music_group.play.callback(cog.music_group, i, "architects everything ends")
+        p.fetch_tracks.assert_called_once()
+        call_kw = p.fetch_tracks.call_args[1]
+        assert call_kw.get("search_type") is SearchType.YOUTUBE
+        kw = i.followup.send.call_args[1]
+        assert "Pick a track" in kw["embed"].title and kw.get("view")
+        assert len(_get_queue(cog.bot, GUILD_ID)) == 0
+
+    @pytest.mark.asyncio
+    async def test_play_youtube_url_playlist_shape_queues_all(self, cog):
+        t1, t2 = MagicMock(title="PL A"), MagicMock(title="PL B")
+        load = MagicMock(tracks=[t1, t2])
+        ch = _channel()
+        p = _player(ch, tracks=None, current=MagicMock(title="Now"))
+        p.fetch_tracks = AsyncMock(return_value=load)
+        i = _interaction(cog.bot, voice_channel=ch)
+        i.guild.voice_client = p
+        cog.bot._music_queues = {GUILD_ID: deque()}
+        with _patch_player():
+            await cog.music_group.play.callback(
+                cog.music_group, i, "https://www.youtube.com/playlist?list=PLtest"
+            )
+        p.fetch_tracks.assert_called_once()
+        assert p.fetch_tracks.call_args[1].get("search_type") is None
+        assert list(cog.bot._music_queues[GUILD_ID]) == [t1, t2]
+        desc = (i.followup.send.call_args[1]["embed"].description or "").lower()
+        assert "2" in desc and ("track" in desc or "queued" in desc)
+
 
 class TestMusicStop:
     @pytest.mark.asyncio
