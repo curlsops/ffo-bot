@@ -1,5 +1,22 @@
 # Changelog
 
+## [4.3.0](https://github.com/curlsops/ffo-bot/compare/v4.2.1...v4.3.0) (2026-04-22)
+
+
+### Features
+
+* **github-action:** update action useblacksmith/setup-docker-builder ( v1.6.0 ➔ v1.7.0 ) ([#197](https://github.com/curlsops/ffo-bot/issues/197)) ([8e0e295](https://github.com/curlsops/ffo-bot/commit/8e0e295a5a1670d2c857f4ad22d00e523e5b3b83))
+* **python:** update dependency authlib ( 1.6.11 ➔ 1.7.0 ) ([#195](https://github.com/curlsops/ffo-bot/issues/195)) ([3d68c0d](https://github.com/curlsops/ffo-bot/commit/3d68c0d87c256438f2fbefca2b92b293a450db26))
+* **python:** update dependency filelock ( 3.25.2 ➔ 3.28.0 ) ([#188](https://github.com/curlsops/ffo-bot/issues/188)) ([6fb961c](https://github.com/curlsops/ffo-bot/commit/6fb961c5183341a9b6a7bffce85dc076de968bda))
+* **python:** update dependency filelock ( 3.28.0 ➔ 3.29.0 ) ([#196](https://github.com/curlsops/ffo-bot/issues/196)) ([5b57609](https://github.com/curlsops/ffo-bot/commit/5b57609a116f1219e79e2ec2a466cd6743131702))
+
+
+### Bug Fixes
+
+* **music:** show track picker for playlist-shaped search results ([d710ea2](https://github.com/curlsops/ffo-bot/commit/d710ea24a3aff9de5d96e742d735a68e878558b9))
+* **python:** update dependency authlib ( 1.6.10 ➔ 1.6.11 ) ([#192](https://github.com/curlsops/ffo-bot/issues/192)) ([489a9d3](https://github.com/curlsops/ffo-bot/commit/489a9d37da4e05c50db5e2efb790c78223571415))
+* **python:** update dependency mypy ( 1.20.0 ➔ 1.20.1 ) ([#189](https://github.com/curlsops/ffo-bot/issues/189)) ([d828f42](https://github.com/curlsops/ffo-bot/commit/d828f420d486836d417abb31d66c01b20104d09a))
+
 ## [4.2.1](https://github.com/curlsops/ffo-bot/compare/v4.2.0...v4.2.1) (2026-04-14)
 
 
