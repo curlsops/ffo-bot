@@ -9,6 +9,7 @@ from mafic.errors import PlayerNotConnected
 
 from bot.commands.music import (
     PLAYLIST_FETCH_CONCURRENCY,
+    EndReason,
     MusicCommands,
     MusicGroup,
     _clear_queue,
@@ -745,3 +746,33 @@ class TestMusicCogUnload:
         cog.bot.tree.remove_command = MagicMock()
         await cog.cog_unload()
         cog.bot.tree.remove_command.assert_called_once_with("music")
+
+
+class TestMusicTrackEndListener:
+    def test_track_end_listener_registered_for_bot_dispatch(self):
+        pairs = getattr(MusicCommands, "__cog_listeners__", [])
+        assert ("on_track_end", "_on_track_end") in pairs
+
+    @pytest.mark.asyncio
+    async def test_on_track_end_finished_invokes_play_next(self, cog):
+        player = MagicMock(guild=MagicMock(id=GUILD_ID), client=cog.bot)
+        event = MagicMock(reason=EndReason.FINISHED, player=player)
+        with patch("bot.commands.music._play_next", new_callable=AsyncMock) as m:
+            await cog._on_track_end(event)
+        m.assert_awaited_once_with(player)
+
+    @pytest.mark.asyncio
+    async def test_on_track_end_load_failed_invokes_play_next(self, cog):
+        player = MagicMock(guild=MagicMock(id=GUILD_ID), client=cog.bot)
+        event = MagicMock(reason=EndReason.LOAD_FAILED, player=player)
+        with patch("bot.commands.music._play_next", new_callable=AsyncMock) as m:
+            await cog._on_track_end(event)
+        m.assert_awaited_once_with(player)
+
+    @pytest.mark.asyncio
+    async def test_on_track_end_stopped_skips_play_next(self, cog):
+        player = MagicMock(guild=MagicMock(id=GUILD_ID), client=cog.bot)
+        event = MagicMock(reason=EndReason.STOPPED, player=player)
+        with patch("bot.commands.music._play_next", new_callable=AsyncMock) as m:
+            await cog._on_track_end(event)
+        m.assert_not_called()

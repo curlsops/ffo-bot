@@ -623,9 +623,9 @@ class MusicCommands(commands.Cog):
                 await _cancel_leave_task(tasks, guild_id)
                 tasks[guild_id] = asyncio.create_task(_leave_after_idle())
 
-    @commands.Cog.listener("track_end")
+    @commands.Cog.listener("on_track_end")
     async def _on_track_end(self, event: TrackEndEvent) -> None:
-        if event.reason != EndReason.FINISHED:
+        if event.reason not in (EndReason.FINISHED, EndReason.LOAD_FAILED):
             return
         if await _play_next(event.player):
             logger.debug("Playing next track in queue for guild %s", event.player.guild.id)
