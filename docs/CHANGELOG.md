@@ -1,5 +1,18 @@
 # Changelog
 
+## [4.4.0](https://github.com/curlsops/ffo-bot/compare/v4.3.0...v4.4.0) (2026-04-22)
+
+
+### Features
+
+* **music:** rank YouTube search hits before single-track pick ([5f55521](https://github.com/curlsops/ffo-bot/commit/5f5552165be2462324ed36859807f9dc911e515a))
+
+
+### Bug Fixes
+
+* **music:** keep one track for Spotify/Tidal single-link search ([a133d76](https://github.com/curlsops/ffo-bot/commit/a133d7645116f2bb212107dd12e705a813489d37))
+* **music:** register track_end listener as on_track_end for discord.py ([73adfd7](https://github.com/curlsops/ffo-bot/commit/73adfd7b0efbbdcd63868fd1faf5593f320bd340))
+
 ## [4.3.0](https://github.com/curlsops/ffo-bot/compare/v4.2.1...v4.3.0) (2026-04-22)
 
 
