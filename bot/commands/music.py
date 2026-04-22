@@ -348,6 +348,8 @@ class MusicGroup(app_commands.Group):
         if not tracks:
             await i.followup.send("No tracks found.", ephemeral=True)
             return
+        if from_resolved_url and len(tracks) > 1:
+            tracks = [tracks[0]]
         if force_next:
             ctx = PermissionContext(
                 server_id=i.guild_id or 0, user_id=i.user.id, command_name="music play"
@@ -402,7 +404,7 @@ class MusicGroup(app_commands.Group):
             except PlayerNotConnected:
                 await i.followup.send(CONNECTION_FAILED_MSG, ephemeral=True)
                 return
-            if len(tracks) > 1:
+            if playlist and len(tracks) > 1:
                 queue.extend(tracks[1:])
             desc = f"▶️ **{tracks[0].title}**" + (
                 f"\n📥 +{len(tracks) - 1} queued" if playlist else ""

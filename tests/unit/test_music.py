@@ -451,6 +451,24 @@ class TestMusicPlay:
                 )
         player.play.assert_called_once_with(t1)
         assert i.followup.send.call_args[1].get("view") is None
+        assert len(_get_queue(cog.bot, GUILD_ID)) == 0
+
+    @pytest.mark.asyncio
+    async def test_play_spotify_track_url_while_playing_queues_one_hit(self, cog):
+        t1, t2 = MagicMock(title="First Hit"), MagicMock(title="Second Hit")
+        i, player = _play_ctx(
+            cog, tracks=[t1, t2], current=MagicMock(title="Now Playing"), queue=[]
+        )
+        with patch(
+            "bot.commands.music.spotify_url_to_search_query",
+            AsyncMock(return_value="Suicide Silence - Unanswered"),
+        ):
+            with _patch_player():
+                await cog.music_group.play.callback(
+                    cog.music_group, i, "https://open.spotify.com/track/4iV5W9uYEdYUVa79Axb7Rh"
+                )
+        q = _get_queue(cog.bot, GUILD_ID)
+        assert len(q) == 1 and q[0].title == "First Hit"
 
     @pytest.mark.asyncio
     async def test_play_force_next_mod_inserts_at_front(self, cog):
