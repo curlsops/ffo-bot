@@ -29,6 +29,7 @@ from bot.utils.music import (
     _format_duration,
     _get_queue,
     _music_embed,
+    _order_youtube_search_tracks,
     _time_until_track,
     _track_label,
 )
@@ -348,6 +349,12 @@ class MusicGroup(app_commands.Group):
         if not tracks:
             await i.followup.send("No tracks found.", ephemeral=True)
             return
+        if (
+            len(tracks) > 1
+            and not playlist
+            and (search_type == SearchType.YOUTUBE or from_resolved_url)
+        ):
+            tracks = _order_youtube_search_tracks(list(tracks))
         if from_resolved_url and len(tracks) > 1:
             tracks = [tracks[0]]
         if force_next:
