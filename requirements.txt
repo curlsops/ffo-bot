@@ -36,7 +36,7 @@ en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_
 mafic @ git+https://github.com/ArtiArtem8/mafic.git@b1079d54597240e3e7984914df58500f74f62e9f
 
 # Transitive pins
-authlib==1.7.0
+authlib==1.7.2
 cryptography==47.0.0
 filelock==3.29.0
 marshmallow==4.3.0
