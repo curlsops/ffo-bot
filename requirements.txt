@@ -43,5 +43,5 @@ marshmallow==4.3.0
 mpmath==1.4.1
 requests==2.33.1
 setuptools==82.0.1
-urllib3==2.6.3
+urllib3==2.7.0
 zipp==3.23.1
