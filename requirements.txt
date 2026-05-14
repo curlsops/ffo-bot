@@ -25,7 +25,7 @@ python-json-logger==4.1.0
 # Configuration
 python-dotenv==1.2.2
 pydantic==2.12.5
-pydantic-settings==2.14.0
+pydantic-settings==2.14.1
 
 # Minecraft RCON
 mcrcon==0.7.0
