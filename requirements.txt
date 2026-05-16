@@ -41,7 +41,7 @@ cryptography==48.0.0
 filelock==3.29.0
 marshmallow==4.3.0
 mpmath==1.4.1
-requests==2.34.1
+requests==2.34.2
 setuptools==82.0.1
 urllib3==2.7.0
 zipp==3.23.1
