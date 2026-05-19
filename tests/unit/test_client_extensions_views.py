@@ -93,6 +93,13 @@ class TestFFOBotExtensions:
 
 class TestFFOBotPersistentViews:
     @pytest.mark.asyncio
+    async def test_register_persistent_views_no_db_pool(self, bot):
+        bot.db_pool = None
+        with patch.object(bot, "add_view") as mock_add:
+            await bot._register_persistent_views()
+            mock_add.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_register_persistent_views_enabled(self, bot):
         import uuid
 
@@ -110,29 +117,9 @@ class TestFFOBotPersistentViews:
                 assert giveaways_calls[0].kwargs["message_id"] == mid
 
     @pytest.mark.asyncio
-    async def test_register_persistent_views_anonymous_post(self, bot):
-        from bot.commands.anonymous import AnonymousPostButtonView
-
-        bot.settings.feature_anonymous_post = True
-        bot.settings.feature_giveaways = False
-        conn = AsyncMock()
-        conn.fetch = AsyncMock(
-            return_value=[{"message_id": 99, "post_channel_id": 42, "channel_id": 7}]
-        )
-        bot.db_pool = db_pool_with_conn(conn)
-        with patch.object(bot, "add_view") as mock_add:
-            await bot._register_persistent_views()
-            mock_add.assert_called_once()
-            call = mock_add.call_args_list[0]
-            assert call.kwargs.get("message_id") == 99
-            view = call.args[0]
-            assert isinstance(view, AnonymousPostButtonView)
-            assert view.post_channel_id == 42
-            assert view.board_channel_id == 7
-
-    @pytest.mark.asyncio
     async def test_register_persistent_views_disabled(self, bot):
         bot.settings.feature_giveaways = False
+        bot.db_pool = db_pool_with_conn(AsyncMock())
         with patch.object(bot, "add_view") as mock_add:
             await bot._register_persistent_views()
             mock_add.assert_not_called()

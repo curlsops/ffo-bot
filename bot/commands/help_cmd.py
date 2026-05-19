@@ -6,10 +6,6 @@ _MAX_EMBED_FIELDS = 25
 _MAX_DETAIL_SUB_FIELDS = 25
 _MAX_FIELD_VALUE = 1020
 
-_HELP_ALIASES: dict[str, str] = {
-    "anon": "anonymous",
-}
-
 _CommandOrGroup = app_commands.Command | app_commands.Group
 
 
@@ -27,7 +23,7 @@ def _normalize_help_query(raw: str | None) -> str | None:
     s = raw.strip().lower()
     if not s:
         return None
-    return _HELP_ALIASES.get(s, s)
+    return s
 
 
 def _parameters_in_order(cmd: _CommandOrGroup) -> list:

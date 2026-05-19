@@ -5,7 +5,6 @@ import database
 from bot.auth.permissions import PermissionChecker
 from bot.cache.memory import InMemoryCache
 from bot.commands.admin import AdminCommands
-from bot.commands.anonymous import AnonymousCommands, AnonymousPostModal
 from bot.commands.faq import FAQCommands
 from bot.commands.giveaway import GiveawayCommands, GiveawayView
 from bot.commands.help_cmd import HelpCommands

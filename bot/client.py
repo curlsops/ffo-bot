@@ -168,7 +168,6 @@ class _FFOBotMixin(commands.Bot):
             ("bot.commands.whitelist", self.settings.feature_minecraft_whitelist),
             ("bot.commands.faq", self.settings.feature_faq),
             ("bot.commands.music", self.settings.feature_music),
-            ("bot.commands.anonymous", self.settings.feature_anonymous_post),
         ]:
             if enabled:
                 extensions.append(ext)
@@ -203,18 +202,6 @@ class _FFOBotMixin(commands.Bot):
     async def _register_persistent_views(self):
         if not self.db_pool:
             return
-        if self.settings.feature_anonymous_post:
-            from bot.commands.anonymous import AnonymousPostButtonView
-
-            async with self.db_pool.acquire() as conn:
-                rows = await conn.fetch(
-                    "SELECT message_id, post_channel_id, channel_id FROM anonymous_post_channels"
-                )
-                for row in rows:
-                    self.add_view(
-                        AnonymousPostButtonView(row["post_channel_id"], row["channel_id"], self),
-                        message_id=row["message_id"],
-                    )
         if self.settings.feature_giveaways:
             from bot.commands.giveaway import GiveawayView
             from bot.tasks.giveaway_manager import CloseGiveawayThreadView

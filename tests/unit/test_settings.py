@@ -82,7 +82,6 @@ class TestSettingsDefaults:
             ("feature_conversion", False),
             ("feature_minecraft_whitelist", False),
             ("whitelist_cache_reconcile_interval_hours", 24.0),
-            ("feature_anonymous_post", False),
             ("feature_music", False),
             ("discord_sharding_enabled", False),
         ],

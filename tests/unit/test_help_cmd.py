@@ -28,7 +28,7 @@ def test_normalize_help_query():
     assert _normalize_help_query(None) is None
     assert _normalize_help_query("  ") is None
     assert _normalize_help_query("FAQ") == "faq"
-    assert _normalize_help_query("anon") == "anonymous"
+    assert _normalize_help_query("anon") == "anon"
 
 
 def test_clip_field():
