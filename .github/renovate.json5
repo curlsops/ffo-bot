@@ -38,6 +38,11 @@
     },
     {
       matchManagers: ["pip_requirements", "pep621"],
+      matchPackagePrefixes: ["opentelemetry-"],
+      groupName: "opentelemetry-python",
+    },
+    {
+      matchManagers: ["pip_requirements", "pep621"],
       matchPackageNames: ["pytest", "pytest-*", "coverage"],
       groupName: "testing",
     },
