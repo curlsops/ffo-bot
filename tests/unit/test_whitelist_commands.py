@@ -198,13 +198,13 @@ class TestSetWhitelistChannel:
                 "bot.commands.whitelist.set_whitelist_channel",
                 new_callable=AsyncMock,
                 return_value=True,
-            ),
+            ) as set_channel_mock,
         ):
             bot = _whitelist_bot()
             bot.db_pool, _ = mock_db_pool()
             cog = WhitelistCommands(bot)
             i = mock_interaction(user_id=2)
-            i.guild = MagicMock()
+            i.guild = MagicMock(id=123)
             channel = MagicMock(id=999)
             await invoke(
                 cog,
@@ -216,6 +216,7 @@ class TestSetWhitelistChannel:
                 channel=channel,
             )
             bot.minecraft_rcon.whitelist_add.assert_not_awaited()
+            set_channel_mock.assert_awaited_once_with(bot.db_pool, i.guild.id, channel.id)
             assert_followup_contains(i, "channel set", case_sensitive=False)
 
     @pytest.mark.asyncio
