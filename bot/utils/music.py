@@ -123,6 +123,39 @@ def _youtube_video_id(uri: str | None, identifier: str) -> str | None:
     return None
 
 
+def _is_trusted_youtube_watch_url(url: str) -> bool:
+    if not isinstance(url, str):
+        return False
+    parsed = urlparse(url)
+    if parsed.scheme != "https":
+        return False
+    host = (parsed.hostname or "").lower()
+    path = (parsed.path or "").rstrip("/") or ""
+    query = parse_qs(parsed.query or "")
+
+    def _yt_v11(seg: str) -> bool:
+        return len(seg) == 11 and all(c.isalnum() or c in "-_" for c in seg)
+
+    if host == "youtu.be":
+        seg = path.strip("/").split("/")[0]
+        return bool(seg) and _yt_v11(seg)
+    if host in (
+        "www.youtube.com",
+        "youtube.com",
+        "m.youtube.com",
+        "music.youtube.com",
+    ) or host.endswith(".youtube.com"):
+        if path.startswith("/watch"):
+            vid = (query.get("v") or [""])[0]
+            return bool(vid) and _yt_v11(vid)
+        parts = [x for x in path.split("/") if x]
+        if len(parts) >= 2 and parts[0] == "embed":
+            return _yt_v11(parts[1])
+        if len(parts) >= 2 and parts[0] == "shorts":
+            return _yt_v11(parts[1])
+    return False
+
+
 def _track_is_stream(track: Track, length_ms: int) -> bool:
     if getattr(track, "stream", False):
         return True
@@ -171,7 +204,7 @@ def _music_status_embed(
     author = getattr(cur, "author", None) or ""
     head = f"**{author} – {cur.title}**" if author else f"**{cur.title}**"
     listen = _track_listen_url(cur)
-    if listen and ("youtube.com" in listen or "youtu.be" in listen):
+    if listen and _is_trusted_youtube_watch_url(listen):
         head += f"\n[Open on YouTube]({listen})"
     elif listen:
         head += f"\n[Open track]({listen})"

@@ -4,6 +4,7 @@ from contextlib import contextmanager, nullcontext
 from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
+from urllib.parse import urlparse
 
 import pytest
 from mafic import EndReason, Playlist, SearchType
@@ -45,6 +46,7 @@ from bot.commands.music import (
     reconnect_music_voice_after_ready,
 )
 from bot.utils.music import (
+    _is_trusted_youtube_watch_url,
     _ms,
     _music_embed,
     _music_status_embed,
@@ -726,7 +728,10 @@ class TestMusicStatusEmbed:
         assert "Open on YouTube" in emb.description
         assert "Time left" in emb.description and "Total length" in emb.description
         assert "Elapsed" in emb.description
-        assert emb.thumbnail and "ytimg.com" in emb.thumbnail.url
+        assert emb.thumbnail
+        thumb = urlparse(emb.thumbnail.url)
+        assert thumb.scheme == "https" and thumb.hostname == "i.ytimg.com"
+        assert thumb.path.startswith("/vi/jNQXAC9IVRw/")
 
     def test_stream_shows_position_not_countdown(self):
         cur = MagicMock(
@@ -801,6 +806,45 @@ class TestMusicStatusEmbed:
             MagicMock(current=cur, position=1, paused=False), "#c", paused=False
         )
         assert "live stream" in emb.description.lower()
+
+    def test_deceptive_listen_url_uses_open_track_not_youtube_label(self):
+        cur = MagicMock(
+            title="T",
+            author="A",
+            length=30_000,
+            uri="https://evil.example/path/youtube.com/watch?v=jNQXAC9IVRw",
+            stream=False,
+            identifier="",
+            artwork_url=None,
+        )
+        emb = _music_status_embed(
+            MagicMock(current=cur, position=0, paused=False), "#c", paused=False
+        )
+        assert "Open track" in emb.description and "Open on YouTube" not in emb.description
+
+
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        ("https://www.youtube.com/watch?v=jNQXAC9IVRw", True),
+        ("https://youtu.be/jNQXAC9IVRw", True),
+        ("https://m.youtube.com/watch?v=jNQXAC9IVRw", True),
+        ("https://music.youtube.com/watch?v=jNQXAC9IVRw", True),
+        ("https://gaming.youtube.com/watch?v=jNQXAC9IVRw", True),
+        ("https://www.youtube.com/embed/jNQXAC9IVRw", True),
+        ("https://www.youtube.com/shorts/jNQXAC9IVRw", True),
+        ("http://www.youtube.com/watch?v=jNQXAC9IVRw", False),
+        ("https://evil.example/youtube.com", False),
+        ("https://www.youtube.com/watch?v=short", False),
+        ("https://www.youtube.com/watch?", False),
+        ("https://youtu.be/", False),
+        ("https://youtu.be/bad/id", False),
+        ("https://www.youtube.com/channel/UCabcdefghijk", False),
+        (1, False),
+    ],
+)
+def test_is_trusted_youtube_watch_url(url, expected):
+    assert _is_trusted_youtube_watch_url(url) is expected
 
 
 class TestQueueHelpers:
