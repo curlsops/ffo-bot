@@ -198,6 +198,7 @@ async def _cancel_music_lazy_prefetch(bot: "FFOBot", guild_id: int) -> None:
     try:
         await t
     except asyncio.CancelledError:
+        # Draining a cancelled task after cancel(); completion is not an error.
         pass
 
 

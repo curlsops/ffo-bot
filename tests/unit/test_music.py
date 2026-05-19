@@ -266,7 +266,7 @@ class TestMusicLazyHelpers:
             pass
 
         t = asyncio.create_task(noop())
-        await t
+        _ = await t
         tmap[11] = t
         await _cancel_music_lazy_prefetch(cast(Any, bot), 11)
 
@@ -353,8 +353,9 @@ class TestMusicLazyHelpers:
         assert 4 in tmap
         tmap[4].cancel()
         try:
-            await tmap[4]
+            _ = await tmap[4]
         except asyncio.CancelledError:
+            # Expected after cancel() on the replaced prefetch task.
             pass
 
     @pytest.mark.asyncio
@@ -367,7 +368,7 @@ class TestMusicLazyHelpers:
         with patch("bot.commands.music.asyncio.sleep", new_callable=AsyncMock):
             _schedule_music_lazy_prefetch(cast(Any, bot), 6, p, tail)
         t = bot._music_lazy_prefetch_tasks[6]
-        await t
+        _ = await t
         assert getattr(bot, "_music_lazy_prefetch_tasks", {}) == {}
 
     @pytest.mark.asyncio
@@ -2580,7 +2581,7 @@ async def test_idle_leave_skips_disconnect_when_vc_gone_after_sleep(mock_bot, co
                         with patch("bot.commands.music.logger"):
                             await cog._on_voice_state_update(member, before, after)
                             task = cog.bot._music_leave_tasks[GUILD_ID]
-                            await task
+                            _ = await task
     vc.disconnect.assert_not_awaited()
     cq.assert_not_called()
     assert GUILD_ID not in cog.bot._music_leave_tasks
@@ -2613,7 +2614,7 @@ async def test_idle_leave_skips_disconnect_when_others_joined(mock_bot, cog):
                         with patch("bot.commands.music.logger"):
                             await cog._on_voice_state_update(member, before, after)
                             task = cog.bot._music_leave_tasks[GUILD_ID]
-                            await task
+                            _ = await task
     vc.disconnect.assert_not_awaited()
     cq.assert_not_called()
     assert GUILD_ID not in cog.bot._music_leave_tasks
@@ -2644,7 +2645,7 @@ async def test_idle_leave_task_disconnects_and_clears_queue(mock_bot, cog):
                         with patch("bot.commands.music.logger"):
                             await cog._on_voice_state_update(member, before, after)
                             task = cog.bot._music_leave_tasks[GUILD_ID]
-                            await task
+                            _ = await task
     vc.disconnect.assert_awaited()
     cq.assert_called_once_with(cog.bot, GUILD_ID)
     assert GUILD_ID not in cog.bot._music_leave_tasks

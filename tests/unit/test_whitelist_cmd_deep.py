@@ -5,7 +5,6 @@ from discord import app_commands
 
 from bot.commands.whitelist import WhitelistCommands, _whitelist_username_autocomplete
 from bot.services.minecraft_rcon import MinecraftRCONError, TargetPushResult
-from bot.utils.whitelist_cache import SyncFromRconResult
 from tests.helpers import (
     assert_followup_contains,
     build_whitelist_bot,
