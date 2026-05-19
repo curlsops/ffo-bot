@@ -13,6 +13,9 @@ echo "Checking Python version..."
 python_version=$(python --version 2>&1 | awk '{print $2}')
 echo "✓ Python $python_version"
 
+python scripts/check_workflow_runners.py
+echo "✓ Workflow runner labels"
+
 # Create virtual environment if it doesn't exist
 if [ ! -d "venv" ]; then
     echo "Creating virtual environment..."

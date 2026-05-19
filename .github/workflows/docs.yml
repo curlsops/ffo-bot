@@ -18,7 +18,7 @@ jobs:
   deploy:
     if: hashFiles('docs/requirements.txt') != ''
     continue-on-error: true
-    runs-on: ubuntu-latest
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     permissions:
       contents: read
       deployments: write
