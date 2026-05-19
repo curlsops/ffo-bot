@@ -10,9 +10,6 @@ from bot.services.spotify import (
     SPOTIFY_PLAYLIST_PATTERN,
     SPOTIFY_TRACK_PATTERN,
     _get_spotify_token,
-)
-from bot.services.spotify import _sample_catalog_queries as spotify_sample_catalog_queries
-from bot.services.spotify import (
     spotify_album_catalog_queries,
     spotify_album_to_search_queries,
     spotify_playlist_catalog_queries,
@@ -26,11 +23,6 @@ SPOTIFY_TRACK_TITLE = "Michael Jackson - Billie Jean - Single Version"
 PLAYLIST_URL = "https://open.spotify.com/playlist/abc"
 CREDS = ("cid", "secret")
 TOKEN_OK = MagicMock(status=200, json=AsyncMock(return_value={"access_token": "tok"}))
-
-
-class TestSpotifySampleCatalogQueries:
-    def test_empty_returns_empty(self):
-        assert spotify_sample_catalog_queries([]) == []
 
 
 def _make_json_resp(status: int, data: dict):
@@ -194,15 +186,23 @@ class TestSpotifyPlaylistCatalogQueries:
         assert result == ["Z - A", "Z - B"]
 
     @pytest.mark.asyncio
-    async def test_full_page_respects_catalog_max(self):
-        page = MagicMock(status=200, json=AsyncMock(return_value={"items": _items(50)}))
-        session = _mock_session(TOKEN_OK, page)
-        with (
-            patch("bot.services.spotify.SPOTIFY_PLAYLIST_CATALOG_MAX", 50),
-            _patch_client_session(session),
-        ):
+    async def test_full_page_then_empty_second_page_returns_fifty(self):
+        page1 = MagicMock(status=200, json=AsyncMock(return_value={"items": _items(50)}))
+        page2 = MagicMock(status=200, json=AsyncMock(return_value={"items": []}))
+        get_ctxs = [
+            MagicMock(
+                __aenter__=AsyncMock(return_value=page1), __aexit__=AsyncMock(return_value=None)
+            ),
+            MagicMock(
+                __aenter__=AsyncMock(return_value=page2), __aexit__=AsyncMock(return_value=None)
+            ),
+        ]
+        session = _mock_session(TOKEN_OK)
+        session.get = MagicMock(side_effect=get_ctxs)
+        with _patch_client_session(session):
             result = await spotify_playlist_catalog_queries(PLAYLIST_URL, *CREDS)
         assert len(result) == 50
+        assert session.get.call_count == 2
 
     @pytest.mark.asyncio
     async def test_album_catalog_returns_queries(self):
@@ -218,11 +218,6 @@ class TestSpotifyPlaylistToSearchQueries:
     def clear_token_cache(self):
         spotify_module._SPOTIFY_TOKEN_CACHE = None
         yield
-
-    @pytest.fixture(autouse=True)
-    def _deterministic_sample(self):
-        with patch("bot.services.spotify.random.sample", lambda seq, k: seq[:k]):
-            yield
 
     @pytest.mark.asyncio
     async def test_no_credentials_returns_none(self):
@@ -368,9 +363,19 @@ class TestSpotifyPlaylistToSearchQueries:
         assert result is None
 
     @pytest.mark.asyncio
-    async def test_playlist_full_page_stops_at_max_tracks(self):
+    async def test_playlist_full_page_stops_after_empty_followup(self):
         page1 = MagicMock(status=200, json=AsyncMock(return_value={"items": _items(50)}))
-        session = _mock_session(TOKEN_OK, page1)
+        page2 = MagicMock(status=200, json=AsyncMock(return_value={"items": []}))
+        get_ctxs = [
+            MagicMock(
+                __aenter__=AsyncMock(return_value=page1), __aexit__=AsyncMock(return_value=None)
+            ),
+            MagicMock(
+                __aenter__=AsyncMock(return_value=page2), __aexit__=AsyncMock(return_value=None)
+            ),
+        ]
+        session = _mock_session(TOKEN_OK)
+        session.get = MagicMock(side_effect=get_ctxs)
         with _patch_client_session(session):
             result = await spotify_playlist_to_search_queries(PLAYLIST_URL, *CREDS)
         assert len(result) == 50
@@ -465,11 +470,6 @@ class TestSpotifyAlbumToSearchQueries:
         spotify_module._SPOTIFY_TOKEN_CACHE = None
         yield
 
-    @pytest.fixture(autouse=True)
-    def _deterministic_sample(self):
-        with patch("bot.services.spotify.random.sample", lambda seq, k: seq[:k]):
-            yield
-
     @pytest.mark.asyncio
     async def test_no_credentials_returns_none(self):
         assert await spotify_album_to_search_queries(SPOTIFY_ALBUM_URL, None, None) is None
@@ -545,11 +545,8 @@ class TestSpotifyAlbumToSearchQueries:
         assert session.get.call_count == 2
 
     @pytest.mark.asyncio
-    async def test_album_inner_break_at_catalog_max(self):
-        with (
-            patch("bot.services.spotify.SPOTIFY_PLAYLIST_PAGE_SIZE", 5),
-            patch("bot.services.spotify.SPOTIFY_PLAYLIST_CATALOG_MAX", 2),
-        ):
+    async def test_album_single_page_returns_all_sampled(self):
+        with patch("bot.services.spotify.SPOTIFY_PLAYLIST_PAGE_SIZE", 5):
             items = [_album_track(f"T{i}", ["B"]) for i in range(3)]
             page1 = MagicMock(status=200, json=AsyncMock(return_value={"items": items}))
             ctx = MagicMock(
@@ -559,7 +556,7 @@ class TestSpotifyAlbumToSearchQueries:
             session.get = MagicMock(return_value=ctx)
             with _patch_client_session(session):
                 result = await spotify_album_to_search_queries(SPOTIFY_ALBUM_URL, *CREDS)
-        assert result == ["B - T0", "B - T1"]
+        assert result == ["B - T0", "B - T1", "B - T2"]
         session.get.assert_called_once()
 
     @pytest.mark.asyncio
@@ -582,11 +579,8 @@ class TestSpotifyAlbumToSearchQueries:
             assert await spotify_album_to_search_queries(SPOTIFY_ALBUM_URL, *CREDS) is None
 
     @pytest.mark.asyncio
-    async def test_album_while_exits_when_catalog_max_reached_across_pages(self):
-        with (
-            patch("bot.services.spotify.SPOTIFY_PLAYLIST_PAGE_SIZE", 2),
-            patch("bot.services.spotify.SPOTIFY_PLAYLIST_CATALOG_MAX", 4),
-        ):
+    async def test_album_pagination_returns_all_four_tracks_sampled(self):
+        with patch("bot.services.spotify.SPOTIFY_PLAYLIST_PAGE_SIZE", 2):
             page1 = MagicMock(
                 status=200,
                 json=AsyncMock(
@@ -599,6 +593,7 @@ class TestSpotifyAlbumToSearchQueries:
                     return_value={"items": [_album_track(f"P2{i}", ["Y"]) for i in range(2)]}
                 ),
             )
+            page3 = MagicMock(status=200, json=AsyncMock(return_value={"items": []}))
             ctxs = [
                 MagicMock(
                     __aenter__=AsyncMock(return_value=page1),
@@ -608,10 +603,14 @@ class TestSpotifyAlbumToSearchQueries:
                     __aenter__=AsyncMock(return_value=page2),
                     __aexit__=AsyncMock(return_value=None),
                 ),
+                MagicMock(
+                    __aenter__=AsyncMock(return_value=page3),
+                    __aexit__=AsyncMock(return_value=None),
+                ),
             ]
             session = _mock_session(TOKEN_OK)
             session.get = MagicMock(side_effect=ctxs)
             with _patch_client_session(session):
                 result = await spotify_album_to_search_queries(SPOTIFY_ALBUM_URL, *CREDS)
         assert len(result) == 4
-        assert session.get.call_count == 2
+        assert session.get.call_count == 3

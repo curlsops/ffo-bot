@@ -501,9 +501,10 @@ class MusicGroup(app_commands.Group):
         query=(
             "YouTube URL (incl. playlists). "
             "Tidal track/album/playlist/mix. "
-            "Spotify track/album/playlist (Web API credentials unlock full playlists). "
+            "Spotify track/album/playlist (Web API credentials load full playlists from Spotify). "
             "Spotify links use the Spotify source when the audio node supports it; "
             "large playlists resolve the first song immediately and load the rest gradually. "
+            "Very large playlists may take longer while catalog pages are fetched. "
             "Or plain search text."
         ),
         force_next="Play next in queue (mod+ only)",

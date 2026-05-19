@@ -135,7 +135,7 @@ async def tidal_album_to_search_queries(url: str) -> list[str] | None:
         catalog = await _fetch_catalog_from_api(session, f"albums/{album_id}/tracks")
     if not catalog:
         return None
-    return _sample_catalog_queries(catalog)
+    return catalog
 
 
 async def tidal_url_to_search_query(url: str) -> str | None:

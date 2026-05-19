@@ -1,7 +1,6 @@
 import asyncio
 import base64
 import logging
-import random
 import re
 import time
 from urllib.parse import quote
@@ -19,8 +18,6 @@ SPOTIFY_OEMBED = "https://open.spotify.com/oembed"
 SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token"
 SPOTIFY_API_BASE = "https://api.spotify.com/v1"
 SPOTIFY_PLAYLIST_PAGE_SIZE = 50
-SPOTIFY_PLAYLIST_CATALOG_MAX = 2000
-SPOTIFY_PLAYLIST_RESOLVE_SAMPLE = 50
 TIMEOUT = aiohttp.ClientTimeout(total=10)
 
 _SPOTIFY_TOKEN_CACHE: tuple[str, float] | None = None
@@ -96,13 +93,6 @@ async def _get_spotify_token(client_id: str, client_secret: str) -> str | None:
         return str(token)
 
 
-def _sample_catalog_queries(queries: list[str]) -> list[str]:
-    if not queries:
-        return []
-    k = min(SPOTIFY_PLAYLIST_RESOLVE_SAMPLE, len(queries))
-    return random.sample(queries, k)
-
-
 def _spotify_track_to_search_query(item: dict) -> str | None:
     track = item.get("track")
     body = track if isinstance(track, dict) else item
@@ -140,10 +130,7 @@ async def spotify_playlist_catalog_queries(
 async def spotify_playlist_to_search_queries(
     url: str, client_id: str | None, client_secret: str | None
 ) -> list[str] | None:
-    catalog = await spotify_playlist_catalog_queries(url, client_id, client_secret)
-    if not catalog:
-        return None
-    return _sample_catalog_queries(catalog)
+    return await spotify_playlist_catalog_queries(url, client_id, client_secret)
 
 
 async def spotify_album_catalog_queries(
@@ -166,10 +153,7 @@ async def spotify_album_catalog_queries(
 async def spotify_album_to_search_queries(
     url: str, client_id: str | None, client_secret: str | None
 ) -> list[str] | None:
-    catalog = await spotify_album_catalog_queries(url, client_id, client_secret)
-    if not catalog:
-        return None
-    return _sample_catalog_queries(catalog)
+    return await spotify_album_catalog_queries(url, client_id, client_secret)
 
 
 async def _spotify_playlist_fetch_catalog(
@@ -178,7 +162,7 @@ async def _spotify_playlist_fetch_catalog(
     queries: list[str] = []
     offset = 0
     try:
-        while len(queries) < SPOTIFY_PLAYLIST_CATALOG_MAX:
+        while True:
             api_url = (
                 f"{SPOTIFY_API_BASE}/playlists/{playlist_id}/tracks"
                 f"?limit={SPOTIFY_PLAYLIST_PAGE_SIZE}&offset={offset}"
@@ -200,8 +184,6 @@ async def _spotify_playlist_fetch_catalog(
                 q = _spotify_track_to_search_query(item)
                 if q:
                     queries.append(q)
-                if len(queries) >= SPOTIFY_PLAYLIST_CATALOG_MAX:
-                    break
             if len(items) < SPOTIFY_PLAYLIST_PAGE_SIZE:
                 break
             offset += SPOTIFY_PLAYLIST_PAGE_SIZE
@@ -217,7 +199,7 @@ async def _spotify_album_fetch_catalog(
     queries: list[str] = []
     offset = 0
     try:
-        while len(queries) < SPOTIFY_PLAYLIST_CATALOG_MAX:
+        while True:
             api_url = (
                 f"{SPOTIFY_API_BASE}/albums/{album_id}/tracks"
                 f"?limit={SPOTIFY_PLAYLIST_PAGE_SIZE}&offset={offset}"
@@ -239,8 +221,6 @@ async def _spotify_album_fetch_catalog(
                 q = _spotify_track_to_search_query(item)
                 if q:
                     queries.append(q)
-                if len(queries) >= SPOTIFY_PLAYLIST_CATALOG_MAX:
-                    break
             if len(items) < SPOTIFY_PLAYLIST_PAGE_SIZE:
                 break
             offset += SPOTIFY_PLAYLIST_PAGE_SIZE

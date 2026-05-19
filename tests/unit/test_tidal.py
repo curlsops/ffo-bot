@@ -473,11 +473,6 @@ class TestTidalMixToSearchQueries:
 
 
 class TestTidalAlbumToSearchQueries:
-    @pytest.fixture(autouse=True)
-    def _deterministic_sample(self):
-        with patch("bot.services.tidal.random.sample", lambda seq, k: seq[:k]):
-            yield
-
     def _make_json_resp(self, items: list[dict]):
         resp = MagicMock()
         resp.status = 200
@@ -499,6 +494,23 @@ class TestTidalAlbumToSearchQueries:
         with _patch_session_scope(mock_session):
             result = await tidal_album_to_search_queries(TIDAL_ALBUM_URL)
         assert result == ["Artist A - Song A", "Artist B - Song B"]
+
+    @pytest.mark.asyncio
+    async def test_preserves_album_track_order(self):
+        items = [
+            {"title": "First", "artist": {"name": "Band"}},
+            {"title": "Second", "artist": {"name": "Band"}},
+            {"title": "Third", "artist": {"name": "Band"}},
+        ]
+        resp = self._make_json_resp(items)
+        ctx = MagicMock(
+            __aenter__=AsyncMock(return_value=resp), __aexit__=AsyncMock(return_value=None)
+        )
+        mock_session = MagicMock()
+        mock_session.get.return_value = ctx
+        with _patch_session_scope(mock_session):
+            result = await tidal_album_to_search_queries(TIDAL_ALBUM_URL)
+        assert result == ["Band - First", "Band - Second", "Band - Third"]
 
     @pytest.mark.asyncio
     async def test_non_album_url_returns_none(self):
