@@ -1,4 +1,4 @@
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -61,7 +61,7 @@ class TestModerationTimeout:
     async def test_notifies_on_timeout_added(self, handler, bot):
         before = _member()
         after = _member()
-        after.timed_out_until = datetime(2025, 12, 31, 12, 0, tzinfo=timezone.utc)
+        after.timed_out_until = datetime.now(timezone.utc) + timedelta(days=1)
 
         async def audit_iter():
             entry = MagicMock()
@@ -82,7 +82,7 @@ class TestModerationTimeout:
     async def test_reuses_member_update_audit_fetch_across_handlers(self, handler, bot):
         before = _member()
         after = _member()
-        after.timed_out_until = datetime(2025, 12, 31, 12, 0, tzinfo=timezone.utc)
+        after.timed_out_until = datetime.now(timezone.utc) + timedelta(days=1)
 
         call_count = 0
 
