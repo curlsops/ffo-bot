@@ -44,7 +44,7 @@ class TestValidateUsername:
 
 class TestSetWhitelistChannel:
     @pytest.mark.asyncio
-    async def test_channel_cmd_set_success(self):
+    async def test_set_whitelist_channel_success(self):
         with (
             patch(
                 "bot.commands.whitelist.get_whitelist_channel_id",
