@@ -27,6 +27,14 @@ class TestTidalSampleCatalogQueries:
     def test_empty_returns_empty(self):
         assert tidal_sample_catalog_queries([]) == []
 
+    def test_returns_prefix_in_order_capped_by_resolve_sample(self):
+        queries = [f"q{i}" for i in range(8)]
+        with patch("bot.services.tidal.TIDAL_PLAYLIST_RESOLVE_SAMPLE", 5):
+            assert tidal_sample_catalog_queries(queries) == ["q0", "q1", "q2", "q3", "q4"]
+
+    def test_short_list_returns_all(self):
+        assert tidal_sample_catalog_queries(["a", "b"]) == ["a", "b"]
+
 
 def _make_resp(status: int, body: str):
     resp = MagicMock()
@@ -184,11 +192,6 @@ class TestTidalUrlToSearchQuery:
 
 
 class TestTidalPlaylistToSearchQueries:
-    @pytest.fixture(autouse=True)
-    def _deterministic_sample(self):
-        with patch("bot.services.tidal.random.sample", lambda seq, k: seq[:k]):
-            yield
-
     def _make_json_resp(self, items: list[dict]):
         resp = MagicMock()
         resp.status = 200
@@ -428,11 +431,6 @@ class TestTidalPlaylistToSearchQueries:
 
 
 class TestTidalMixToSearchQueries:
-    @pytest.fixture(autouse=True)
-    def _deterministic_sample(self):
-        with patch("bot.services.tidal.random.sample", lambda seq, k: seq[:k]):
-            yield
-
     def _make_json_resp(self, items: list[dict]):
         resp = MagicMock()
         resp.status = 200

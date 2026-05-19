@@ -7,10 +7,7 @@ from urllib.parse import quote
 
 import aiohttp
 
-from bot.utils.http_session import get_session as _get_session
-from bot.utils.http_session import session_scope
-
-get_session = _get_session
+from bot.utils.http_session import get_session, session_scope
 
 logger = logging.getLogger(__name__)
 
