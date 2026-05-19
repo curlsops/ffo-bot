@@ -1,11 +1,10 @@
 #!/usr/bin/env python3
-import bot.commands.music
-import bot.services.spotify
 import bot.utils.channel_config
 import config
 import database
 from bot.auth.permissions import PermissionChecker
 from bot.cache.memory import InMemoryCache
+from bot.commands import music
 from bot.commands.admin import AdminCommands
 from bot.commands.faq import FAQCommands
 from bot.commands.giveaway import GiveawayCommands, GiveawayView
@@ -23,6 +22,7 @@ from bot.handlers.reactions import ReactionHandler
 from bot.processors.phrase_matcher import PhraseMatcher
 from bot.processors.unit_converter import detect_and_convert
 from bot.processors.voice_transcriber import VoiceTranscriber
+from bot.services import spotify
 from bot.services.minecraft_rcon import MinecraftRCONClient, parse_whitelist_list_response
 from bot.services.mojang import username_exists
 from bot.services.tidal import (
@@ -56,4 +56,4 @@ from config.settings import Settings
 from database.connection import DatabasePool
 
 if __name__ == "__main__":
-    print("All modules imported successfully")
+    print("All modules imported successfully", music, spotify)
