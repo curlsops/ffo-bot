@@ -6,71 +6,75 @@ import pytest
 from bot.utils.whitelist_channel import get_whitelist_channel_id, set_whitelist_channel
 
 
-def make_pool(conn):
-    ctx = MagicMock()
-    ctx.__aenter__ = AsyncMock(return_value=conn)
-    ctx.__aexit__ = AsyncMock(return_value=None)
-    pool = MagicMock()
-    pool.acquire.return_value = ctx
-    return pool
+@pytest.fixture
+def pool_factory():
+    def _make_pool(conn):
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(return_value=conn)
+        ctx.__aexit__ = AsyncMock(return_value=None)
+        pool = MagicMock()
+        pool.acquire.return_value = ctx
+        return pool
+
+    return _make_pool
 
 
 @pytest.mark.asyncio
-async def test_get_whitelist_channel_id_success():
+async def test_get_whitelist_channel_id_success(pool_factory):
     conn = AsyncMock()
     conn.fetchrow.return_value = {"config": {"whitelist_channel_id": 999}}
-    pool = make_pool(conn)
+    pool = pool_factory(conn)
 
     result = await get_whitelist_channel_id(pool, 123)
     assert result == 999
 
 
 @pytest.mark.asyncio
-async def test_get_whitelist_channel_id_no_row():
+async def test_get_whitelist_channel_id_no_row(pool_factory):
     conn = AsyncMock()
     conn.fetchrow.return_value = None
-    pool = make_pool(conn)
+    pool = pool_factory(conn)
 
     result = await get_whitelist_channel_id(pool, 123)
     assert result is None
 
 
 @pytest.mark.asyncio
-async def test_get_whitelist_channel_id_empty_config():
+async def test_get_whitelist_channel_id_empty_config(pool_factory):
     conn = AsyncMock()
     conn.fetchrow.return_value = {"config": None}
-    pool = make_pool(conn)
+    pool = pool_factory(conn)
 
     result = await get_whitelist_channel_id(pool, 123)
     assert result is None
 
 
 @pytest.mark.asyncio
-async def test_get_whitelist_channel_id_config_not_dict():
+async def test_get_whitelist_channel_id_config_not_dict(pool_factory):
     conn = AsyncMock()
     conn.fetchrow.return_value = {"config": "not a dict"}
-    pool = make_pool(conn)
+    pool = pool_factory(conn)
 
     result = await get_whitelist_channel_id(pool, 123)
     assert result is None
 
 
 @pytest.mark.asyncio
-async def test_get_whitelist_channel_id_no_channel_key():
+async def test_get_whitelist_channel_id_no_channel_key(pool_factory):
     conn = AsyncMock()
     conn.fetchrow.return_value = {"config": {"other_key": 1}}
-    pool = make_pool(conn)
+    pool = pool_factory(conn)
 
     result = await get_whitelist_channel_id(pool, 123)
     assert result is None
 
 
 @pytest.mark.asyncio
-async def test_get_whitelist_channel_id_exception_returns_none(caplog):
+async def test_get_whitelist_channel_id_exception_returns_none(caplog, pool_factory):
     caplog.set_level(logging.WARNING, logger="bot.utils.server_config")
     conn = AsyncMock()
     conn.fetchrow.side_effect = Exception("DB error")
-    pool = make_pool(conn)
+    pool = pool_factory(conn)
 
     result = await get_whitelist_channel_id(pool, 123)
     assert result is None
@@ -78,8 +82,8 @@ async def test_get_whitelist_channel_id_exception_returns_none(caplog):
 
 
 @pytest.mark.asyncio
-async def test_get_whitelist_channel_id_cache_hit_returns_value():
-    pool = make_pool(AsyncMock())
+async def test_get_whitelist_channel_id_cache_hit_returns_value(pool_factory):
+    pool = pool_factory(AsyncMock())
     cache = MagicMock()
     cache.get.return_value = {"whitelist_channel_id": 777}
     result = await get_whitelist_channel_id(pool, 123, cache=cache)
