@@ -1,12 +1,4 @@
-{#  EXAMPLE:
-
-## vX.X.X (YYYY-MMM-DD)
-
-_This release is published under the MIT License._            # Release Notes Only
-
-{{ change_sections }}
-
-#}{%  set version_tag = release.version.as_semver_tag()
+{%  set version_tag = release.version.as_semver_tag()
 %}{%  set version_url = (prev_release.version.as_semver_tag() | compare_url(version_tag)) if prev_release is defined and prev_release else (version_tag | create_release_url)
 %}{{
 "## [%s](%s) (%s)\n" | format(
@@ -17,7 +9,6 @@ _This release is published under the MIT License._            # Release Notes On
 }}{%  if license_name is defined and license_name
 %}{{    "\n_This release is published under the %s License._\n" | format(license_name)
 }}{%  endif
-%}{#
-#}{%  set commit_objects = release["elements"] | dictsort
+%}{%  set commit_objects = release["elements"] | dictsort
 %}{%  include "changes.md.j2"
 -%}
