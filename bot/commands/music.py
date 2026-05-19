@@ -15,6 +15,8 @@ from mafic.errors import PlayerNotConnected, TrackLoadException
 from bot.auth.command_helpers import require_admin
 from bot.auth.permissions import PermissionContext
 from bot.services.spotify import (
+    SPOTIFY_ALBUM_PATTERN,
+    SPOTIFY_PLAYLIST_PATTERN,
     spotify_album_catalog_queries,
     spotify_playlist_catalog_queries,
     spotify_url_to_search_query,
@@ -392,16 +394,25 @@ async def _resolve_url_tracks(player: Player, query: str, bot: "FFOBot") -> Reso
                 )
             return ResolvedUrl([first], False, None, None, None)
         sq = await spotify_url_to_search_query(query)
-        return (
-            ResolvedUrl(None, False, sq, None, None)
-            if sq
-            else ResolvedUrl(
+        if sq:
+            return ResolvedUrl(None, False, sq, None, None)
+        if (not cid or not csec) and (
+            SPOTIFY_PLAYLIST_PATTERN.search(query) or SPOTIFY_ALBUM_PATTERN.search(query)
+        ):
+            return ResolvedUrl(
                 None,
                 False,
                 None,
-                "Could not resolve Spotify link. Try searching by song name.",
+                "Spotify playlist or album URLs need SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET "
+                "when Lavalink does not return tracks for the link. Set both env vars and restart the bot.",
                 None,
             )
+        return ResolvedUrl(
+            None,
+            False,
+            None,
+            "Could not resolve Spotify link. Try searching by song name.",
+            None,
         )
     return ResolvedUrl(None, False, None, None, None)
 

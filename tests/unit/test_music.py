@@ -234,6 +234,22 @@ class TestMusicSpotifyResolve:
         assert r.lazy_tail.search_queries == ("Artist - B",)
         assert r.lazy_tail.search_type == SearchType.SPOTIFY_SEARCH
 
+    @pytest.mark.asyncio
+    async def test_resolve_spotify_playlist_no_native_no_web_api_creds(self, cog):
+        cog.bot.settings = SimpleNamespace(
+            feature_music=True, spotify_client_id=None, spotify_client_secret=None
+        )
+        p = MagicMock()
+        with patch(
+            "bot.commands.music._load_tracks_from_lavalink_identifier", AsyncMock(return_value=None)
+        ):
+            r = await _resolve_url_tracks(
+                p,
+                "https://open.spotify.com/playlist/7soPh0TWD5LFOt7doETqNq?si=b14fe019fa6a47fa",
+                cog.bot,
+            )
+        assert r.err and "SPOTIFY_CLIENT_ID" in r.err and "SPOTIFY_CLIENT_SECRET" in r.err
+
 
 class TestMusicLazyHelpers:
     def test_lazy_prefetch_tasks_creates_storage(self):
