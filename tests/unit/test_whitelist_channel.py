@@ -83,7 +83,9 @@ async def test_get_whitelist_channel_id_cache_hit_returns_value():
     cache = MagicMock()
     cache.get.return_value = {"whitelist_channel_id": 777}
     result = await get_whitelist_channel_id(pool, 123, cache=cache)
-    assert result == 777
+    # Ensure the value comes from the cached object's 'whitelist_channel_id' key
+    assert cache.get.return_value == {"whitelist_channel_id": 777}
+    assert result == cache.get.return_value["whitelist_channel_id"]
     cache.get.assert_called_once_with("servers_config:123")
     pool.acquire.assert_not_called()
 
