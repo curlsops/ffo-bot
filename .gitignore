@@ -35,17 +35,16 @@ coverage.xml
 *.cover
 *,cover
 htmlcov/
+/site/
 .tox/
 *.swp
 *.swo
 *~
 *.md
-docs/
-!docs/CHANGELOG.md
-# Azure deployment reference
-docs/AZURE_DEPLOYMENT.md
+!README.md
+!docs/**/*.md
+
 .dockerignore
-docker-compose.yml
 .env
 .env.*
 *.env

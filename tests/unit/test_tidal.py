@@ -5,18 +5,27 @@ import aiohttp
 import pytest
 
 from bot.services.tidal import (
-    TIDAL_MIX_PATTERN,
-    TIDAL_PLAYLIST_PATTERN,
+    TIDAL_ALBUM_PATTERN,
     TIDAL_TRACK_PATTERN,
+)
+from bot.services.tidal import _sample_catalog_queries as tidal_sample_catalog_queries
+from bot.services.tidal import (
+    tidal_album_to_search_queries,
     tidal_mix_to_search_queries,
     tidal_playlist_to_search_queries,
     tidal_url_to_search_query,
 )
 
 TIDAL_TRACK_URL = "https://tidal.com/track/110653480/u"
+TIDAL_ALBUM_URL = "https://tidal.com/album/476908869/u"
 TIDAL_TRACK_TITLE = "Excision & Dion Timmer - Time Stood Still"
 TIDAL_PLAYLIST_URL = "https://tidal.com/playlist/3f4f1385-aa86-46e5-a6ad-cb18248be3cd"
 TIDAL_MIX_URL = "https://tidal.com/browse/mix/3f4f1385-aa86-46e5-a6ad-cb18248be3cd"
+
+
+class TestTidalSampleCatalogQueries:
+    def test_empty_returns_empty(self):
+        assert tidal_sample_catalog_queries([]) == []
 
 
 def _make_resp(status: int, body: str):
@@ -42,11 +51,20 @@ class TestTidalTrackPattern:
     def test_matches_listen_subdomain(self):
         assert TIDAL_TRACK_PATTERN.search("https://listen.tidal.com/track/110653480")
 
+    def test_album_url_not_matched_as_track(self):
+        assert TIDAL_TRACK_PATTERN.search(TIDAL_ALBUM_URL) is None
+
     def test_no_match_non_tidal(self):
         assert TIDAL_TRACK_PATTERN.search("https://youtube.com/watch?v=abc") is None
 
     def test_no_match_invalid_path(self):
         assert TIDAL_TRACK_PATTERN.search("https://tidal.com/artist/123") is None
+
+
+class TestTidalAlbumPattern:
+    def test_matches_album_url(self):
+        m = TIDAL_ALBUM_PATTERN.search(TIDAL_ALBUM_URL)
+        assert m and m.group(1) == "476908869"
 
 
 class TestTidalUrlToSearchQuery:
@@ -92,6 +110,11 @@ class TestTidalUrlToSearchQuery:
     @pytest.mark.asyncio
     async def test_playlist_returns_none(self):
         result = await tidal_url_to_search_query(TIDAL_PLAYLIST_URL)
+        assert result is None
+
+    @pytest.mark.asyncio
+    async def test_album_returns_none(self):
+        result = await tidal_url_to_search_query(TIDAL_ALBUM_URL)
         assert result is None
 
     @pytest.mark.asyncio
@@ -161,6 +184,11 @@ class TestTidalUrlToSearchQuery:
 
 
 class TestTidalPlaylistToSearchQueries:
+    @pytest.fixture(autouse=True)
+    def _deterministic_sample(self):
+        with patch("bot.services.tidal.random.sample", lambda seq, k: seq[:k]):
+            yield
+
     def _make_json_resp(self, items: list[dict]):
         resp = MagicMock()
         resp.status = 200
@@ -235,8 +263,8 @@ class TestTidalPlaylistToSearchQueries:
                 assert result == ["A - Song0", "A - Song1", "A - Song2", "B - Last"]
 
     @pytest.mark.asyncio
-    async def test_hits_max_tracks_break(self):
-        with patch("bot.services.tidal.TIDAL_PLAYLIST_MAX_TRACKS", 5):
+    async def test_sample_caps_resolve_count(self):
+        with patch("bot.services.tidal.TIDAL_PLAYLIST_RESOLVE_SAMPLE", 5):
             items = [{"title": f"Song{i}", "artist": {"name": "A"}} for i in range(8)]
             resp = self._make_json_resp(items)
             ctx = MagicMock(
@@ -252,20 +280,24 @@ class TestTidalPlaylistToSearchQueries:
     async def test_exits_while_by_max_tracks_condition(self):
         with (
             patch("bot.services.tidal.TIDAL_PLAYLIST_PAGE_SIZE", 3),
-            patch("bot.services.tidal.TIDAL_PLAYLIST_MAX_TRACKS", 5),
+            patch("bot.services.tidal.TIDAL_PLAYLIST_RESOLVE_SAMPLE", 5),
         ):
             page1 = [{"title": f"Song{i}", "artist": {"name": "A"}} for i in range(3)]
             page2 = [{"title": f"Song{i}", "artist": {"name": "A"}} for i in range(3, 6)]
             resp1 = self._make_json_resp(page1)
             resp2 = self._make_json_resp(page2)
+            resp3 = self._make_json_resp([])
             ctx1 = MagicMock(
                 __aenter__=AsyncMock(return_value=resp1), __aexit__=AsyncMock(return_value=None)
             )
             ctx2 = MagicMock(
                 __aenter__=AsyncMock(return_value=resp2), __aexit__=AsyncMock(return_value=None)
             )
+            ctx3 = MagicMock(
+                __aenter__=AsyncMock(return_value=resp3), __aexit__=AsyncMock(return_value=None)
+            )
             mock_session = MagicMock()
-            mock_session.get.side_effect = [ctx1, ctx2]
+            mock_session.get.side_effect = [ctx1, ctx2, ctx3]
             with _patch_session_scope(mock_session):
                 result = await tidal_playlist_to_search_queries(TIDAL_PLAYLIST_URL)
                 assert result == [
@@ -317,6 +349,73 @@ class TestTidalPlaylistToSearchQueries:
             assert result is None
 
     @pytest.mark.asyncio
+    async def test_catalog_max_short_circuits_within_page(self):
+        with patch("bot.services.tidal.TIDAL_PLAYLIST_CATALOG_MAX", 2):
+            items = [{"title": f"S{i}", "artist": {"name": "A"}} for i in range(5)]
+            resp = self._make_json_resp(items)
+            ctx = MagicMock(
+                __aenter__=AsyncMock(return_value=resp), __aexit__=AsyncMock(return_value=None)
+            )
+            mock_session = MagicMock()
+            mock_session.get.return_value = ctx
+            with _patch_session_scope(mock_session):
+                result = await tidal_playlist_to_search_queries(TIDAL_PLAYLIST_URL)
+            assert result == ["A - S0", "A - S1"]
+            mock_session.get.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_json_raises_client_error_returns_none(self):
+        resp = MagicMock(status=200)
+        resp.json = AsyncMock(side_effect=aiohttp.ClientError("parse"))
+        ctx = MagicMock(
+            __aenter__=AsyncMock(return_value=resp), __aexit__=AsyncMock(return_value=None)
+        )
+        mock_session = MagicMock()
+        mock_session.get.return_value = ctx
+        with _patch_session_scope(mock_session):
+            assert await tidal_playlist_to_search_queries(TIDAL_PLAYLIST_URL) is None
+
+    @pytest.mark.asyncio
+    async def test_pagination_then_empty_page_finishes_while(self):
+        with patch("bot.services.tidal.TIDAL_PLAYLIST_PAGE_SIZE", 1):
+            resp1 = self._make_json_resp([{"title": "S0", "artist": {"name": "A"}}])
+            resp2 = self._make_json_resp([{"title": "S1", "artist": {"name": "A"}}])
+            resp3 = self._make_json_resp([])
+            ctx1 = MagicMock(
+                __aenter__=AsyncMock(return_value=resp1), __aexit__=AsyncMock(return_value=None)
+            )
+            ctx2 = MagicMock(
+                __aenter__=AsyncMock(return_value=resp2), __aexit__=AsyncMock(return_value=None)
+            )
+            ctx3 = MagicMock(
+                __aenter__=AsyncMock(return_value=resp3), __aexit__=AsyncMock(return_value=None)
+            )
+            mock_session = MagicMock()
+            mock_session.get.side_effect = [ctx1, ctx2, ctx3]
+            with _patch_session_scope(mock_session):
+                result = await tidal_playlist_to_search_queries(TIDAL_PLAYLIST_URL)
+            assert result == ["A - S0", "A - S1"]
+            assert mock_session.get.call_count == 3
+
+    @pytest.mark.asyncio
+    async def test_full_page_then_while_condition_stops_second_fetch(self):
+        with (
+            patch("bot.services.tidal.TIDAL_PLAYLIST_PAGE_SIZE", 5),
+            patch("bot.services.tidal.TIDAL_PLAYLIST_CATALOG_MAX", 3),
+        ):
+            items = [{"title": f"S{i}", "artist": {"name": "A"}} for i in range(5)]
+            resp = self._make_json_resp(items)
+            ctx = MagicMock(
+                __aenter__=AsyncMock(return_value=resp), __aexit__=AsyncMock(return_value=None)
+            )
+            mock_session = MagicMock()
+            mock_session.get.return_value = ctx
+            with _patch_session_scope(mock_session):
+                result = await tidal_playlist_to_search_queries(TIDAL_PLAYLIST_URL)
+            assert result == ["A - S0", "A - S1", "A - S2"]
+            mock_session.get.assert_called_once()
+
+    @pytest.mark.asyncio
     async def test_client_error_during_get_returns_none(self):
         bad_ctx = MagicMock()
         bad_ctx.__aenter__ = AsyncMock(side_effect=aiohttp.ClientError("fetch failed"))
@@ -329,6 +428,11 @@ class TestTidalPlaylistToSearchQueries:
 
 
 class TestTidalMixToSearchQueries:
+    @pytest.fixture(autouse=True)
+    def _deterministic_sample(self):
+        with patch("bot.services.tidal.random.sample", lambda seq, k: seq[:k]):
+            yield
+
     def _make_json_resp(self, items: list[dict]):
         resp = MagicMock()
         resp.status = 200
@@ -366,3 +470,47 @@ class TestTidalMixToSearchQueries:
         with _patch_session_scope(mock_session):
             result = await tidal_mix_to_search_queries(TIDAL_MIX_URL)
             assert result is None
+
+
+class TestTidalAlbumToSearchQueries:
+    @pytest.fixture(autouse=True)
+    def _deterministic_sample(self):
+        with patch("bot.services.tidal.random.sample", lambda seq, k: seq[:k]):
+            yield
+
+    def _make_json_resp(self, items: list[dict]):
+        resp = MagicMock()
+        resp.status = 200
+        resp.json = AsyncMock(return_value={"items": items})
+        return resp
+
+    @pytest.mark.asyncio
+    async def test_success_returns_queries(self):
+        items = [
+            {"title": "Song A", "artist": {"name": "Artist A"}},
+            {"title": "Song B", "artist": {"name": "Artist B"}},
+        ]
+        resp = self._make_json_resp(items)
+        ctx = MagicMock(
+            __aenter__=AsyncMock(return_value=resp), __aexit__=AsyncMock(return_value=None)
+        )
+        mock_session = MagicMock()
+        mock_session.get.return_value = ctx
+        with _patch_session_scope(mock_session):
+            result = await tidal_album_to_search_queries(TIDAL_ALBUM_URL)
+        assert result == ["Artist A - Song A", "Artist B - Song B"]
+
+    @pytest.mark.asyncio
+    async def test_non_album_url_returns_none(self):
+        assert await tidal_album_to_search_queries(TIDAL_TRACK_URL) is None
+
+    @pytest.mark.asyncio
+    async def test_empty_items_returns_none(self):
+        resp = self._make_json_resp([])
+        ctx = MagicMock(
+            __aenter__=AsyncMock(return_value=resp), __aexit__=AsyncMock(return_value=None)
+        )
+        mock_session = MagicMock()
+        mock_session.get.return_value = ctx
+        with _patch_session_scope(mock_session):
+            assert await tidal_album_to_search_queries(TIDAL_ALBUM_URL) is None

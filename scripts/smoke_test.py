@@ -9,7 +9,7 @@ from bot.commands.anonymous import AnonymousCommands, AnonymousPostModal
 from bot.commands.faq import FAQCommands
 from bot.commands.giveaway import GiveawayCommands, GiveawayView
 from bot.commands.help_cmd import HelpCommands
-from bot.commands.music import MusicCommands
+from bot.commands.music import MusicCommands, reconnect_music_voice_after_ready
 from bot.commands.permissions import PermissionCommands
 from bot.commands.polls import PollCommands
 from bot.commands.privacy import PrivacyCommands
@@ -25,8 +25,14 @@ from bot.processors.unit_converter import detect_and_convert
 from bot.processors.voice_transcriber import VoiceTranscriber
 from bot.services.minecraft_rcon import MinecraftRCONClient, parse_whitelist_list_response
 from bot.services.mojang import username_exists
-from bot.services.spotify import spotify_playlist_to_search_queries, spotify_url_to_search_query
+from bot.services.spotify import (
+    spotify_album_to_search_queries,
+    spotify_playlist_catalog_queries,
+    spotify_playlist_to_search_queries,
+    spotify_url_to_search_query,
+)
 from bot.services.tidal import (
+    tidal_album_to_search_queries,
     tidal_mix_to_search_queries,
     tidal_playlist_to_search_queries,
     tidal_url_to_search_query,

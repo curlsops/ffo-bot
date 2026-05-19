@@ -208,11 +208,11 @@ class _FFOBotMixin(commands.Bot):
 
             async with self.db_pool.acquire() as conn:
                 rows = await conn.fetch(
-                    "SELECT message_id, post_channel_id FROM anonymous_post_channels"
+                    "SELECT message_id, post_channel_id, channel_id FROM anonymous_post_channels"
                 )
                 for row in rows:
                     self.add_view(
-                        AnonymousPostButtonView(row["post_channel_id"], self),
+                        AnonymousPostButtonView(row["post_channel_id"], row["channel_id"], self),
                         message_id=row["message_id"],
                     )
         if self.settings.feature_giveaways:
@@ -259,6 +259,14 @@ class _FFOBotMixin(commands.Bot):
             except Exception as e:
                 logger.warning("Lavalink connection failed, music disabled: %s", e)
                 self.pool = None
+
+        if self.pool and self.db_pool and getattr(self.settings, "feature_music", False):
+            try:
+                from bot.commands.music import reconnect_music_voice_after_ready
+
+                await reconnect_music_voice_after_ready(self)
+            except Exception as e:
+                logger.warning("Music voice recovery failed: %s", e, exc_info=True)
 
         if getattr(self.settings, "sync_commands_on_boot", True):
             with _tracer.start_as_current_span("discord.sync_commands") as sync_span:

@@ -1,5 +1,6 @@
 import os
 import subprocess
+import sys
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock
 
@@ -10,7 +11,7 @@ def _run_alembic(url: str) -> None:
     env = os.environ.copy()
     env["DATABASE_URL"] = url
     result = subprocess.run(
-        ["alembic", "upgrade", "head"],
+        [sys.executable, "-m", "alembic", "upgrade", "head"],
         env=env,
         cwd=os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
         capture_output=True,

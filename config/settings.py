@@ -141,7 +141,7 @@ class Settings(BaseSettings):
 
     feature_anonymous_post: bool = Field(
         default=False,
-        description="Enable anonymous post button with modal and anonymization",
+        description="Enable anonymous post button and modal (posts as embed; author not shown)",
     )
     feature_music: bool = Field(
         default=False, description="Enable music commands (requires Lavalink)"

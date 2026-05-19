@@ -1,5 +1,6 @@
 import html
 import logging
+import random
 import re
 
 import aiohttp
@@ -14,11 +15,15 @@ logger = logging.getLogger(__name__)
 TIDAL_API_BASE = "https://api.tidal.com/v1"
 TIDAL_TOKEN = "gsFXkJqGrUNoYMQPZe4k3WKwijnrp8iGSwn3bApe"
 TIDAL_PLAYLIST_PAGE_SIZE = 100
-TIDAL_PLAYLIST_MAX_TRACKS = 50
+TIDAL_PLAYLIST_CATALOG_MAX = 2000
+TIDAL_PLAYLIST_RESOLVE_SAMPLE = 50
 
 TIDAL_TRACK_PATTERN = re.compile(
-    r"https?://(?:www\.)?(?:tidal\.com|listen\.tidal\.com)/"
-    r"(?:browse/)?(?:track|album)/(\d+)(?:/[^/]*)?",
+    r"https?://(?:www\.)?(?:tidal\.com|listen\.tidal\.com)/" r"(?:browse/)?track/(\d+)(?:/[^/]*)?",
+    re.IGNORECASE,
+)
+TIDAL_ALBUM_PATTERN = re.compile(
+    r"https?://(?:www\.)?(?:tidal\.com|listen\.tidal\.com)/" r"(?:browse/)?album/(\d+)(?:/[^/]*)?",
     re.IGNORECASE,
 )
 TIDAL_PLAYLIST_PATTERN = re.compile(
@@ -48,6 +53,13 @@ TIDAL_API_HEADERS = {
 }
 
 
+def _sample_catalog_queries(queries: list[str]) -> list[str]:
+    if not queries:
+        return []
+    k = min(TIDAL_PLAYLIST_RESOLVE_SAMPLE, len(queries))
+    return random.sample(queries, k)
+
+
 def _track_to_search_query(item: dict) -> str | None:
     title = item.get("title")
     artist = item.get("artist") or (item.get("artists") or [{}])[0]
@@ -59,11 +71,11 @@ def _track_to_search_query(item: dict) -> str | None:
     return str(html.unescape(str(title).strip())[:200])
 
 
-async def _fetch_tracks_from_api(session: aiohttp.ClientSession, path: str) -> list[str] | None:
+async def _fetch_catalog_from_api(session: aiohttp.ClientSession, path: str) -> list[str] | None:
     queries: list[str] = []
     offset = 0
     try:
-        while len(queries) < TIDAL_PLAYLIST_MAX_TRACKS:
+        while len(queries) < TIDAL_PLAYLIST_CATALOG_MAX:
             api_url = (
                 f"{TIDAL_API_BASE}/{path}"
                 f"?countryCode=US&limit={TIDAL_PLAYLIST_PAGE_SIZE}&offset={offset}"
@@ -79,7 +91,7 @@ async def _fetch_tracks_from_api(session: aiohttp.ClientSession, path: str) -> l
                 q = _track_to_search_query(item)
                 if q:
                     queries.append(q)
-                if len(queries) >= TIDAL_PLAYLIST_MAX_TRACKS:
+                if len(queries) >= TIDAL_PLAYLIST_CATALOG_MAX:
                     break
             if len(items) < TIDAL_PLAYLIST_PAGE_SIZE:
                 break
@@ -96,7 +108,10 @@ async def tidal_playlist_to_search_queries(url: str) -> list[str] | None:
         return None
     uuid = m.group(1)
     async with session_scope(timeout=TIMEOUT, session=get_session()) as session:
-        return await _fetch_tracks_from_api(session, f"playlists/{uuid}/tracks")
+        catalog = await _fetch_catalog_from_api(session, f"playlists/{uuid}/tracks")
+    if not catalog:
+        return None
+    return _sample_catalog_queries(catalog)
 
 
 async def tidal_mix_to_search_queries(url: str) -> list[str] | None:
@@ -105,11 +120,30 @@ async def tidal_mix_to_search_queries(url: str) -> list[str] | None:
         return None
     uuid = m.group(1)
     async with session_scope(timeout=TIMEOUT, session=get_session()) as session:
-        return await _fetch_tracks_from_api(session, f"mixes/{uuid}/tracks")
+        catalog = await _fetch_catalog_from_api(session, f"mixes/{uuid}/tracks")
+    if not catalog:
+        return None
+    return _sample_catalog_queries(catalog)
+
+
+async def tidal_album_to_search_queries(url: str) -> list[str] | None:
+    m = TIDAL_ALBUM_PATTERN.search(url)
+    if not m:
+        return None
+    album_id = m.group(1)
+    async with session_scope(timeout=TIMEOUT, session=get_session()) as session:
+        catalog = await _fetch_catalog_from_api(session, f"albums/{album_id}/tracks")
+    if not catalog:
+        return None
+    return _sample_catalog_queries(catalog)
 
 
 async def tidal_url_to_search_query(url: str) -> str | None:
-    if TIDAL_PLAYLIST_PATTERN.search(url) or TIDAL_MIX_PATTERN.search(url):
+    if (
+        TIDAL_PLAYLIST_PATTERN.search(url)
+        or TIDAL_MIX_PATTERN.search(url)
+        or TIDAL_ALBUM_PATTERN.search(url)
+    ):
         return None
     if not TIDAL_TRACK_PATTERN.search(url):
         return None

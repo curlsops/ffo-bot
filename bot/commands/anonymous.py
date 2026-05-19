@@ -5,7 +5,6 @@ from discord import app_commands
 from discord.ext import commands
 
 from bot.auth.command_helpers import require_admin, send_error
-from bot.utils.anonymize import anonymize_text
 
 logger = logging.getLogger(__name__)
 
@@ -34,12 +33,14 @@ def _truncate_for_discord(message: str) -> str:
     return message[: MAX_MESSAGE_LENGTH - 3] + "..."
 
 
-def _anonymous_submission_embed(body: str) -> discord.Embed:
-    return discord.Embed(
+def _anonymous_submission_embed(body: str, board_channel_id: int) -> discord.Embed:
+    embed = discord.Embed(
         title="Anonymous",
         description=body,
         color=ANONYMOUS_EMBED_COLOR,
     )
+    embed.set_footer(text=f"Follow Server Rules · <#{board_channel_id}> to make your own post")
+    return embed
 
 
 def _prepare_anonymous_submission(
@@ -51,12 +52,12 @@ def _prepare_anonymous_submission(
     if not text:
         return ("Message cannot be empty.", None, None)
 
-    anonymized = _truncate_for_discord(anonymize_text(text))
+    body = _truncate_for_discord(text)
     channel = _post_destination(bot, post_channel_id)
     if not channel:
         return ("Anonymous post channel not found.", None, None)
 
-    return (None, anonymized, channel)
+    return (None, body, channel)
 
 
 def _process_anonymous_submission(
@@ -64,22 +65,23 @@ def _process_anonymous_submission(
     post_channel_id: int,
     bot: commands.Bot,
 ) -> tuple[str | None, str | None]:
-    error, anonymized, _ = _prepare_anonymous_submission(raw_text, post_channel_id, bot)
+    error, body, _ = _prepare_anonymous_submission(raw_text, post_channel_id, bot)
     if error:
         return (error, None)
-    return (None, anonymized)
+    return (None, body)
 
 
 class AnonymousPostModal(discord.ui.Modal, title="Compose"):
-    def __init__(self, post_channel_id: int, bot: commands.Bot):
+    def __init__(self, post_channel_id: int, board_channel_id: int, bot: commands.Bot):
         super().__init__()
         self.post_channel_id = post_channel_id
+        self.board_channel_id = board_channel_id
         self.bot = bot
         self.add_item(
             discord.ui.TextInput(
                 label="Message",
                 style=discord.TextStyle.paragraph,
-                placeholder="What should appear in the channel (names are redacted automatically)",
+                placeholder="What should appear in the channel",
                 required=True,
                 min_length=1,
                 max_length=MAX_MESSAGE_LENGTH,
@@ -88,29 +90,50 @@ class AnonymousPostModal(discord.ui.Modal, title="Compose"):
 
     async def on_submit(self, interaction: discord.Interaction) -> None:
         raw_text = self.children[0].value
-        error, anonymized, channel = _prepare_anonymous_submission(
+        error, body, channel = _prepare_anonymous_submission(
             raw_text,
             self.post_channel_id,
             self.bot,
         )
         if error:
+            logger.warning(
+                "anonymous post rejected: guild_id=%s user_id=%s post_channel_id=%s reason=%s",
+                interaction.guild_id,
+                interaction.user.id if interaction.user else None,
+                self.post_channel_id,
+                error,
+            )
             await interaction.response.send_message(error, ephemeral=True)
             return
 
         try:
-            await channel.send(embed=_anonymous_submission_embed(anonymized))
+            await channel.send(embed=_anonymous_submission_embed(body, self.board_channel_id))
+            logger.info(
+                "anonymous post sent: guild_id=%s post_channel_id=%s user_id=%s length=%s",
+                interaction.guild_id,
+                self.post_channel_id,
+                interaction.user.id if interaction.user else None,
+                len(body),
+            )
             await interaction.response.send_message(
                 "Your message was posted anonymously.", ephemeral=True
             )
         except discord.HTTPException as e:
-            logger.error("Failed to post anonymous message: %s", e)
+            logger.error(
+                "anonymous post failed: guild_id=%s post_channel_id=%s user_id=%s error=%s",
+                interaction.guild_id,
+                self.post_channel_id,
+                interaction.user.id if interaction.user else None,
+                e,
+            )
             await interaction.response.send_message("Failed to post message.", ephemeral=True)
 
 
 class AnonymousPostButtonView(discord.ui.View):
-    def __init__(self, post_channel_id: int, bot: commands.Bot):
+    def __init__(self, post_channel_id: int, board_channel_id: int, bot: commands.Bot):
         super().__init__(timeout=None)
         self.post_channel_id = post_channel_id
+        self.board_channel_id = board_channel_id
         self.bot = bot
 
     @discord.ui.button(
@@ -121,20 +144,21 @@ class AnonymousPostButtonView(discord.ui.View):
     async def post_button(
         self, interaction: discord.Interaction, button: discord.ui.Button
     ) -> None:
-        await interaction.response.send_modal(AnonymousPostModal(self.post_channel_id, self.bot))
+        await interaction.response.send_modal(
+            AnonymousPostModal(self.post_channel_id, self.board_channel_id, self.bot)
+        )
 
 
 def _anonymous_command(cog: "AnonymousCommands"):
     @app_commands.command(
         name="anonymous",
-        description="Anonymous post setup. Provide operation.",
+        description="Admins: set up or remove the anonymous post board.",
     )
     @app_commands.guild_only()
+    @app_commands.default_permissions(administrator=True)
     @app_commands.describe(
         operation="Setup or remove the anonymous post button",
-        post_channel=(
-            "Channel where anonymized messages are posted (default: same channel as the button)"
-        ),
+        post_channel=("Channel where messages are posted (default: same channel as the button)"),
     )
     @app_commands.choices(operation=ANONYMOUS_OPERATION_CHOICES)
     async def anonymous_cmd(
@@ -142,13 +166,34 @@ def _anonymous_command(cog: "AnonymousCommands"):
         operation: app_commands.Choice[str],
         post_channel: discord.TextChannel | None = None,
     ):
+        # Defer first so require_admin and admin-only flows can use followup.send (matches other
+        # admin commands, e.g. reaction roles).
         if not interaction.guild_id or not interaction.channel_id:
-            await send_error(interaction, "Server only.")
-            return
-        if not await require_admin(interaction, "anonymous", cog.bot):
+            logger.info(
+                "anonymous command rejected (not in server): user_id=%s",
+                interaction.user.id if interaction.user else None,
+            )
+            await interaction.response.send_message("❌ Server only.", ephemeral=True)
             return
 
         await interaction.response.defer(ephemeral=True)
+
+        if not await require_admin(interaction, "anonymous", cog.bot):
+            logger.info(
+                "anonymous command denied (not admin): guild_id=%s user_id=%s",
+                interaction.guild_id,
+                interaction.user.id if interaction.user else None,
+            )
+            return
+
+        post_ch_id = post_channel.id if post_channel else None
+        logger.info(
+            "anonymous command: op=%s guild_id=%s user_id=%s post_channel_id=%s",
+            operation.value,
+            interaction.guild_id,
+            interaction.user.id if interaction.user else None,
+            post_ch_id,
+        )
 
         if operation.value == "setup":
             await cog._handle_setup(interaction, post_channel=post_channel)
@@ -216,6 +261,11 @@ class AnonymousCommands(commands.Cog):
         if guild and post_target is not None and hasattr(post_target, "permissions_for"):
             me = guild.me
             if me is not None and not post_target.permissions_for(me).send_messages:
+                logger.warning(
+                    "anonymous setup: bot cannot send in post channel guild_id=%s post_channel_id=%s",
+                    interaction.guild_id,
+                    post_target.id,
+                )
                 await interaction.followup.send(
                     "I need permission to send messages in the channel where posts will go.",
                     ephemeral=True,
@@ -227,14 +277,15 @@ class AnonymousCommands(commands.Cog):
         embed = discord.Embed(
             title="Anon Board",
             description=(
-                "Click button to compose a message without it being tied to your account.\n\n"
-                "Personal Names and User Mentions are scrubbed before anything is sent, "
-                "but this isn't perfect so I still advise against."
+                f"**Compose** to post to <#{post_channel_id}>.\n\n"
+                "Your text is sent as you write it, but it comes from the bot with nothing "
+                "attached to you."
             ),
             color=ANONYMOUS_EMBED_COLOR,
         )
-        embed.set_footer(text="Follow Server Rules -- automated redaction is not moderation.")
-        view = AnonymousPostButtonView(post_channel_id, self.bot)
+        embed.set_footer(text="Follow Server Rules")
+        board_channel_id = interaction.channel_id
+        view = AnonymousPostButtonView(post_channel_id, board_channel_id, self.bot)
         msg = await interaction.channel.send(embed=embed, view=view)
         try:
             await self._save_channel_config(
@@ -257,11 +308,25 @@ class AnonymousCommands(commands.Cog):
             f"Anonymous post button added. Message ID: {msg.id}.{location_note}",
             ephemeral=True,
         )
+        logger.info(
+            "anonymous board setup: guild_id=%s board_channel_id=%s post_channel_id=%s "
+            "board_message_id=%s by_user_id=%s",
+            interaction.guild_id,
+            interaction.channel_id,
+            post_channel_id,
+            msg.id,
+            interaction.user.id if interaction.user else None,
+        )
 
     async def _handle_remove(self, interaction: discord.Interaction) -> None:
         try:
             row = await self._get_channel_config(interaction.guild_id)
             if not row:
+                logger.info(
+                    "anonymous remove: no config guild_id=%s user_id=%s",
+                    interaction.guild_id,
+                    interaction.user.id if interaction.user else None,
+                )
                 await interaction.followup.send(
                     "No anonymous post channel configured.",
                     ephemeral=True,
@@ -273,6 +338,11 @@ class AnonymousCommands(commands.Cog):
             await interaction.followup.send(
                 "Anonymous post removed.",
                 ephemeral=True,
+            )
+            logger.info(
+                "anonymous board removed: guild_id=%s by_user_id=%s",
+                interaction.guild_id,
+                interaction.user.id if interaction.user else None,
             )
         except Exception as e:
             logger.exception("Failed to remove anonymous post: %s", e)
