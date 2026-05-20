@@ -6,7 +6,7 @@ aiofiles==25.1.0
 
 # Database
 alembic==1.18.4
-psycopg2-binary==2.9.11
+psycopg2-binary==2.9.12
 sqlalchemy==2.0.49
 
 # Security
@@ -24,8 +24,8 @@ python-json-logger==4.1.0
 
 # Configuration
 python-dotenv==1.2.2
-pydantic==2.12.5
-pydantic-settings==2.13.1
+pydantic==2.13.4
+pydantic-settings==2.14.1
 
 # Minecraft RCON
 mcrcon==0.7.0
@@ -33,12 +33,12 @@ mcrcon==0.7.0
 mafic @ git+https://github.com/ArtiArtem8/mafic.git@b1079d54597240e3e7984914df58500f74f62e9f
 
 # Transitive pins
-authlib==1.7.0
-cryptography==46.0.7
+authlib==1.7.2
+cryptography==48.0.0
 filelock==3.29.0
 marshmallow==4.3.0
 mpmath==1.4.1
-requests==2.33.1
+requests==2.34.2
 setuptools==82.0.1
-urllib3==2.6.3
+urllib3==2.7.0
 zipp==3.23.1
