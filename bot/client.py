@@ -168,7 +168,6 @@ class _FFOBotMixin(commands.Bot):
             ("bot.commands.whitelist", self.settings.feature_minecraft_whitelist),
             ("bot.commands.faq", self.settings.feature_faq),
             ("bot.commands.music", self.settings.feature_music),
-            ("bot.commands.anonymous", self.settings.feature_anonymous_post),
         ]:
             if enabled:
                 extensions.append(ext)
@@ -203,18 +202,6 @@ class _FFOBotMixin(commands.Bot):
     async def _register_persistent_views(self):
         if not self.db_pool:
             return
-        if self.settings.feature_anonymous_post:
-            from bot.commands.anonymous import AnonymousPostButtonView
-
-            async with self.db_pool.acquire() as conn:
-                rows = await conn.fetch(
-                    "SELECT message_id, post_channel_id FROM anonymous_post_channels"
-                )
-                for row in rows:
-                    self.add_view(
-                        AnonymousPostButtonView(row["post_channel_id"], self),
-                        message_id=row["message_id"],
-                    )
         if self.settings.feature_giveaways:
             from bot.commands.giveaway import GiveawayView
             from bot.tasks.giveaway_manager import CloseGiveawayThreadView
@@ -259,6 +246,14 @@ class _FFOBotMixin(commands.Bot):
             except Exception as e:
                 logger.warning("Lavalink connection failed, music disabled: %s", e)
                 self.pool = None
+
+        if self.pool and self.db_pool and getattr(self.settings, "feature_music", False):
+            try:
+                from bot.commands.music import reconnect_music_voice_after_ready
+
+                await reconnect_music_voice_after_ready(self)
+            except Exception as e:
+                logger.warning("Music voice recovery failed: %s", e, exc_info=True)
 
         if getattr(self.settings, "sync_commands_on_boot", True):
             with _tracer.start_as_current_span("discord.sync_commands") as sync_span:

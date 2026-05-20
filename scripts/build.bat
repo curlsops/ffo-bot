@@ -14,6 +14,10 @@ if errorlevel 1 (
     exit /b 1
 )
 
+python scripts\check_workflow_runners.py
+if errorlevel 1 exit /b 1
+echo ✓ Workflow runner labels
+
 REM Create virtual environment if it doesn't exist
 if not exist "venv" (
     echo Creating virtual environment...

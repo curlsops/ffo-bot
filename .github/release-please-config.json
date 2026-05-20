@@ -4,7 +4,7 @@
   "packages": {
     ".": {
       "package-name": "ffo-bot",
-      "changelog-path": "docs/CHANGELOG.md",
+      "changelog-path": "docs/changelog/CHANGELOG.md",
       "include-component-in-tag": false,
       "include-v-in-tag": true
     }

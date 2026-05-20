@@ -18,7 +18,6 @@
   automergeStrategy: "squash",
   platformAutomerge: true,
   packageRules: [
-    // Python
     {
       matchManagers: ["pip_requirements", "pep621"],
       semanticCommitScope: "python",
@@ -35,6 +34,11 @@
       matchManagers: ["pip_requirements", "pep621"],
       matchPackageNames: ["discord.py", "discord-py-interactions", "py-cord"],
       groupName: "discord.py",
+    },
+    {
+      matchManagers: ["pip_requirements", "pep621"],
+      matchPackagePrefixes: ["opentelemetry-"],
+      groupName: "opentelemetry-python",
     },
     {
       matchManagers: ["pip_requirements", "pep621"],
@@ -63,7 +67,6 @@
       minimumReleaseAge: "0 days",
       prPriority: 10,
     },
-    // GitHub Actions
     {
       matchManagers: ["github-actions"],
       semanticCommitType: "ci",
@@ -74,7 +77,6 @@
       automerge: true,
       minimumReleaseAge: "3 days",
     },
-    // pyenv (.python-version)
     {
       matchManagers: ["pyenv"],
       semanticCommitType: "chore",
@@ -85,7 +87,6 @@
       automerge: true,
       minimumReleaseAge: "7 days",
     },
-    // pre-commit
     {
       matchManagers: ["pre-commit"],
       semanticCommitType: "chore",
@@ -96,7 +97,6 @@
       automerge: true,
       minimumReleaseAge: "3 days",
     },
-    // Docker
     {
       matchDatasources: ["docker"],
       semanticCommitScope: "docker",
@@ -109,7 +109,6 @@
       groupName: "docker-base",
       minimumReleaseAge: "7 days",
     },
-    // Update types
     { matchUpdateTypes: ["major"], automerge: false, labels: ["type/major"], semanticCommitType: "feat", commitMessagePrefix: "{{semanticCommitType}}({{semanticCommitScope}})!:", commitMessageExtra: "( {{currentVersion}} ➔ {{newVersion}} )" },
     { matchUpdateTypes: ["minor"], labels: ["type/minor"], semanticCommitType: "feat", commitMessageExtra: "( {{currentVersion}} ➔ {{newVersion}} )" },
     { matchUpdateTypes: ["patch"], labels: ["type/patch"], semanticCommitType: "fix", commitMessageExtra: "( {{currentVersion}} ➔ {{newVersion}} )" },

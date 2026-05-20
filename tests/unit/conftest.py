@@ -21,7 +21,6 @@ def mock_settings():
     s.health_check_port = 8080
     s.health_check_host = "0.0.0.0"
     s.interactions_endpoint_enabled = False
-    s.feature_anonymous_post = False
     s.rate_limit_user_capacity = 10
     s.rate_limit_server_capacity = 100
     s.shutdown_timeout_seconds = 5

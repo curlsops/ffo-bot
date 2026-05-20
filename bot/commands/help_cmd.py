@@ -6,10 +6,6 @@ _MAX_EMBED_FIELDS = 25
 _MAX_DETAIL_SUB_FIELDS = 25
 _MAX_FIELD_VALUE = 1020
 
-_HELP_ALIASES: dict[str, str] = {
-    "anon": "anonymous",
-}
-
 _CommandOrGroup = app_commands.Command | app_commands.Group
 
 
@@ -27,7 +23,7 @@ def _normalize_help_query(raw: str | None) -> str | None:
     s = raw.strip().lower()
     if not s:
         return None
-    return _HELP_ALIASES.get(s, s)
+    return s
 
 
 def _parameters_in_order(cmd: _CommandOrGroup) -> list:
@@ -41,6 +37,49 @@ def _clip_field(text: str, max_len: int = _MAX_FIELD_VALUE) -> str:
     if len(text) <= max_len:
         return text
     return text[: max_len - 3] + "..."
+
+
+def _slash_qualified(qualified_name: str) -> str:
+    return f"/{qualified_name}"
+
+
+def _operation_expand_entries(
+    cmd: app_commands.Command,
+    member: discord.Member | None,
+) -> list[tuple[str, str]] | None:
+    if not _user_can_see_command(cmd, member):
+        return None
+    for param in _parameters_in_order(cmd):
+        if param.name != "operation":
+            continue
+        choices = getattr(param, "choices", None) or []
+        if len(choices) < 2:
+            return None
+        lines: list[tuple[str, str]] = []
+        for ch in choices:
+            name = f"/{cmd.name} {ch.value}"
+            detail = ch.name
+            if _is_meaningful_option_description(param.description):
+                detail = f"{ch.name} — {param.description}"
+            lines.append((name, _clip_field(detail[:100])))
+        return lines
+    return None
+
+
+def _group_help_entries(
+    group: app_commands.Group,
+    member: discord.Member | None,
+) -> list[tuple[str, str]]:
+    if not _user_can_see_command(group, member):
+        return []
+    out: list[tuple[str, str]] = []
+    for child in group.walk_commands():
+        if isinstance(child, app_commands.Group):
+            continue
+        if isinstance(child, app_commands.Command) and _user_can_see_command(child, member):
+            path = _slash_qualified(child.qualified_name)
+            out.append((path, _clip_field((child.description or "—")[:100])))
+    return out
 
 
 def _is_meaningful_option_description(description: str | None) -> bool:
@@ -158,16 +197,18 @@ def _build_command_detail_embed(
             description=cmd.description or "—",
             color=discord.Color.blue(),
         )
-        visible_subs = sorted(
-            [s for s in cmd.commands if _user_can_see_command(s, member)],
-            key=lambda c: c.name,
-        )
+        visible_subs = [
+            s
+            for s in cmd.walk_commands()
+            if isinstance(s, app_commands.Command) and _user_can_see_command(s, member)
+        ]
+        visible_subs.sort(key=lambda c: c.qualified_name)
         footer_extra = ""
         if len(visible_subs) > _MAX_DETAIL_SUB_FIELDS:
             footer_extra = f" First {_MAX_DETAIL_SUB_FIELDS} of {len(visible_subs)} subcommands."
             visible_subs = visible_subs[:_MAX_DETAIL_SUB_FIELDS]
         for sub in visible_subs:
-            sub_header = f"/{cmd.name} {sub.name}"
+            sub_header = _slash_qualified(sub.qualified_name)
             body = (sub.description or "—") + "\n\n" + _format_parameters(sub)
             embed.add_field(name=sub_header, value=_clip_field(body), inline=False)
         embed.set_footer(text=f"Run with `/` in this server.{footer_extra}")
@@ -190,19 +231,19 @@ def _build_help_embed(bot: commands.Bot, interaction: discord.Interaction) -> di
         color=discord.Color.blue(),
     )
     member = _interaction_member(interaction)
-    fields = []
-    for cmd in sorted(bot.tree.get_commands(), key=lambda c: c.name):
+    fields: list[tuple[str, str]] = []
+    for cmd in bot.tree.get_commands():
         if isinstance(cmd, app_commands.ContextMenu):
             continue
         if isinstance(cmd, app_commands.Group):
-            if not _user_can_see_command(cmd, member):
-                continue
-            for sub in cmd.commands:
-                if not _user_can_see_command(sub, member):
-                    continue
-                fields.append((f"/{cmd.name} {sub.name}", (sub.description or "—")[:100]))
-        elif not getattr(cmd, "hidden", False) and _user_can_see_command(cmd, member):
-            fields.append((f"/{cmd.name}", (cmd.description or "—")[:100]))
+            fields.extend(_group_help_entries(cmd, member))
+        elif not getattr(cmd, "hidden", False):
+            expanded = _operation_expand_entries(cmd, member)
+            if expanded is not None:
+                fields.extend(expanded)
+            elif _user_can_see_command(cmd, member):
+                fields.append((f"/{cmd.name}", _clip_field((cmd.description or "—")[:100])))
+    fields.sort(key=lambda nv: nv[0].lower())
     for name, value in fields[:_MAX_EMBED_FIELDS]:
         embed.add_field(name=name, value=value, inline=False)
     footer = "Optional: set `command` for one command. Use `/` to run."

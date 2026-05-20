@@ -4,12 +4,11 @@ import config
 import database
 from bot.auth.permissions import PermissionChecker
 from bot.cache.memory import InMemoryCache
+from bot.commands import music
 from bot.commands.admin import AdminCommands
-from bot.commands.anonymous import AnonymousCommands, AnonymousPostModal
 from bot.commands.faq import FAQCommands
 from bot.commands.giveaway import GiveawayCommands, GiveawayView
 from bot.commands.help_cmd import HelpCommands
-from bot.commands.music import MusicCommands
 from bot.commands.permissions import PermissionCommands
 from bot.commands.polls import PollCommands
 from bot.commands.privacy import PrivacyCommands
@@ -23,10 +22,11 @@ from bot.handlers.reactions import ReactionHandler
 from bot.processors.phrase_matcher import PhraseMatcher
 from bot.processors.unit_converter import detect_and_convert
 from bot.processors.voice_transcriber import VoiceTranscriber
+from bot.services import spotify
 from bot.services.minecraft_rcon import MinecraftRCONClient, parse_whitelist_list_response
 from bot.services.mojang import username_exists
-from bot.services.spotify import spotify_playlist_to_search_queries, spotify_url_to_search_query
 from bot.services.tidal import (
+    tidal_album_to_search_queries,
     tidal_mix_to_search_queries,
     tidal_playlist_to_search_queries,
     tidal_url_to_search_query,
@@ -56,4 +56,4 @@ from config.settings import Settings
 from database.connection import DatabasePool
 
 if __name__ == "__main__":
-    print("All modules imported successfully")
+    print("All modules imported successfully", music, spotify)

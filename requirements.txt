@@ -14,10 +14,10 @@ pynacl==1.6.2
 
 # Monitoring
 prometheus-client==0.25.0
-opentelemetry-api==1.40.0
-opentelemetry-sdk==1.40.0
-opentelemetry-exporter-otlp-proto-http==1.40.0
-opentelemetry-instrumentation-asyncpg==0.61b0
+opentelemetry-api==1.42.0
+opentelemetry-sdk==1.42.0
+opentelemetry-exporter-otlp-proto-http==1.42.0
+opentelemetry-instrumentation-asyncpg==0.63b0
 
 # Logging
 python-json-logger==4.1.0
@@ -29,9 +29,6 @@ pydantic-settings==2.14.1
 
 # Minecraft RCON
 mcrcon==0.7.0
-
-spacy==3.8.11
-en-core-web-sm @ https://github.com/explosion/spacy-models/releases/download/en_core_web_sm-3.8.0/en_core_web_sm-3.8.0-py3-none-any.whl
 
 mafic @ git+https://github.com/ArtiArtem8/mafic.git@b1079d54597240e3e7984914df58500f74f62e9f
 

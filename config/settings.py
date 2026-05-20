@@ -139,10 +139,6 @@ class Settings(BaseSettings):
         description="Channel ID in bot_owner_server_id for owner notifications",
     )
 
-    feature_anonymous_post: bool = Field(
-        default=False,
-        description="Enable anonymous post button with modal and anonymization",
-    )
     feature_music: bool = Field(
         default=False, description="Enable music commands (requires Lavalink)"
     )

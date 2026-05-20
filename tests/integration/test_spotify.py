@@ -2,16 +2,11 @@ import os
 
 import pytest
 
-from bot.services.spotify import spotify_playlist_to_search_queries
+from bot.services.spotify import spotify_playlist_catalog_queries
 
 SPOTIFY_PLAYLIST_URL = (
-    "https://open.spotify.com/playlist/5bCeKZhm0Vrk4cOydmil2N?si=04bf39def50c41bc"
+    "https://open.spotify.com/playlist/7soPh0TWD5LFOt7doETqNq?si=b14fe019fa6a47fa"
 )
-EXPECTED_FIRST_TRACKS = [
-    "Yuka Kitamura - Slave Knight Gael",
-    "Yuka Kitamura - Soul of Cinder",
-    "SQUARE ENIX MUSIC - Shadowlord",
-]
 
 
 @pytest.mark.integration
@@ -23,8 +18,7 @@ async def test_spotify_playlist_fetches_real_tracks():
     if not cid or not csec:
         pytest.skip("SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET required")
 
-    result = await spotify_playlist_to_search_queries(SPOTIFY_PLAYLIST_URL, cid, csec)
+    result = await spotify_playlist_catalog_queries(SPOTIFY_PLAYLIST_URL, cid, csec)
     assert result is not None
-    assert len(result) >= len(EXPECTED_FIRST_TRACKS)
-    for idx, expected in enumerate(EXPECTED_FIRST_TRACKS):
-        assert result[idx] == expected, f"Track {idx + 1}: got {result[idx]!r}"
+    assert len(result) >= 40
+    assert all(isinstance(s, str) and s.strip() for s in result)

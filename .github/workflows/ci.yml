@@ -45,6 +45,9 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
+      - name: Verify runs-on
+        run: python scripts/check_workflow_runners.py
+
       - uses: dorny/paths-filter@fbd0ab8f3e69293af611ebaee6363fc25e6d187d # v4.0.1
         id: filter
         with:
@@ -106,7 +109,7 @@ jobs:
           fail_ci_if_error: false
 
   build:
-    runs-on: blacksmith-4vcpu-ubuntu-2404
+    runs-on: blacksmith-2vcpu-ubuntu-2404
     needs: test
     if: needs.test.outputs.code == 'true'
     timeout-minutes: 30

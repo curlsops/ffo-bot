@@ -4,7 +4,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from bot.commands.polls import PollCommands, _close_reaction_poll_after, _parse_duration
+from bot.commands.polls import (
+    POLL_DURATIONS,
+    PollCommands,
+    _close_reaction_poll_after,
+    _parse_duration,
+    _poll_duration_autocomplete,
+)
 from tests.helpers import assert_followup_contains
 
 
@@ -27,6 +33,24 @@ def _interaction(guild_id=1, channel_id=2, user_id=3):
     i.followup.send = AsyncMock()
     i.channel = MagicMock(send=AsyncMock())
     return i
+
+
+@pytest.mark.asyncio
+async def test_poll_duration_autocomplete_empty_returns_all():
+    choices = await _poll_duration_autocomplete(MagicMock(), "")
+    assert [c.value for c in choices] == POLL_DURATIONS
+
+
+@pytest.mark.asyncio
+async def test_poll_duration_autocomplete_filters():
+    choices = await _poll_duration_autocomplete(MagicMock(), "1")
+    assert all("1" in c.value for c in choices)
+
+
+@pytest.mark.asyncio
+async def test_poll_duration_autocomplete_fallback_when_no_substring_match():
+    choices = await _poll_duration_autocomplete(MagicMock(), "zzz")
+    assert [c.value for c in choices] == POLL_DURATIONS
 
 
 class TestParseDuration:
@@ -264,6 +288,24 @@ class TestCloseReactionPollAfter:
         assert "Gamma — 0" in edit_embed.description
         assert edit_embed.footer.text == "Poll ended"
         msg.clear_reactions.assert_awaited_once()
+
+    @pytest.mark.asyncio
+    async def test_logs_when_close_poll_fails(self, caplog):
+        import logging
+
+        channel = MagicMock()
+        channel.fetch_message = AsyncMock(side_effect=RuntimeError("gone"))
+        with caplog.at_level(logging.WARNING):
+            with patch("bot.commands.polls.asyncio.sleep", new_callable=AsyncMock):
+                await _close_reaction_poll_after(
+                    channel,
+                    1,
+                    timedelta(seconds=0),
+                    ["A"],
+                    ["1️⃣"],
+                    "Q?",
+                )
+        assert "Failed to close reaction poll" in caplog.text
 
 
 class TestSetup:

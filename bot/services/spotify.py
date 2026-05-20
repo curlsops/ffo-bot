@@ -7,10 +7,7 @@ from urllib.parse import quote
 
 import aiohttp
 
-from bot.utils.http_session import get_session as _get_session
-from bot.utils.http_session import session_scope
-
-get_session = _get_session
+from bot.utils.http_session import get_session, session_scope
 
 logger = logging.getLogger(__name__)
 
@@ -18,7 +15,6 @@ SPOTIFY_OEMBED = "https://open.spotify.com/oembed"
 SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token"
 SPOTIFY_API_BASE = "https://api.spotify.com/v1"
 SPOTIFY_PLAYLIST_PAGE_SIZE = 50
-SPOTIFY_PLAYLIST_MAX_TRACKS = 50
 TIMEOUT = aiohttp.ClientTimeout(total=10)
 
 _SPOTIFY_TOKEN_CACHE: tuple[str, float] | None = None
@@ -94,14 +90,15 @@ async def _get_spotify_token(client_id: str, client_secret: str) -> str | None:
         return str(token)
 
 
-def _track_to_search_query(item: dict) -> str | None:
-    track = item.get("track") if isinstance(item, dict) else None
-    if not track or track.get("is_local"):
+def _spotify_track_to_search_query(item: dict) -> str | None:
+    track = item.get("track")
+    body = track if isinstance(track, dict) else item
+    if not body or body.get("is_local"):
         return None
-    name = track.get("name")
+    name = body.get("name")
     if not name or not isinstance(name, str):
         return None
-    artists = track.get("artists") or []
+    artists = body.get("artists") or []
     artist_name = None
     if artists and isinstance(artists[0], dict):
         artist_name = artists[0].get("name")
@@ -110,7 +107,7 @@ def _track_to_search_query(item: dict) -> str | None:
     return str(name.strip()[:200])
 
 
-async def spotify_playlist_to_search_queries(
+async def spotify_playlist_catalog_queries(
     url: str, client_id: str | None, client_secret: str | None
 ) -> list[str] | None:
     if not client_id or not client_secret:
@@ -123,16 +120,46 @@ async def spotify_playlist_to_search_queries(
     if not token:
         return None
     async with session_scope(timeout=TIMEOUT, session=get_session()) as session:
-        return await _spotify_playlist_fetch(session, playlist_id, token)
+        catalog = await _spotify_playlist_fetch_catalog(session, playlist_id, token)
+    return catalog
 
 
-async def _spotify_playlist_fetch(
+async def spotify_playlist_to_search_queries(
+    url: str, client_id: str | None, client_secret: str | None
+) -> list[str] | None:
+    return await spotify_playlist_catalog_queries(url, client_id, client_secret)
+
+
+async def spotify_album_catalog_queries(
+    url: str, client_id: str | None, client_secret: str | None
+) -> list[str] | None:
+    if not client_id or not client_secret:
+        return None
+    m = SPOTIFY_ALBUM_PATTERN.search(url)
+    if not m:
+        return None
+    album_id = m.group(1)
+    token = await _get_spotify_token(client_id, client_secret)
+    if not token:
+        return None
+    async with session_scope(timeout=TIMEOUT, session=get_session()) as session:
+        catalog = await _spotify_album_fetch_catalog(session, album_id, token)
+    return catalog
+
+
+async def spotify_album_to_search_queries(
+    url: str, client_id: str | None, client_secret: str | None
+) -> list[str] | None:
+    return await spotify_album_catalog_queries(url, client_id, client_secret)
+
+
+async def _spotify_playlist_fetch_catalog(
     session: aiohttp.ClientSession, playlist_id: str, token: str
 ) -> list[str] | None:
     queries: list[str] = []
     offset = 0
     try:
-        while len(queries) < SPOTIFY_PLAYLIST_MAX_TRACKS:
+        while True:
             api_url = (
                 f"{SPOTIFY_API_BASE}/playlists/{playlist_id}/tracks"
                 f"?limit={SPOTIFY_PLAYLIST_PAGE_SIZE}&offset={offset}"
@@ -151,15 +178,50 @@ async def _spotify_playlist_fetch(
             if not items:
                 break
             for item in items:
-                q = _track_to_search_query(item)
+                q = _spotify_track_to_search_query(item)
                 if q:
                     queries.append(q)
-                if len(queries) >= SPOTIFY_PLAYLIST_MAX_TRACKS:
-                    break
             if len(items) < SPOTIFY_PLAYLIST_PAGE_SIZE:
                 break
             offset += SPOTIFY_PLAYLIST_PAGE_SIZE
     except aiohttp.ClientError as e:
         logger.debug("Spotify playlist fetch failed: %s", e)
+        return None
+    return queries or None
+
+
+async def _spotify_album_fetch_catalog(
+    session: aiohttp.ClientSession, album_id: str, token: str
+) -> list[str] | None:
+    queries: list[str] = []
+    offset = 0
+    try:
+        while True:
+            api_url = (
+                f"{SPOTIFY_API_BASE}/albums/{album_id}/tracks"
+                f"?limit={SPOTIFY_PLAYLIST_PAGE_SIZE}&offset={offset}"
+            )
+            async with session.get(
+                api_url,
+                headers={"Authorization": f"Bearer {token}"},
+            ) as resp:
+                if resp.status == 401:
+                    global _SPOTIFY_TOKEN_CACHE
+                    _SPOTIFY_TOKEN_CACHE = None
+                if resp.status != 200:
+                    return None
+                data = await resp.json()
+            items = data.get("items") or []
+            if not items:
+                break
+            for item in items:
+                q = _spotify_track_to_search_query(item)
+                if q:
+                    queries.append(q)
+            if len(items) < SPOTIFY_PLAYLIST_PAGE_SIZE:
+                break
+            offset += SPOTIFY_PLAYLIST_PAGE_SIZE
+    except aiohttp.ClientError as e:
+        logger.debug("Spotify album fetch failed: %s", e)
         return None
     return queries or None

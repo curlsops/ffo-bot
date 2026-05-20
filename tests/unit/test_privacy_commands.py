@@ -83,3 +83,30 @@ async def test_privacy_db_error_sends_error_message():
     await cog.privacy_cmd.callback(interaction, operation=_choice("optout"))
 
     interaction.followup.send.assert_awaited_once_with("❌ An error occurred.", ephemeral=True)
+
+
+@pytest.mark.asyncio
+async def test_privacy_cog_load_registers_command():
+    bot = MagicMock()
+    cog = PrivacyCommands(bot)
+    await cog.cog_load()
+    bot.tree.add_command.assert_called_once_with(cog.privacy_cmd)
+
+
+@pytest.mark.asyncio
+async def test_privacy_cog_unload_removes_command():
+    bot = MagicMock()
+    cog = PrivacyCommands(bot)
+    await cog.cog_unload()
+    bot.tree.remove_command.assert_called_once_with(cog.privacy_cmd.name)
+
+
+@pytest.mark.asyncio
+async def test_privacy_setup():
+    bot = MagicMock()
+    bot.add_cog = AsyncMock()
+
+    from bot.commands.privacy import setup
+
+    await setup(bot)
+    bot.add_cog.assert_awaited_once()

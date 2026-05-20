@@ -3,25 +3,34 @@ from __future__ import annotations
 import asyncio
 import logging
 from collections import deque
-from typing import TYPE_CHECKING, Awaitable, Callable, Sequence, TypeVar, cast
+from typing import TYPE_CHECKING, Awaitable, Callable, NamedTuple, Sequence, TypeVar, cast
 from urllib.parse import urlparse
 
 import discord
 from discord import app_commands
 from discord.ext import commands
-from mafic import EndReason, Player, SearchType, Track, TrackEndEvent
-from mafic.errors import PlayerNotConnected
+from mafic import EndReason, Player, Playlist, SearchType, Track, TrackEndEvent
+from mafic.errors import PlayerNotConnected, TrackLoadException
 
 from bot.auth.command_helpers import require_admin
 from bot.auth.permissions import PermissionContext
 from bot.services.spotify import (
-    spotify_playlist_to_search_queries,
+    SPOTIFY_ALBUM_PATTERN,
+    SPOTIFY_PLAYLIST_PATTERN,
+    spotify_album_catalog_queries,
+    spotify_playlist_catalog_queries,
     spotify_url_to_search_query,
 )
 from bot.services.tidal import (
+    tidal_album_to_search_queries,
     tidal_mix_to_search_queries,
     tidal_playlist_to_search_queries,
     tidal_url_to_search_query,
+)
+from bot.utils.channel_config import (
+    fetch_music_voice_channel_targets,
+    get_music_voice_channel_id,
+    set_music_voice_channel,
 )
 from bot.utils.music import (
     EMBED_COLOR,
@@ -29,6 +38,7 @@ from bot.utils.music import (
     _format_duration,
     _get_queue,
     _music_embed,
+    _music_status_embed,
     _order_youtube_search_tracks,
     _time_until_track,
     _track_label,
@@ -49,7 +59,27 @@ MAX_QUERY_LEN = 200
 IDLE_LEAVE_SECONDS = 30
 TRACK_PICKER_MAX = 5
 PLAYLIST_FETCH_CONCURRENCY = 5
+YOUTUBE_PLAYLIST_CATALOG_MAX = 2000
+YOUTUBE_PLAYLIST_RESOLVE_SAMPLE = 50
+MUSIC_LAZY_PREFETCH_DELAY_SEC = 0.35
 CONNECTION_FAILED_MSG = "Music connection failed. Try /music leave then /music join again."
+
+
+class MusicLazyTail(NamedTuple):
+    search_queries: tuple[str, ...] = ()
+    search_type: SearchType | None = None
+    preloaded_tracks: tuple[Track, ...] = ()
+
+    def has_work(self) -> bool:
+        return bool(self.search_queries) or bool(self.preloaded_tracks)
+
+
+class ResolvedUrl(NamedTuple):
+    tracks: list[Track] | None
+    playlist: bool
+    resolved_query: str | None
+    err: str | None
+    lazy_tail: MusicLazyTail | None = None
 
 
 def _get_url_host(query: str) -> str:
@@ -57,7 +87,7 @@ def _get_url_host(query: str) -> str:
         return ""
     try:
         return (urlparse(query).hostname or "").lower()
-    except (ValueError, TypeError):  # urlparse can raise on invalid input
+    except (ValueError, TypeError):
         return ""
 
 
@@ -84,8 +114,55 @@ def _get_voice_client(guild: discord.Guild, bot: "FFOBot"):
     return guild.voice_client or discord.utils.get(bot.voice_clients, guild=guild)
 
 
+def _is_voice_or_stage(ch: discord.abc.GuildChannel | None) -> bool:
+    return isinstance(ch, (discord.VoiceChannel, discord.StageChannel))
+
+
 def _other_members_in_channel(channel: discord.VoiceChannel, bot_user_id: int) -> int:
     return sum(1 for m in channel.members if m.id != bot_user_id)
+
+
+async def reconnect_music_voice_after_ready(bot: "FFOBot") -> None:
+    if not getattr(bot.settings, "feature_music", False) or not getattr(bot, "pool", None):
+        return
+    if not bot.db_pool:
+        return
+    targets = await fetch_music_voice_channel_targets(bot.db_pool)
+    if not targets:
+        return
+    by_guild = {g.id: g for g in bot.guilds}
+    for guild_id, channel_id in targets:
+        guild = by_guild.get(guild_id)
+        if not guild:
+            continue
+        vc = guild.voice_client
+        if vc and vc.channel and vc.channel.id == channel_id:
+            continue
+        if vc:
+            try:
+                await vc.disconnect(force=True)
+            except Exception as e:
+                logger.warning("Music recovery: disconnect failed guild %s: %s", guild_id, e)
+        ch = guild.get_channel(channel_id)
+        if not _is_voice_or_stage(ch):
+            await set_music_voice_channel(bot.db_pool, guild_id, None, bot.cache)
+            continue
+        me = guild.me
+        if me is None:
+            continue
+        perms = ch.permissions_for(me)
+        if not (perms.connect and perms.speak):
+            logger.warning("Music recovery: missing voice perms guild %s", guild_id)
+            await set_music_voice_channel(bot.db_pool, guild_id, None, bot.cache)
+            continue
+        try:
+            await ch.connect(cls=Player, timeout=30.0, reconnect=True)
+            logger.info("Music recovery: rejoined guild %s channel %s", guild_id, channel_id)
+        except Exception as e:
+            logger.warning(
+                "Music recovery: connect failed guild %s: %s", guild_id, e, exc_info=True
+            )
+            await set_music_voice_channel(bot.db_pool, guild_id, None, bot.cache)
 
 
 async def _play_next(player: Player) -> bool:
@@ -108,8 +185,105 @@ def _pop_queue_index(queue: deque[Track], idx: int) -> Track:
     return track
 
 
+def _music_lazy_prefetch_tasks(bot: "FFOBot") -> dict[int, asyncio.Task[None]]:
+    if not hasattr(bot, "_music_lazy_prefetch_tasks"):
+        bot._music_lazy_prefetch_tasks = {}
+    return cast(dict[int, asyncio.Task[None]], bot._music_lazy_prefetch_tasks)
+
+
+async def _cancel_music_lazy_prefetch(bot: "FFOBot", guild_id: int) -> None:
+    tasks = getattr(bot, "_music_lazy_prefetch_tasks", None)
+    if not tasks or guild_id not in tasks:
+        return
+    t = tasks.pop(guild_id)
+    t.cancel()
+    try:
+        await t
+    except asyncio.CancelledError:
+        # Draining a cancelled task after cancel(); completion is not an error.
+        pass
+
+
+async def _music_lazy_prefetch_worker(
+    bot: "FFOBot", guild_id: int, player: Player, tail: MusicLazyTail
+) -> None:
+    for pre in tail.preloaded_tracks:
+        try:
+            await asyncio.sleep(MUSIC_LAZY_PREFETCH_DELAY_SEC)
+        except asyncio.CancelledError:
+            return
+        queues = getattr(bot, "_music_queues", None)
+        if queues is None or guild_id not in queues:
+            return
+        cast(deque[Track], queues[guild_id]).append(pre)
+    for sq in tail.search_queries:
+        try:
+            await asyncio.sleep(MUSIC_LAZY_PREFETCH_DELAY_SEC)
+        except asyncio.CancelledError:
+            return
+        queues = getattr(bot, "_music_queues", None)
+        if queues is None or guild_id not in queues:
+            return
+        queue = cast(deque[Track], queues[guild_id])
+        st = tail.search_type
+        if st == SearchType.SPOTIFY_SEARCH:
+            track = await _fetch_one_track_spotify(player, sq)
+        else:
+            track = await _fetch_one_track(player, sq)
+        if track:
+            queue.append(track)
+
+
+def _schedule_music_lazy_prefetch(
+    bot: "FFOBot", guild_id: int, player: Player, tail: MusicLazyTail | None
+) -> None:
+    if tail is None or not tail.has_work():
+        return
+    tmap = _music_lazy_prefetch_tasks(bot)
+    prev = tmap.pop(guild_id, None)
+    if prev is not None:
+        prev.cancel()
+
+    async def _run() -> None:
+        try:
+            await _music_lazy_prefetch_worker(bot, guild_id, player, tail)
+        finally:
+            tmap.pop(guild_id, None)
+
+    tmap[guild_id] = asyncio.create_task(_run())
+
+
+async def _load_tracks_from_lavalink_identifier(
+    player: Player, identifier: str
+) -> list[Track] | None:
+    try:
+        raw = await player.fetch_tracks(identifier, search_type=SearchType.SPOTIFY_SEARCH)
+    except TrackLoadException as e:
+        logger.debug("Lavalink Spotify load failed for %s: %s", identifier, e)
+        return None
+    if raw is None:
+        return None
+    if isinstance(raw, Playlist):
+        return raw.tracks if raw.tracks else None
+    if isinstance(raw, list):
+        return raw if raw else None
+    return None
+
+
 async def _fetch_one_track(player: Player, query: str) -> Track | None:
     result = await player.fetch_tracks(query, search_type=SearchType.YOUTUBE)
+    if result and isinstance(result, list) and result:
+        return result[0]
+    if result and not isinstance(result, list) and result.tracks:
+        return result.tracks[0]
+    return None
+
+
+async def _fetch_one_track_spotify(player: Player, query: str) -> Track | None:
+    try:
+        result = await player.fetch_tracks(query, search_type=SearchType.SPOTIFY_SEARCH)
+    except TrackLoadException:
+        return None
     if result and isinstance(result, list) and result:
         return result[0]
     if result and not isinstance(result, list) and result.tracks:
@@ -140,38 +314,107 @@ async def _fetch_playlist_tracks(player: Player, queries: list[str]) -> list[Tra
     return [t for t in results if t is not None]
 
 
-async def _resolve_url_tracks(
-    player: Player, query: str, bot: "FFOBot"
-) -> tuple[list[Track] | None, bool, str | None, str | None]:
+async def _resolve_url_tracks(player: Player, query: str, bot: "FFOBot") -> ResolvedUrl:
     if _is_tidal_url(query):
         pq = await tidal_playlist_to_search_queries(query)
         if not pq:
             pq = await tidal_mix_to_search_queries(query)
+        if not pq:
+            pq = await tidal_album_to_search_queries(query)
         if pq:
-            return await _fetch_playlist_tracks(player, pq), True, None, None
+            first = await _fetch_one_track(player, pq[0])
+            if not first:
+                return ResolvedUrl(
+                    None,
+                    True,
+                    None,
+                    "Could not resolve the first track from this Tidal link on the audio node.",
+                    None,
+                )
+            rest = tuple(pq[1:])
+            if rest:
+                return ResolvedUrl(
+                    [first],
+                    True,
+                    None,
+                    None,
+                    MusicLazyTail(search_queries=rest, search_type=SearchType.YOUTUBE),
+                )
+            return ResolvedUrl([first], False, None, None, None)
         sq = await tidal_url_to_search_query(query)
         return (
-            (None, False, sq, None)
+            ResolvedUrl(None, False, sq, None, None)
             if sq
-            else (None, False, None, "Could not resolve Tidal link. Try searching by song name.")
+            else ResolvedUrl(
+                None, False, None, "Could not resolve Tidal link. Try searching by song name.", None
+            )
         )
     if _is_spotify_url(query):
+        native = await _load_tracks_from_lavalink_identifier(player, query)
+        if native:
+            if len(native) <= 1:
+                return ResolvedUrl(native, False, None, None, None)
+            return ResolvedUrl(
+                [native[0]],
+                True,
+                None,
+                None,
+                MusicLazyTail(preloaded_tracks=tuple(native[1:])),
+            )
         s = getattr(bot, "settings", None)
         cid, csec = (
             (getattr(s, "spotify_client_id", None), getattr(s, "spotify_client_secret", None))
             if s
             else (None, None)
         )
-        pq = await spotify_playlist_to_search_queries(query, cid, csec)
-        if pq:
-            return await _fetch_playlist_tracks(player, pq), True, None, None
+        catalog = await spotify_playlist_catalog_queries(query, cid, csec)
+        if not catalog:
+            catalog = await spotify_album_catalog_queries(query, cid, csec)
+        if catalog:
+            first = await _fetch_one_track_spotify(player, catalog[0])
+            if not first:
+                return ResolvedUrl(
+                    None,
+                    True,
+                    None,
+                    "Could not resolve the first track from this Spotify link on the audio node.",
+                    None,
+                )
+            tail = catalog[1:]
+            if tail:
+                return ResolvedUrl(
+                    [first],
+                    True,
+                    None,
+                    None,
+                    MusicLazyTail(
+                        search_queries=tuple(tail),
+                        search_type=SearchType.SPOTIFY_SEARCH,
+                    ),
+                )
+            return ResolvedUrl([first], False, None, None, None)
         sq = await spotify_url_to_search_query(query)
-        return (
-            (None, False, sq, None)
-            if sq
-            else (None, False, None, "Could not resolve Spotify link. Try searching by song name.")
+        if sq:
+            return ResolvedUrl(None, False, sq, None, None)
+        if (not cid or not csec) and (
+            SPOTIFY_PLAYLIST_PATTERN.search(query) or SPOTIFY_ALBUM_PATTERN.search(query)
+        ):
+            return ResolvedUrl(
+                None,
+                False,
+                None,
+                "Spotify playlist or album URLs need SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET "
+                "when Lavalink does not return tracks for the link. Set both env vars and restart the bot.",
+                None,
+            )
+        return ResolvedUrl(
+            None,
+            False,
+            None,
+            "Could not resolve Spotify link. Try searching by song name.",
+            None,
         )
-    return None, False, None, None
+    return ResolvedUrl(None, False, None, None, None)
 
 
 def _music_queue_format_row(
@@ -235,6 +478,14 @@ class TrackPickerView(discord.ui.View):
                 return
             self._chosen = True
             track = self.tracks[idx]
+            if self.player.current:
+                q = _get_queue(self.bot, self.player.guild.id)
+                start_pos = len(q) + 1
+                q.append(track)
+                desc = f"**{track.title}** at #{start_pos}."
+                resume = _ResumeView(self.player) if self.player.paused else None
+                await i.response.edit_message(embed=_music_embed("📥 Queued", desc), view=resume)
+                return
             try:
                 await self.player.play(track)
             except PlayerNotConnected:
@@ -312,7 +563,12 @@ class MusicGroup(app_commands.Group):
 
     @app_commands.command(name="play", description="Play a track (URL or search query)")
     @app_commands.describe(
-        query="YouTube URL (incl. playlists), Tidal URL (track/playlist/mix), Spotify URL (track/playlist), or search query",
+        query=(
+            "YouTube URL (incl. playlists). "
+            "Tidal track/album/playlist/mix. "
+            "Spotify track/album/playlist (Web API credentials when the node has no native Spotify). "
+            "Or plain search text."
+        ),
         force_next="Play next in queue (mod+ only)",
     )
     async def play(self, i: discord.Interaction, query: str, force_next: bool = False):
@@ -326,37 +582,50 @@ class MusicGroup(app_commands.Group):
             return
         player, ch = r
         bot = i.client
+        original_url = query
         is_url = query.startswith(("http://", "https://"))
         search_type = None if is_url else SearchType.YOUTUBE
         tracks = None
         playlist = False
-        from_resolved_url = False
+        lazy_tail: MusicLazyTail | None = None
         if is_url and _is_allowed_music_url(query):
-            tracks, playlist, resolved_sq, err = await _resolve_url_tracks(player, query, bot)
-            if err:
-                await i.followup.send(err, ephemeral=True)
+            ru = await _resolve_url_tracks(player, query, bot)
+            if ru.err:
+                await i.followup.send(ru.err, ephemeral=True)
                 return
-            if resolved_sq:
-                query, search_type, from_resolved_url = resolved_sq, SearchType.YOUTUBE, True
+            if ru.resolved_query:
+                query = ru.resolved_query
+                search_type = (
+                    SearchType.SPOTIFY_SEARCH
+                    if _is_spotify_url(original_url)
+                    else SearchType.YOUTUBE
+                )
+            tracks = ru.tracks
+            playlist = ru.playlist
+            lazy_tail = ru.lazy_tail
         if tracks is None:
             result = await player.fetch_tracks(query, search_type=search_type)
             if result is None:
                 await i.followup.send("No results found.", ephemeral=True)
                 return
             tracks = result if isinstance(result, list) else result.tracks
-            if not isinstance(result, list) and search_type is None and len(tracks) > 1:
+            if search_type is None and len(tracks) > 1 and _is_youtube_url(query):
+                catalog = list(tracks)[:YOUTUBE_PLAYLIST_CATALOG_MAX]
+                k = min(YOUTUBE_PLAYLIST_RESOLVE_SAMPLE, len(catalog))
+                head = catalog[:k]
+                tracks = [head[0]]
+                lazy_tail = MusicLazyTail(preloaded_tracks=tuple(head[1:]))
+                playlist = True
+            elif not isinstance(result, list) and search_type is None and len(tracks) > 1:
+                lt = list(tracks)
+                tracks = [lt[0]]
+                lazy_tail = MusicLazyTail(preloaded_tracks=tuple(lt[1:]))
                 playlist = True
         if not tracks:
             await i.followup.send("No tracks found.", ephemeral=True)
             return
-        if (
-            len(tracks) > 1
-            and not playlist
-            and (search_type == SearchType.YOUTUBE or from_resolved_url)
-        ):
+        if len(tracks) > 1 and not playlist and search_type == SearchType.YOUTUBE:
             tracks = _order_youtube_search_tracks(list(tracks))
-        if from_resolved_url and len(tracks) > 1:
-            tracks = [tracks[0]]
         if force_next:
             ctx = PermissionContext(
                 server_id=i.guild_id or 0, user_id=i.user.id, command_name="music play"
@@ -366,8 +635,9 @@ class MusicGroup(app_commands.Group):
                     "Moderator or higher required for force play next.", ephemeral=True
                 )
                 return
-        queue = _get_queue(bot, i.guild_id)
-        if not playlist and len(tracks) > 1 and not from_resolved_url:
+        guild_id = i.guild_id or 0
+        queue = _get_queue(bot, guild_id)
+        if not playlist and len(tracks) > 1:
             lines = [
                 f"**{n + 1}.** {getattr(t, 'author', '') or ''} – {t.title}"
                 for n, t in enumerate(tracks[:TRACK_PICKER_MAX])
@@ -405,6 +675,8 @@ class MusicGroup(app_commands.Group):
             if player.paused:
                 send_kw["view"] = _ResumeView(player)
             await i.followup.send(**send_kw)
+            if lazy_tail and lazy_tail.has_work():
+                _schedule_music_lazy_prefetch(bot, guild_id, player, lazy_tail)
         else:
             try:
                 await player.play(tracks[0])
@@ -417,15 +689,33 @@ class MusicGroup(app_commands.Group):
                 f"\n📥 +{len(tracks) - 1} queued" if playlist else ""
             )
             await i.followup.send(embed=_music_embed("🎵 Playing", desc))
+            if lazy_tail and lazy_tail.has_work():
+                _schedule_music_lazy_prefetch(bot, guild_id, player, lazy_tail)
 
     @app_commands.command(name="leave", description="Disconnect from voice")
     async def leave(self, i: discord.Interaction):
         await i.response.defer(ephemeral=False)
         vc = _get_voice_client(i.guild, i.client)
         if not vc:
+            bot = i.client
+            if bot.db_pool:
+                stale = await get_music_voice_channel_id(
+                    bot.db_pool, i.guild_id or 0, getattr(bot, "cache", None)
+                )
+                if stale:
+                    await set_music_voice_channel(
+                        bot.db_pool, i.guild_id or 0, None, getattr(bot, "cache", None)
+                    )
+                    await i.followup.send(
+                        "No active voice session (for example after a restart). "
+                        "Cleared stored voice channel for this server.",
+                        ephemeral=True,
+                    )
+                    return
             await i.followup.send("Not in a voice channel.", ephemeral=True)
             return
         name = vc.channel.name if vc.channel else "voice"
+        await _cancel_music_lazy_prefetch(i.client, vc.guild.id)
         _clear_queue(i.client, i.guild_id)
         await _cancel_leave_task(_get_leave_tasks(i.client), i.guild_id)
         await vc.disconnect()
@@ -463,6 +753,31 @@ class MusicGroup(app_commands.Group):
     async def resume(self, i: discord.Interaction):
         await self._pause_resume(i, False)
 
+    @app_commands.command(
+        name="status", description="Show voice channel, current track, and progress"
+    )
+    async def status(self, i: discord.Interaction):
+        await i.response.defer(ephemeral=False)
+        if not i.client.pool:
+            await i.followup.send("Music is not enabled.", ephemeral=True)
+            return
+        guild = i.guild
+        if not guild:
+            return
+        vc = _get_voice_client(guild, i.client)
+        if not vc or not isinstance(vc, Player):
+            await i.followup.send(
+                embed=_music_embed(
+                    "🎵 Music status",
+                    "The bot is not connected to a voice channel in this server.",
+                ),
+                ephemeral=True,
+            )
+            return
+        ch = vc.channel
+        ch_ref = ch.mention if ch else "a voice channel"
+        await i.followup.send(embed=_music_status_embed(vc, ch_ref, paused=vc.paused))
+
     @app_commands.command(name="skip", description="Skip current track")
     async def skip(self, i: discord.Interaction):
         await i.response.defer(ephemeral=False)
@@ -484,25 +799,6 @@ class MusicGroup(app_commands.Group):
                 )
             )
 
-    @app_commands.command(name="stop", description="Stop playback (queue preserved)")
-    async def stop(self, i: discord.Interaction):
-        await i.response.defer(ephemeral=False)
-        if (p := await self._player_or_nothing(i)) is None:
-            return
-        await p.stop()
-        others = (
-            _other_members_in_channel(p.channel, i.client.user.id)
-            if (p.channel and i.client.user)
-            else 0
-        )
-        if others == 0:
-            _clear_queue(i.client, i.guild_id)
-            await _cancel_leave_task(_get_leave_tasks(i.client), i.guild_id)
-            await p.disconnect()
-            await i.followup.send(embed=_music_embed("⏹️ Stopped", "Left and cleared queue."))
-        else:
-            await i.followup.send(embed=_music_embed("⏹️ Stopped", "Queue preserved."))
-
     @app_commands.command(name="clear-queue", description="[Admin] Clear the queue")
     @app_commands.default_permissions(administrator=True)
     async def clear_queue(self, i: discord.Interaction):
@@ -515,6 +811,7 @@ class MusicGroup(app_commands.Group):
                 embed=_music_embed("🎵 Clear Queue", "Queue is already empty."), ephemeral=True
             )
             return
+        await _cancel_music_lazy_prefetch(i.client, i.guild_id or 0)
         _clear_queue(i.client, i.guild_id)
         await i.followup.send(
             embed=_music_embed("🎵 Queue Cleared", f"Removed {len(q)} track(s)."), ephemeral=True
@@ -569,7 +866,7 @@ class MusicGroup(app_commands.Group):
 def _get_leave_tasks(bot: FFOBot) -> dict[int, asyncio.Task[None]]:
     if not hasattr(bot, "_music_leave_tasks"):
         bot._music_leave_tasks = {}
-    return cast(dict[int, asyncio.Task[None]], getattr(bot, "_music_leave_tasks", {}))
+    return cast(dict[int, asyncio.Task[None]], bot._music_leave_tasks)
 
 
 async def _cancel_leave_task(tasks: dict[int, asyncio.Task], guild_id: int) -> None:
@@ -590,8 +887,23 @@ class MusicCommands(commands.Cog):
 
     @commands.Cog.listener("on_voice_state_update")
     async def _on_voice_state_update(
-        self, _member: discord.Member, before: discord.VoiceState, after: discord.VoiceState
+        self, member: discord.Member, before: discord.VoiceState, after: discord.VoiceState
     ) -> None:
+        if (
+            getattr(self.bot.settings, "feature_music", False)
+            and self.bot.db_pool
+            and self.bot.user
+            and member.id == self.bot.user.id
+        ):
+            if after.channel and _is_voice_or_stage(after.channel):
+                await set_music_voice_channel(
+                    self.bot.db_pool, member.guild.id, after.channel.id, self.bot.cache
+                )
+            elif before.channel and not after.channel:
+                await set_music_voice_channel(
+                    self.bot.db_pool, member.guild.id, None, self.bot.cache
+                )
+
         if not self.bot.pool or not self.bot.user:
             return
         tasks = _get_leave_tasks(self.bot)
@@ -615,6 +927,7 @@ class MusicCommands(commands.Cog):
                     vc = _get_voice_client(bot_channel.guild, self.bot)
                     if vc and vc.channel and vc.channel.id == bot_channel.id:
                         if _other_members_in_channel(vc.channel, self.bot.user.id) == 0:
+                            await _cancel_music_lazy_prefetch(self.bot, guild_id)
                             _clear_queue(self.bot, guild_id)
                             await vc.disconnect()
                             logger.info("Left voice channel %s (idle)", vc.channel.name)

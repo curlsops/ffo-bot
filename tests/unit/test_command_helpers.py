@@ -122,6 +122,13 @@ async def test_require_guild_no_guild_sends_message():
 
 
 @pytest.mark.asyncio
+async def test_require_guild_with_guild_returns_true():
+    i = _mock_interaction(guild_id=1)
+    assert await require_guild(i) is True
+    i.followup.send.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_execute_command_defers_and_calls_handler():
     i = _mock_interaction(guild_id=1)
     i.response = MagicMock()
