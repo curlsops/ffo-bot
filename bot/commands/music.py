@@ -68,6 +68,10 @@ MUSIC_LAZY_PREFETCH_DELAY_SEC = 0.35
 CONNECTION_FAILED_MSG = "Music connection failed. Try /music leave then /music join again."
 
 
+def _ix_label(i: discord.Interaction) -> str:
+    return f"guild={i.guild_id} user={i.user.id} interaction={i.id}"
+
+
 class MusicLazyTail(NamedTuple):
     search_queries: tuple[str, ...] = ()
     search_type: SearchType | None = None
@@ -125,8 +129,16 @@ def _other_members_in_channel(channel: discord.VoiceChannel, bot_user_id: int) -
     return sum(1 for m in channel.members if m.id != bot_user_id)
 
 
-async def _followup_voice_connect_failed(i: discord.Interaction, e: RuntimeError) -> None:
-    logger.warning("Voice connect failed: %s", e, exc_info=True)
+async def _followup_voice_connect_failed(
+    i: discord.Interaction, e: RuntimeError, *, channel_id: int | None = None
+) -> None:
+    logger.warning(
+        "Voice connect failed %s channel=%s: %s",
+        _ix_label(i),
+        channel_id,
+        e,
+        exc_info=True,
+    )
     await i.followup.send(VOICE_DEPS_MISSING_USER_MSG, ephemeral=True)
 
 
@@ -136,10 +148,13 @@ async def reconnect_music_voice_after_ready(bot: "FFOBot") -> None:
     if not bot.db_pool:
         return
     if not discord_voice_dependencies_available():
+        logger.info("Music recovery skipped (davey not available)")
         return
     targets = await fetch_music_voice_channel_targets(bot.db_pool)
     if not targets:
+        logger.debug("Music recovery: no persisted voice channels")
         return
+    logger.info("Music recovery: %d persisted channel(s)", len(targets))
     by_guild = {g.id: g for g in bot.guilds}
     for guild_id, channel_id in targets:
         guild = by_guild.get(guild_id)
@@ -147,8 +162,16 @@ async def reconnect_music_voice_after_ready(bot: "FFOBot") -> None:
             continue
         vc = guild.voice_client
         if vc and vc.channel and vc.channel.id == channel_id:
+            logger.debug(
+                "Music recovery: already in channel guild=%s channel=%s", guild_id, channel_id
+            )
             continue
         if vc:
+            logger.debug(
+                "Music recovery: disconnecting stale VC guild=%s from channel=%s",
+                guild_id,
+                getattr(vc.channel, "id", None),
+            )
             try:
                 await vc.disconnect(force=True)
                 await asyncio.sleep(1.0)
@@ -167,8 +190,9 @@ async def reconnect_music_voice_after_ready(bot: "FFOBot") -> None:
             await set_music_voice_channel(bot.db_pool, guild_id, None, bot.cache)
             continue
         try:
+            logger.info("Music recovery: connecting guild=%s channel=%s", guild_id, channel_id)
             await ch.connect(cls=Player, timeout=30.0, reconnect=False)
-            logger.info("Music recovery: rejoined guild %s channel %s", guild_id, channel_id)
+            logger.info("Music recovery: connected guild=%s channel=%s", guild_id, channel_id)
         except Exception as e:
             logger.warning(
                 "Music recovery: connect failed guild %s: %s", guild_id, e, exc_info=True
@@ -460,18 +484,30 @@ async def _check_voice_pool(
     i: discord.Interaction,
 ) -> tuple[discord.VoiceChannel, discord.VoiceClient | None] | None:
     if not i.user.voice or not i.user.voice.channel:
+        logger.debug("music voice check: user not in voice %s", _ix_label(i))
         await i.followup.send("Join a voice channel first.", ephemeral=True)
         return None
     if not discord_voice_dependencies_available():
+        logger.warning("music voice check: davey missing %s", _ix_label(i))
         await i.followup.send(VOICE_DEPS_MISSING_USER_MSG, ephemeral=True)
         return None
     if not i.client.pool:
+        logger.debug("music voice check: lavalink disabled %s", _ix_label(i))
         await i.followup.send("Music is not enabled.", ephemeral=True)
         return None
     guild = i.guild
     if not guild:
+        logger.debug("music voice check: no guild %s", _ix_label(i))
         return None
-    return i.user.voice.channel, guild.voice_client
+    ch = i.user.voice.channel
+    vc = guild.voice_client
+    logger.debug(
+        "music voice check ok %s user_channel=%s bot_channel=%s",
+        _ix_label(i),
+        ch.id,
+        vc.channel.id if vc and vc.channel else None,
+    )
+    return ch, vc
 
 
 async def _ensure_player(i: discord.Interaction) -> tuple[Player, discord.VoiceChannel] | None:
@@ -481,15 +517,23 @@ async def _ensure_player(i: discord.Interaction) -> tuple[Player, discord.VoiceC
     ch, vc = r
     player = vc if isinstance(vc, Player) else None
     if not player:
+        logger.info("music voice connect start %s channel=%s", _ix_label(i), ch.id)
         try:
             await ch.connect(cls=Player)
         except TimeoutError:
+            logger.warning("music voice connect timeout %s channel=%s", _ix_label(i), ch.id)
             await i.followup.send("Voice connection timed out. Try again.", ephemeral=True)
             return None
         except RuntimeError as e:
-            await _followup_voice_connect_failed(i, e)
+            await _followup_voice_connect_failed(i, e, channel_id=ch.id)
             return None
         player = i.guild.voice_client
+        logger.info(
+            "music voice connect ok %s channel=%s player=%s",
+            _ix_label(i),
+            ch.id,
+            type(player).__name__ if player else None,
+        )
     if player.channel.id != ch.id:
         await i.followup.send("Join the same voice channel as the bot.", ephemeral=True)
         return None
@@ -504,6 +548,7 @@ class MusicGroup(app_commands.Group):
 
     @app_commands.command(name="join", description="Join your voice channel")
     async def join(self, i: discord.Interaction):
+        logger.info("music join %s", _ix_label(i))
         await i.response.defer(ephemeral=False)
         r = await _check_voice_pool(i)
         if r is None:
@@ -518,14 +563,17 @@ class MusicGroup(app_commands.Group):
                     ephemeral=True,
                 )
             return
+        logger.info("music join: connecting %s channel=%s", _ix_label(i), ch.id)
         try:
             await ch.connect(cls=Player)
         except TimeoutError:
+            logger.warning("music join: timeout %s channel=%s", _ix_label(i), ch.id)
             await i.followup.send("Voice connection timed out. Try again.", ephemeral=True)
             return
         except RuntimeError as e:
-            await _followup_voice_connect_failed(i, e)
+            await _followup_voice_connect_failed(i, e, channel_id=ch.id)
             return
+        logger.info("music join: connected %s channel=%s", _ix_label(i), ch.id)
         await i.followup.send(embed=_music_embed("🎵 Joined", f"Connected to {ch.mention}."))
 
     @app_commands.command(name="play", description="Play a track (URL or search query)")
@@ -539,6 +587,12 @@ class MusicGroup(app_commands.Group):
         force_next="Play next in queue (mod+ only)",
     )
     async def play(self, i: discord.Interaction, query: str, force_next: bool = False):
+        logger.info(
+            "music play start %s force_next=%s query=%r",
+            _ix_label(i),
+            force_next,
+            query[:120],
+        )
         await i.response.defer(ephemeral=False)
         query = query.strip()[:MAX_QUERY_LEN]
         if not query:
@@ -546,17 +600,25 @@ class MusicGroup(app_commands.Group):
             return
         r = await _ensure_player(i)
         if r is None:
+            logger.info("music play aborted (no player) %s", _ix_label(i))
             return
         player, ch = r
         bot = i.client
+        logger.debug(
+            "music play: player ready %s lavalink_channel=%s",
+            _ix_label(i),
+            ch.id,
+        )
         is_url = query.startswith(("http://", "https://"))
         search_type = None if is_url else SearchType.YOUTUBE
         tracks = None
         playlist = False
         lazy_tail: MusicLazyTail | None = None
         if is_url and _is_allowed_music_url(query):
+            logger.debug("music play: resolving url %s", _ix_label(i))
             ru = await _resolve_url_tracks(player, query, bot)
             if ru.err:
+                logger.info("music play: url resolve failed %s err=%s", _ix_label(i), ru.err)
                 await i.followup.send(ru.err, ephemeral=True)
                 return
             if ru.resolved_query:
@@ -566,8 +628,14 @@ class MusicGroup(app_commands.Group):
             playlist = ru.playlist
             lazy_tail = ru.lazy_tail
         if tracks is None:
+            logger.debug(
+                "music play: fetch_tracks %s search_type=%s",
+                _ix_label(i),
+                search_type,
+            )
             result = await player.fetch_tracks(query, search_type=search_type)
             if result is None:
+                logger.info("music play: no results %s", _ix_label(i))
                 await i.followup.send("No results found.", ephemeral=True)
                 return
             tracks = result if isinstance(result, list) else result.tracks
@@ -584,8 +652,16 @@ class MusicGroup(app_commands.Group):
                 lazy_tail = MusicLazyTail(preloaded_tracks=tuple(lt[1:]))
                 playlist = True
         if not tracks:
+            logger.info("music play: empty track list %s", _ix_label(i))
             await i.followup.send("No tracks found.", ephemeral=True)
             return
+        logger.info(
+            "music play: %d track(s) playlist=%s lazy=%s %s",
+            len(tracks),
+            playlist,
+            lazy_tail.has_work() if lazy_tail else False,
+            _ix_label(i),
+        )
         if len(tracks) > 1 and not playlist and search_type == SearchType.YOUTUBE:
             tracks = _order_youtube_search_tracks(list(tracks))
         if force_next:
@@ -641,8 +717,14 @@ class MusicGroup(app_commands.Group):
                 _schedule_music_lazy_prefetch(bot, guild_id, player, lazy_tail)
         else:
             try:
+                logger.info(
+                    "music play: starting playback %s title=%r",
+                    _ix_label(i),
+                    tracks[0].title,
+                )
                 await player.play(tracks[0])
             except PlayerNotConnected:
+                logger.warning("music play: PlayerNotConnected %s", _ix_label(i))
                 await i.followup.send(CONNECTION_FAILED_MSG, ephemeral=True)
                 return
             if playlist and len(tracks) > 1:
@@ -656,9 +738,11 @@ class MusicGroup(app_commands.Group):
 
     @app_commands.command(name="leave", description="Disconnect from voice")
     async def leave(self, i: discord.Interaction):
+        logger.info("music leave %s", _ix_label(i))
         await i.response.defer(ephemeral=False)
         vc = _get_voice_client(i.guild, i.client)
         if not vc:
+            logger.debug("music leave: no active voice client %s", _ix_label(i))
             bot = i.client
             if bot.db_pool:
                 stale = await get_music_voice_channel_id(
@@ -677,6 +761,11 @@ class MusicGroup(app_commands.Group):
             await i.followup.send("Not in a voice channel.", ephemeral=True)
             return
         name = vc.channel.name if vc.channel else "voice"
+        logger.info(
+            "music leave: disconnecting %s channel=%s",
+            _ix_label(i),
+            vc.channel.id if vc.channel else None,
+        )
         await _cancel_music_lazy_prefetch(i.client, vc.guild.id)
         _clear_queue(i.client, i.guild_id)
         await _cancel_leave_task(_get_leave_tasks(i.client), i.guild_id)
@@ -814,6 +903,7 @@ class MusicGroup(app_commands.Group):
 
     @app_commands.command(name="queue", description="Show the queue")
     async def queue_cmd(self, i: discord.Interaction):
+        logger.info("music queue %s", _ix_label(i))
         await i.response.defer(ephemeral=True)
         p = i.guild.voice_client
         q = _get_queue(i.client, i.guild_id)

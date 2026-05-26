@@ -6,6 +6,7 @@ import socket
 import struct
 from dataclasses import dataclass, field
 
+from bot.utils.telemetry import trace_span
 from config.settings import Settings
 
 logger = logging.getLogger(__name__)
@@ -153,6 +154,8 @@ class MinecraftRCONClient:
         if not self._is_configured():
             raise MinecraftRCONError("Minecraft RCON not configured")
 
+        cmd_head = command.split()[0] if command else "unknown"
+
         def _sync_command() -> str:
             return _rcon_command(
                 target.host,
@@ -162,8 +165,16 @@ class MinecraftRCONClient:
                 timeout=self._connect_timeout,
             )
 
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, _sync_command)
+        with trace_span(
+            "minecraft.rcon",
+            feature="whitelist",
+            attributes={
+                "rcon.target_id": target.id,
+                "rcon.command": cmd_head,
+            },
+        ):
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(None, _sync_command)
 
     async def _run_rcon(self, command: str) -> str:
         if not self._targets:

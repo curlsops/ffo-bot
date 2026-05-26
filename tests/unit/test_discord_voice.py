@@ -42,4 +42,47 @@ def test_log_voice_dependency_status_ok(caplog):
         return_value=True,
     ):
         log_voice_dependency_status()
-    assert "davey loaded" in caplog.text.lower()
+    assert "voice deps ok" in caplog.text.lower()
+
+
+def test_log_voice_dependency_status_ok_debug(caplog):
+    import logging
+
+    caplog.set_level(logging.DEBUG)
+    with patch(
+        "bot.utils.discord_voice.discord_voice_dependencies_available",
+        return_value=True,
+    ):
+        log_voice_dependency_status()
+    assert "dependency check passed" in caplog.text.lower()
+
+
+def test_log_voice_dependency_status_missing_debug(caplog):
+    import logging
+
+    caplog.set_level(logging.DEBUG)
+    with patch(
+        "bot.utils.discord_voice.discord_voice_dependencies_available",
+        return_value=False,
+    ):
+        log_voice_dependency_status()
+    assert "not importable" in caplog.text.lower()
+
+
+def test_log_voice_dependency_status_ok_unknown_version(caplog):
+    import importlib.metadata
+    import logging
+
+    caplog.set_level(logging.INFO)
+    with (
+        patch(
+            "bot.utils.discord_voice.discord_voice_dependencies_available",
+            return_value=True,
+        ),
+        patch(
+            "importlib.metadata.version",
+            side_effect=importlib.metadata.PackageNotFoundError("davey"),
+        ),
+    ):
+        log_voice_dependency_status()
+    assert "unknown" in caplog.text.lower()

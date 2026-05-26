@@ -7,6 +7,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from bot.auth.command_helpers import require_admin, require_super_admin, send_error
+from bot.utils.log_context import log_command_start
 
 logger = logging.getLogger(__name__)
 
@@ -23,6 +24,7 @@ class RegisterCommandsView(discord.ui.View):
             await i.response.send_message("Use in the same server.", ephemeral=True)
             return
         await i.response.defer(ephemeral=True)
+        log_command_start(logger, "admin", "admin register_commands guild", i)
         try:
             self.bot.tree.copy_global_to(guild=i.guild)
             synced = await self.bot.tree.sync(guild=i.guild)
@@ -36,6 +38,7 @@ class RegisterCommandsView(discord.ui.View):
     @discord.ui.button(label="Register (global)", style=discord.ButtonStyle.secondary, row=0)
     async def register_global(self, i: discord.Interaction, _: discord.ui.Button):
         await i.response.defer(ephemeral=True)
+        log_command_start(logger, "admin", "admin register_commands global", i)
         try:
             synced = await self.bot.tree.sync()
             await i.followup.send(
@@ -51,6 +54,7 @@ class RegisterCommandsView(discord.ui.View):
             await i.response.send_message("Use in the same server.", ephemeral=True)
             return
         await i.response.defer(ephemeral=True)
+        log_command_start(logger, "admin", "admin register_commands clear_guild", i)
         try:
             self.bot.tree.clear_commands(guild=i.guild)
             await self.bot.tree.sync(guild=i.guild)
@@ -70,6 +74,7 @@ class AdminGroup(app_commands.Group):
     @app_commands.command(name="version", description="Show bot version")
     async def version(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
+        log_command_start(logger, "admin", "admin version", interaction)
         if not await require_admin(interaction, "admin version", self.cog.bot):
             return
         try:
@@ -89,6 +94,7 @@ class AdminGroup(app_commands.Group):
         channel: discord.TextChannel | None = None,
     ):
         await interaction.response.defer(ephemeral=True)
+        log_command_start(logger, "admin", "admin notify_channel", interaction)
         if not interaction.guild:
             await send_error(interaction, "Server only.")
             return
@@ -145,6 +151,7 @@ class AdminGroup(app_commands.Group):
     )
     async def register_commands(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
+        log_command_start(logger, "admin", "admin register_commands", interaction)
         if not await require_super_admin(interaction, "admin register_commands", self.cog.bot):
             return
         if not interaction.guild_id:

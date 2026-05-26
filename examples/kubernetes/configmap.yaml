@@ -6,6 +6,12 @@ metadata:
 data:
   LOG_LEVEL: "INFO"
   LOG_FORMAT: "json"
+  # Troubleshooting (JSON logs with trace_id/span_id; bot.* at DEBUG):
+  # LOG_LEVEL: "DEBUG"
+  # LOG_FORMAT: "json"
+  # LOG_VERBOSE_THIRD_PARTY: "true"
+  # OTEL_TRACING_ENABLED: "true"
+  # OTEL_TRACE_DISCORD_MESSAGES: "false"
 
   HEALTH_CHECK_PORT: "8080"
   HEALTH_CHECK_HOST: "0.0.0.0"
@@ -20,6 +26,7 @@ data:
 
   OTEL_TRACING_ENABLED: "false"
   OTEL_TRACE_DISCORD_MESSAGES: "false"
+  # With OTEL_TRACING_ENABLED=true, set OTEL_EXPORTER_OTLP_ENDPOINT (see below).
   # OTEL_SERVICE_NAME: "ffo-bot"
   # OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector.opentelemetry.svc:4318"
 

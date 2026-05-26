@@ -9,6 +9,8 @@ from urllib.parse import quote
 import aiohttp
 
 from bot.utils.http_session import get_session, session_scope
+from bot.utils.log_context import log_debug
+from bot.utils.telemetry import trace_span
 
 logger = logging.getLogger(__name__)
 
@@ -104,8 +106,12 @@ def _search_track_item_to_query(item: Any) -> str | None:
 
 
 async def _run_spotapi(func: Callable[..., T], /, *args: Any, **kwargs: Any) -> T:
-    loop = asyncio.get_running_loop()
-    return await loop.run_in_executor(None, lambda: func(*args, **kwargs))
+    log_debug(
+        logger, "spotify spotapi call func=%s", getattr(func, "__name__", func), feature="spotify"
+    )
+    with trace_span("spotify.spotapi", feature="spotify"):
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(None, lambda: func(*args, **kwargs))
 
 
 def _sync_playlist_catalog(playlist_id: str) -> list[str] | None:
@@ -230,7 +236,19 @@ async def _spotify_catalog_from_url(
         return None
     entity_id = match.group(1)
     try:
-        return await _run_spotapi(sync_fetch, entity_id)
+        log_debug(
+            logger,
+            "spotify catalog fetch entity=%s id=%s",
+            error_label,
+            entity_id,
+            feature="spotify",
+        )
+        with trace_span(
+            "spotify.catalog",
+            feature="spotify",
+            attributes={"spotify.entity": error_label},
+        ):
+            return await _run_spotapi(sync_fetch, entity_id)
     except Exception as e:
         logger.debug("SpotAPI %s fetch failed for %s: %s", error_label, url, e)
         return None
@@ -262,6 +280,28 @@ async def spotify_artist_catalog_queries(url: str) -> list[str] | None:
     )
 
 
+async def _fetch_oembed_json(
+    session: aiohttp.ClientSession, oembed_url: str
+) -> dict[str, Any] | None:
+    async with session.get(oembed_url) as resp:
+        if resp.status != 200:
+            return None
+        payload = await resp.json()
+        return payload if isinstance(payload, dict) else None
+
+
+async def _fetch_spotify_oembed_json(url: str) -> dict[str, Any] | None:
+    oembed_url = f"{SPOTIFY_OEMBED}?url={quote(url, safe='')}"
+    log_debug(logger, "spotify oembed fetch url=%s", url, feature="spotify")
+    try:
+        with trace_span("spotify.oembed", feature="spotify"):
+            async with session_scope(timeout=TIMEOUT, session=get_session()) as session:
+                return await _fetch_oembed_json(session, oembed_url)
+    except aiohttp.ClientError as e:
+        logger.debug("Spotify oEmbed fetch failed for %s: %s", url, e)
+        return None
+
+
 async def spotify_url_to_search_query(url: str) -> str | None:
     if (
         SPOTIFY_PLAYLIST_PATTERN.search(url)
@@ -280,15 +320,8 @@ async def spotify_url_to_search_query(url: str) -> str | None:
         query = None
     if query:
         return query
-    oembed_url = f"{SPOTIFY_OEMBED}?url={quote(url, safe='')}"
-    try:
-        async with session_scope(timeout=TIMEOUT, session=get_session()) as session:
-            async with session.get(oembed_url) as resp:
-                if resp.status != 200:
-                    return None
-                data = await resp.json()
-    except aiohttp.ClientError as e:
-        logger.debug("Spotify oEmbed fetch failed for %s: %s", url, e)
+    data = await _fetch_spotify_oembed_json(url)
+    if data is None:
         return None
     title = data.get("title")
     if not title or not isinstance(title, str):

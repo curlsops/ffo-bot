@@ -3,6 +3,7 @@ from dataclasses import dataclass
 from typing import TYPE_CHECKING, Any, cast
 
 from bot.services.mojang import get_profile, get_profile_by_uuid
+from bot.utils.telemetry import trace_span
 from config.constants import Constants
 
 if TYPE_CHECKING:
@@ -220,6 +221,24 @@ async def remove_from_cache(
 
 
 async def sync_from_rcon(
+    db_pool,
+    server_id: int,
+    rcon_client,
+    fetch_uuid=None,
+    batch_fetch=None,
+    cache: "InMemoryCache | None" = None,
+) -> SyncFromRconResult:
+    with trace_span(
+        "whitelist.sync_from_rcon",
+        feature="whitelist",
+        attributes={"discord.guild_id": str(server_id)},
+    ):
+        return await _sync_from_rcon_impl(
+            db_pool, server_id, rcon_client, fetch_uuid, batch_fetch, cache
+        )
+
+
+async def _sync_from_rcon_impl(
     db_pool,
     server_id: int,
     rcon_client,

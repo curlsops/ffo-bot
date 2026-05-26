@@ -6,6 +6,7 @@ from discord.ext import commands
 
 from bot.auth.command_helpers import require_admin, send_error
 from bot.utils.autocomplete import cached_autocomplete
+from bot.utils.log_context import log_command_start
 from bot.utils.pagination import EmbedPaginatedView, paginate_by_char_limit
 from config.constants import Constants
 
@@ -90,6 +91,7 @@ class FAQGroup(app_commands.Group):
         topic: str | None = None,
     ):
         await interaction.response.defer(ephemeral=True)
+        log_command_start(logger, "faq", "faq list", interaction)
         if not interaction.guild_id:
             return
 
@@ -168,6 +170,7 @@ class FAQGroup(app_commands.Group):
         question: str,
     ):
         await interaction.response.defer(ephemeral=True)
+        log_command_start(logger, "faq", "faq submit", interaction)
         if not interaction.guild_id:
             return
         if not self.cog.bot.settings.feature_faq_submissions:
@@ -221,6 +224,7 @@ class FAQGroup(app_commands.Group):
         answer: str,
     ):
         await interaction.response.defer(ephemeral=True)
+        log_command_start(logger, "faq", "faq add", interaction)
         if not await require_admin(interaction, "faq add", self.cog.bot):
             return
 
@@ -288,6 +292,7 @@ class FAQGroup(app_commands.Group):
         answer: str | None = None,
     ):
         await interaction.response.defer(ephemeral=True)
+        log_command_start(logger, "faq", "faq edit", interaction)
         if not await require_admin(interaction, "faq edit", self.cog.bot):
             return
 
@@ -347,6 +352,7 @@ class FAQGroup(app_commands.Group):
     @app_commands.default_permissions(administrator=True)
     async def submissions_cmd(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
+        log_command_start(logger, "faq", "faq submissions", interaction)
         if not await require_admin(interaction, "faq submissions", self.cog.bot):
             return
         try:
@@ -392,6 +398,7 @@ class FAQGroup(app_commands.Group):
         topic: str,
     ):
         await interaction.response.defer(ephemeral=True)
+        log_command_start(logger, "faq", "faq delete", interaction)
         if not await require_admin(interaction, "faq delete", self.cog.bot):
             return
 

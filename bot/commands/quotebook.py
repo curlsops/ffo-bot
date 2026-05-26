@@ -10,6 +10,7 @@ from discord.ext import commands
 from bot.auth.command_helpers import require_admin, send_error
 from bot.utils.autocomplete import cached_autocomplete
 from bot.utils.discord_helpers import get_or_fetch_channel
+from bot.utils.log_context import log_command_start
 from bot.utils.pagination import ListPaginatedView
 from bot.utils.quotebook_channel import get_quotebook_channel_id, set_quotebook_channel
 from config.constants import Constants
@@ -161,6 +162,7 @@ class QuoteGroup(app_commands.Group):
         attribution: str | None = None,
     ):
         await interaction.response.defer(ephemeral=True)
+        log_command_start(logger, "quotebook", "quote submit", interaction)
         if not interaction.guild_id:
             return
 
@@ -203,6 +205,7 @@ class QuoteGroup(app_commands.Group):
     @app_commands.default_permissions(administrator=True)
     async def list_cmd(self, interaction: discord.Interaction):
         await interaction.response.defer(ephemeral=True)
+        log_command_start(logger, "quotebook", "quote list", interaction)
         if not await require_admin(interaction, "quote list", self.cog.bot):
             return
 
@@ -245,6 +248,7 @@ class QuoteGroup(app_commands.Group):
     @app_commands.autocomplete(quote_id=_quote_id_approve_autocomplete)
     async def approve_cmd(self, interaction: discord.Interaction, quote_id: str):
         await interaction.response.defer(ephemeral=True)
+        log_command_start(logger, "quotebook", "quote approve", interaction)
         if not await require_admin(interaction, "quote approve", self.cog.bot):
             return
 
@@ -312,6 +316,7 @@ class QuoteGroup(app_commands.Group):
     @app_commands.autocomplete(quote_id=_quote_id_autocomplete)
     async def delete_cmd(self, interaction: discord.Interaction, quote_id: str):
         await interaction.response.defer(ephemeral=True)
+        log_command_start(logger, "quotebook", "quote delete", interaction)
         if not await require_admin(interaction, "quote delete", self.cog.bot):
             return
 
@@ -350,6 +355,7 @@ class QuoteGroup(app_commands.Group):
         auto_approve: bool = True,
     ):
         await interaction.response.defer(ephemeral=True)
+        log_command_start(logger, "quotebook", "quote import", interaction)
         if not await require_admin(interaction, "quote import", self.cog.bot):
             return
 
@@ -432,6 +438,7 @@ class QuoteGroup(app_commands.Group):
     @app_commands.command(name="random", description="Post a random approved quote")
     async def random_cmd(self, interaction: discord.Interaction):
         await interaction.response.defer()
+        log_command_start(logger, "quotebook", "quote random", interaction)
 
         try:
             cache_key = CACHE_QUOTE_APPROVED.format(server_id=interaction.guild_id)

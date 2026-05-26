@@ -49,7 +49,19 @@ async def main():
         print(f"Settings error: {e}", file=sys.stderr)
         sys.exit(1)
 
-    setup_logging(log_level=settings.log_level, log_format=settings.log_format)
+    setup_logging(
+        log_level=settings.log_level,
+        log_format=settings.log_format,
+        log_verbose_third_party=settings.log_verbose_third_party,
+        otel_tracing_enabled=settings.otel_tracing_enabled,
+    )
+    logger.info(
+        "Logging configured level=%s format=%s verbose_third_party=%s otel=%s",
+        settings.log_level,
+        settings.log_format,
+        settings.log_verbose_third_party,
+        settings.otel_tracing_enabled,
+    )
     configure_tracing(
         enabled=settings.otel_tracing_enabled,
         service_name=settings.otel_service_name,

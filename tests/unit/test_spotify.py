@@ -1,3 +1,4 @@
+import logging
 from contextlib import contextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -485,6 +486,43 @@ class TestSpotifyUrlToSearchQuery:
         assert result == "Fallback Title"
 
     @pytest.mark.asyncio
+    async def test_fetch_oembed_json_non_200(self):
+        resp = MagicMock(status=404)
+        session = MagicMock()
+        session.get = MagicMock(
+            return_value=MagicMock(
+                __aenter__=AsyncMock(return_value=resp),
+                __aexit__=AsyncMock(return_value=None),
+            )
+        )
+        assert await spotify_module._fetch_oembed_json(session, "http://oembed") is None
+
+    @pytest.mark.asyncio
+    async def test_fetch_oembed_json_success(self):
+        resp = MagicMock(status=200, json=AsyncMock(return_value={"title": "T"}))
+        session = MagicMock()
+        session.get = MagicMock(
+            return_value=MagicMock(
+                __aenter__=AsyncMock(return_value=resp),
+                __aexit__=AsyncMock(return_value=None),
+            )
+        )
+        data = await spotify_module._fetch_oembed_json(session, "http://oembed")
+        assert data == {"title": "T"}
+
+    @pytest.mark.asyncio
+    async def test_fetch_oembed_json_non_dict_payload(self):
+        resp = MagicMock(status=200, json=AsyncMock(return_value="not-a-dict"))
+        session = MagicMock()
+        session.get = MagicMock(
+            return_value=MagicMock(
+                __aenter__=AsyncMock(return_value=resp),
+                __aexit__=AsyncMock(return_value=None),
+            )
+        )
+        assert await spotify_module._fetch_oembed_json(session, "http://oembed") is None
+
+    @pytest.mark.asyncio
     async def test_oembed_non_200_returns_none(self):
         resp = MagicMock(status=404)
         session = MagicMock()
@@ -536,6 +574,66 @@ class TestSpotifyUrlToSearchQuery:
             with patch.object(spotify_module, "_sync_track_query", return_value=None):
                 with _patch_client_session(raise_on_enter=aiohttp.ClientError("timeout")):
                     assert await spotify_url_to_search_query(SPOTIFY_TRACK_URL) is None
+
+    @pytest.mark.asyncio
+    async def test_oembed_session_scope_client_error(self):
+        with _patch_run_spotapi():
+            with patch.object(spotify_module, "_sync_track_query", return_value=None):
+                with patch(
+                    "bot.services.spotify.session_scope",
+                    side_effect=aiohttp.ClientError("network"),
+                ):
+                    assert await spotify_url_to_search_query(SPOTIFY_TRACK_URL) is None
+
+    @pytest.mark.asyncio
+    async def test_fetch_oembed_json_non_200(self):
+        resp = MagicMock(status=500)
+        session = MagicMock()
+        session.get = MagicMock(
+            return_value=MagicMock(
+                __aenter__=AsyncMock(return_value=resp),
+                __aexit__=AsyncMock(return_value=None),
+            )
+        )
+        assert await spotify_module._fetch_oembed_json(session, "http://x") is None
+
+    @pytest.mark.asyncio
+    async def test_fetch_oembed_json_success(self):
+        resp = MagicMock(status=200, json=AsyncMock(return_value={"title": "T"}))
+        session = MagicMock()
+        session.get = MagicMock(
+            return_value=MagicMock(
+                __aenter__=AsyncMock(return_value=resp),
+                __aexit__=AsyncMock(return_value=None),
+            )
+        )
+        assert await spotify_module._fetch_oembed_json(session, "http://x") == {"title": "T"}
+
+    @pytest.mark.asyncio
+    async def test_oembed_get_raises_client_error(self):
+        session = MagicMock()
+        session.get = MagicMock(side_effect=aiohttp.ClientError("get failed"))
+        with _patch_run_spotapi():
+            with patch.object(spotify_module, "_sync_track_query", return_value=None):
+                with _patch_client_session(session):
+                    assert await spotify_url_to_search_query(SPOTIFY_TRACK_URL) is None
+
+    @pytest.mark.asyncio
+    async def test_oembed_logs_debug_before_fetch(self, caplog):
+        resp = MagicMock(status=200, json=AsyncMock(return_value={"title": SPOTIFY_TRACK_TITLE}))
+        session = MagicMock()
+        session.get = MagicMock(
+            return_value=MagicMock(
+                __aenter__=AsyncMock(return_value=resp),
+                __aexit__=AsyncMock(return_value=None),
+            )
+        )
+        with _patch_run_spotapi():
+            with patch.object(spotify_module, "_sync_track_query", return_value=None):
+                with _patch_client_session(session):
+                    with caplog.at_level(logging.DEBUG, logger="bot.services.spotify"):
+                        await spotify_url_to_search_query(SPOTIFY_TRACK_URL)
+        assert any("oembed fetch" in r.message for r in caplog.records)
 
 
 class TestSpotifyCatalogQueries:

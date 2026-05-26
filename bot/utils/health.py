@@ -8,6 +8,7 @@ import nacl.signing
 from aiohttp import web
 
 from bot.utils.metrics import generate_metrics_response
+from bot.utils.telemetry import trace_span
 
 logger = logging.getLogger(__name__)
 
@@ -59,12 +60,13 @@ class HealthCheckServer:
             return web.Response(status=503, text="Discord not connected")
         if not self.bot.db_pool:
             return web.Response(status=503, text="Database not initialized")
-        try:
-            async with self.bot.db_pool.acquire() as conn:
-                await conn.fetchval("SELECT 1")
-        except Exception as e:
-            logger.warning("readiness check failed: %s", e)
-            return web.Response(status=503, text="Database unavailable")
+        with trace_span("health.readiness", feature="health"):
+            try:
+                async with self.bot.db_pool.acquire() as conn:
+                    await conn.fetchval("SELECT 1")
+            except Exception as e:
+                logger.warning("readiness check failed: %s", e)
+                return web.Response(status=503, text="Database unavailable")
         return web.Response(status=200, text="Ready")
 
     async def metrics(self, request):
@@ -86,28 +88,29 @@ class HealthCheckServer:
         )
 
     async def interactions(self, request: web.Request) -> web.Response:
-        if request.method != "POST":
-            return web.Response(status=405)
-        if not self.public_key:
-            return web.Response(status=501, text="Interactions endpoint not configured")
-        signature = request.headers.get("X-Signature-Ed25519")
-        timestamp = request.headers.get("X-Signature-Timestamp")
-        if not signature or not timestamp:
-            return web.Response(status=401, text="Missing signature headers")
-        body = await request.read()
-        if not _verify_discord_signature(body, signature, timestamp, self.public_key):
-            return web.Response(status=401, text="Invalid request signature")
-        try:
-            body_text = body.decode("utf-8")
-        except UnicodeDecodeError:
-            return web.Response(status=400, text="Invalid encoding")
-        try:
-            data = json.loads(body_text)
-        except json.JSONDecodeError:
-            return web.Response(status=400, text="Invalid JSON")
-        if data.get("type") == 1:
-            return web.json_response({"type": 1})
-        return web.Response(status=501, text="Interaction types beyond PING not yet supported")
+        with trace_span("health.interactions", feature="health"):
+            if request.method != "POST":
+                return web.Response(status=405)
+            if not self.public_key:
+                return web.Response(status=501, text="Interactions endpoint not configured")
+            signature = request.headers.get("X-Signature-Ed25519")
+            timestamp = request.headers.get("X-Signature-Timestamp")
+            if not signature or not timestamp:
+                return web.Response(status=401, text="Missing signature headers")
+            body = await request.read()
+            if not _verify_discord_signature(body, signature, timestamp, self.public_key):
+                return web.Response(status=401, text="Invalid request signature")
+            try:
+                body_text = body.decode("utf-8")
+            except UnicodeDecodeError:
+                return web.Response(status=400, text="Invalid encoding")
+            try:
+                data = json.loads(body_text)
+            except json.JSONDecodeError:
+                return web.Response(status=400, text="Invalid JSON")
+            if data.get("type") == 1:
+                return web.json_response({"type": 1})
+            return web.Response(status=501, text="Interaction types beyond PING not yet supported")
 
     async def start(self):
         if self.public_key:

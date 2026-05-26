@@ -73,8 +73,18 @@ class Settings(BaseSettings):
     rate_limit_user_capacity: int = Field(default=10, description="User rate limit capacity")
     rate_limit_server_capacity: int = Field(default=100, description="Server rate limit capacity")
 
-    log_level: str = Field(default="INFO", description="Log level")
+    log_level: str = Field(
+        default="INFO",
+        description="Log level (DEBUG enables bot.* at DEBUG; third-party verbose when LOG_VERBOSE_THIRD_PARTY unset)",
+    )
     log_format: str = Field(default="json", description="Log format (json or text)")
+    log_verbose_third_party: bool | None = Field(
+        default=None,
+        description=(
+            "Verbose discord.py, mafic, and aiohttp logs. "
+            "Default True when LOG_LEVEL=DEBUG. asyncpg stays INFO at DEBUG (query noise)."
+        ),
+    )
 
     otel_tracing_enabled: bool = Field(
         default=False,

@@ -10,13 +10,18 @@ from opentelemetry import trace
 from bot.commands.whitelist import WHITELIST_APPROVE_EMOJI, WHITELIST_REJECT_EMOJI
 from bot.processors.unit_converter import detect_and_convert
 from bot.services.mojang import get_profile
+from bot.utils.log_context import log_debug
 from bot.utils.pagination import truncate_for_discord
 from bot.utils.user_preferences import OPT_OUT_CACHE_KEY
 from bot.utils.whitelist_channel import get_whitelist_channel_id
 from config.constants import Constants
 
 logger = logging.getLogger(__name__)
-_message_tracer = trace.get_tracer(__name__)
+
+
+def _message_tracer():
+    return trace.get_tracer(__name__)
+
 
 MOJANG_CACHE_TTL = 300
 MOJANG_CACHE_KEY = "mojang:profile:{username}"
@@ -39,9 +44,20 @@ class MessageHandler(commands.Cog):
             self.bot._message_handler_tasks.add(task)
         try:
             if getattr(self.bot.settings, "otel_trace_discord_messages", False):
-                with _message_tracer.start_as_current_span("discord.message") as span:
+                with _message_tracer().start_as_current_span("discord.message") as span:
                     span.set_attribute("discord.guild_id", str(message.guild.id))
                     span.set_attribute("discord.channel_id", str(message.channel.id))
+                    log_debug(
+                        logger,
+                        "discord.message handle guild=%s channel=%s message=%s author=%s",
+                        message.guild.id,
+                        message.channel.id,
+                        message.id,
+                        message.author.id,
+                        feature="messages",
+                        guild_id=message.guild.id,
+                        channel_id=message.channel.id,
+                    )
                     await self._handle_message(message)
             else:
                 await self._handle_message(message)
@@ -87,9 +103,19 @@ class MessageHandler(commands.Cog):
             self.bot.metrics.messages_processed.labels(server_id=str(after.guild.id)).inc()
 
         if getattr(self.bot.settings, "otel_trace_discord_messages", False):
-            with _message_tracer.start_as_current_span("discord.message_edit") as span:
+            with _message_tracer().start_as_current_span("discord.message_edit") as span:
                 span.set_attribute("discord.guild_id", str(after.guild.id))
                 span.set_attribute("discord.channel_id", str(after.channel.id))
+                log_debug(
+                    logger,
+                    "discord.message_edit guild=%s channel=%s message=%s",
+                    after.guild.id,
+                    after.channel.id,
+                    after.id,
+                    feature="messages",
+                    guild_id=after.guild.id,
+                    channel_id=after.channel.id,
+                )
                 await self._process_phrase_matching_edit(after)
         else:
             await self._process_phrase_matching_edit(after)
