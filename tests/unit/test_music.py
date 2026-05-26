@@ -37,6 +37,7 @@ from bot.commands.music import (
     _music_lazy_prefetch_worker,
     _other_members_in_channel,
     _play_next,
+    _playlist_intended_track_count,
     _pop_queue_index,
     _resolve_url_tracks,
     _ResumeView,
@@ -209,6 +210,7 @@ class TestMusicTidalResolve:
         assert r.lazy_tail is not None
         assert r.lazy_tail.search_queries == ("B - Two",)
         assert r.lazy_tail.search_type == SearchType.YOUTUBE
+        assert r.lazy_tail.catalog_size == 2
 
     @pytest.mark.asyncio
     async def test_resolve_tidal_single_query_no_lazy_tail(self, cog):
@@ -257,6 +259,7 @@ class TestMusicSpotifyResolve:
         assert r.lazy_tail is not None
         assert r.lazy_tail.search_queries == ("Artist - B",)
         assert r.lazy_tail.search_type == SearchType.YOUTUBE
+        assert r.lazy_tail.catalog_size == 2
 
     @pytest.mark.asyncio
     async def test_resolve_spotify_artist_catalog(self, cog):
@@ -303,6 +306,7 @@ class TestMusicSpotifyResolve:
                 )
         assert r.tracks == [first]
         assert len(r.lazy_tail.search_queries) == YOUTUBE_PLAYLIST_CATALOG_MAX - 1
+        assert r.lazy_tail.catalog_size == YOUTUBE_PLAYLIST_CATALOG_MAX
 
     @pytest.mark.asyncio
     async def test_resolve_spotify_playlist_unresolved_when_catalog_empty(self, cog):
@@ -527,14 +531,35 @@ class TestMusicLazyHelpers:
                         cog.music_group, i, "https://open.spotify.com/playlist/x"
                     )
         desc = i.followup.send.call_args[1]["embed"].description or ""
+        assert "Added 2 tracks at #1–#2." in desc
         assert "more track" not in desc.lower() and "load into" not in desc.lower()
         sched.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_play_lazy_while_playing_reports_catalog_size(self, cog):
+        t1 = MagicMock(title="First")
+        queue = [MagicMock(title=f"Q{n}") for n in range(48)]
+        i, player = _play_ctx(cog, tracks=[t1], current=MagicMock(title="Now"), queue=queue)
+        tail = MusicLazyTail(catalog_size=2000, search_type=SearchType.YOUTUBE)
+        ru = ResolvedUrl([t1], True, None, None, tail)
+        with patch("bot.commands.music._resolve_url_tracks", AsyncMock(return_value=ru)):
+            with patch("bot.commands.music._schedule_music_lazy_prefetch", MagicMock()):
+                with _patch_player():
+                    await cog.music_group.play.callback(
+                        cog.music_group, i, "https://open.spotify.com/playlist/big"
+                    )
+        desc = i.followup.send.call_args[1]["embed"].description or ""
+        assert desc == "Added 2000 tracks at #49–#2048."
 
     @pytest.mark.asyncio
     async def test_play_lazy_idle_schedules_prefetch_without_extra_copy(self, cog):
         t1 = MagicMock(title="Only")
         i, player = _play_ctx(cog, tracks=[t1], current=None)
-        tail = MusicLazyTail(search_queries=("tail",), search_type=SearchType.YOUTUBE)
+        tail = MusicLazyTail(
+            search_queries=("tail",),
+            search_type=SearchType.YOUTUBE,
+            catalog_size=500,
+        )
         ru = ResolvedUrl([t1], True, None, None, tail)
         with patch("bot.commands.music._resolve_url_tracks", AsyncMock(return_value=ru)):
             with patch("bot.commands.music._schedule_music_lazy_prefetch", MagicMock()) as sched:
@@ -543,8 +568,26 @@ class TestMusicLazyHelpers:
                         cog.music_group, i, "https://open.spotify.com/playlist/x"
                     )
         desc = i.followup.send.call_args[1]["embed"].description or ""
+        assert "+499 queued" in desc
         assert "more track" not in desc.lower() and "load into" not in desc.lower()
         sched.assert_called_once()
+
+
+class TestPlaylistIntendedCount:
+    def test_count_without_lazy_tail(self):
+        tracks = [MagicMock(), MagicMock()]
+        assert _playlist_intended_track_count(tracks, None) == 2
+
+    def test_count_uses_catalog_size_when_set(self):
+        tail = MusicLazyTail(search_queries=("a",), catalog_size=2000)
+        assert _playlist_intended_track_count([MagicMock()], tail) == 2000
+
+    def test_count_sums_tail_when_no_catalog_size(self):
+        tail = MusicLazyTail(
+            search_queries=("a", "b"),
+            preloaded_tracks=(MagicMock(),),
+        )
+        assert _playlist_intended_track_count([MagicMock()], tail) == 4
 
 
 class TestFormatDuration:
@@ -1341,8 +1384,9 @@ class TestMusicPlay:
         assert list(cog.bot._music_queues[GUILD_ID]) == [t1]
         tail = sch.call_args[0][3]
         assert tail.preloaded_tracks == (t2,)
-        desc = (i.followup.send.call_args[1]["embed"].description or "").lower()
-        assert "added" in desc and "more track" not in desc and "load into" not in desc
+        assert tail.catalog_size == 2
+        desc = i.followup.send.call_args[1]["embed"].description or ""
+        assert desc == "Added 2 tracks at #1–#2."
 
     @pytest.mark.asyncio
     async def test_play_youtube_playlist_prefix_size(self, cog):
@@ -1366,6 +1410,12 @@ class TestMusicPlay:
         tail = sch.call_args[0][3]
         assert len(tail.preloaded_tracks) == YOUTUBE_PLAYLIST_RESOLVE_SAMPLE - 1
         assert tail.preloaded_tracks[0] is many[1]
+        assert tail.catalog_size == YOUTUBE_PLAYLIST_RESOLVE_SAMPLE + 1
+        desc = i.followup.send.call_args[1]["embed"].description or ""
+        assert (
+            desc
+            == f"Added {YOUTUBE_PLAYLIST_RESOLVE_SAMPLE + 1} tracks at #1–#{YOUTUBE_PLAYLIST_RESOLVE_SAMPLE + 1}."
+        )
 
     @pytest.mark.asyncio
     async def test_play_youtube_playlist_catalog_cap_before_prefix(self, cog):
@@ -1387,6 +1437,12 @@ class TestMusicPlay:
         tail = sch.call_args[0][3]
         assert len(tail.preloaded_tracks) == YOUTUBE_PLAYLIST_RESOLVE_SAMPLE - 1
         assert tail.preloaded_tracks[0] is over_cap[1]
+        assert tail.catalog_size == YOUTUBE_PLAYLIST_CATALOG_MAX
+        desc = i.followup.send.call_args[1]["embed"].description or ""
+        assert (
+            desc
+            == f"Added {YOUTUBE_PLAYLIST_CATALOG_MAX} tracks at #1–#{YOUTUBE_PLAYLIST_CATALOG_MAX}."
+        )
 
     @pytest.mark.asyncio
     async def test_play_idle_two_pre_resolved_tracks_queues_second(self, cog):
