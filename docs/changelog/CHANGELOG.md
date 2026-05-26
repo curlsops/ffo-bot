@@ -1,5 +1,42 @@
 # Changelog
 
+## [6.0.0](https://github.com/curlsops/ffo-bot/compare/v5.0.0...v6.0.0) (2026-05-26)
+
+
+### ⚠ BREAKING CHANGES
+
+* **deps:** Update actions/upload-pages-artifact action ( v3 ➔ v5.0.0 )
+* **deps:** Update actions/setup-python action ( v5 ➔ v6.2.0 )
+* **deps:** Update actions/checkout action ( v4 ➔ v6.0.2 )
+* **deps:** Update actions/cache action ( v4 ➔ v5.0.5 )
+* **python:** Update dependency zipp ( 3.23.1 ➔ 4.1.0 )
+
+### Features
+
+* **deps:** Update actions/cache action ( v4 ➔ v5.0.5 ) ([3a466cc](https://github.com/curlsops/ffo-bot/commit/3a466ccf74d0482fac27ac6197cbf2e9669ec1f3))
+* **deps:** Update actions/checkout action ( v4 ➔ v6.0.2 ) ([d40d541](https://github.com/curlsops/ffo-bot/commit/d40d541a179f292995a3cc83de9131079efd4451))
+* **deps:** Update actions/setup-python action ( v5 ➔ v6.2.0 ) ([76507a0](https://github.com/curlsops/ffo-bot/commit/76507a01c8579f587357bae478f7244d5c6a2e99))
+* **deps:** Update actions/upload-pages-artifact action ( v3 ➔ v5.0.0 ) ([4a9df86](https://github.com/curlsops/ffo-bot/commit/4a9df86bd23bb88508ad93cb3590ef68ab81a02e))
+* **pre-commit:** update hook psf/black ( 26.3.1 ➔ 26.5.1 ) ([#239](https://github.com/curlsops/ffo-bot/issues/239)) ([63d363d](https://github.com/curlsops/ffo-bot/commit/63d363d429876bb16c1aeea06b1f63e1221c644a))
+* **python:** update dependency black ( 26.3.1 ➔ 26.5.1 ) ([#240](https://github.com/curlsops/ffo-bot/issues/240)) ([8c3603a](https://github.com/curlsops/ffo-bot/commit/8c3603a36a3fc69b0f3b8894297eaf12703d2d6c))
+* **python:** Update dependency zipp ( 3.23.1 ➔ 4.1.0 ) ([e228dda](https://github.com/curlsops/ffo-bot/commit/e228ddab035d6953a34b819da80dde0df633f7e4))
+* **spotify:** SpotAPI catalog + docs ([d8f89d4](https://github.com/curlsops/ffo-bot/commit/d8f89d4be2658dbb7fbe4a5a180e05ee623ea8fd))
+* **spotify:** use SpotAPI public catalog for URLs ([7306967](https://github.com/curlsops/ffo-bot/commit/7306967a6db19a8577db1c03c00f1b65163c0b8e))
+* **telemetry:** add log context, verbose logging, and OTEL spans ([8f74cd1](https://github.com/curlsops/ffo-bot/commit/8f74cd1ccf2c10266ffe3e957cf9b661cadb7833))
+
+
+### Bug Fixes
+
+* **ci:** add gcompat for SpotAPI tls_client on Alpine ([5503122](https://github.com/curlsops/ffo-bot/commit/5503122df4047c63fde2704cc09b9f6155a3bf4a))
+* **music:** show full playlist track count in play feedback ([ac79040](https://github.com/curlsops/ffo-bot/commit/ac790404772c3214a73f8046c2278e794ac2c6a1))
+* **python:** update dependency types-aiofiles ( 25.1.0.20260508 ➔ 25.1.0.20260518 ) ([#237](https://github.com/curlsops/ffo-bot/issues/237)) ([89ccc47](https://github.com/curlsops/ffo-bot/commit/89ccc47be373349dddbe22481a94a4d5e6ea3d3a))
+* **python:** update dependency types-python-dateutil ( 2.9.0.20260508 ➔ 2.9.0.20260518 ) ([#238](https://github.com/curlsops/ffo-bot/issues/238)) ([34874d7](https://github.com/curlsops/ffo-bot/commit/34874d7b9abd4a339999f405fa85e9a151d91f21))
+* **python:** update opentelemetry-python ([#246](https://github.com/curlsops/ffo-bot/issues/246)) ([7a7de82](https://github.com/curlsops/ffo-bot/commit/7a7de828a76d49128d76ad97fac19c8c06426568))
+* **spotify:** drop unused random test import ([db22f6d](https://github.com/curlsops/ffo-bot/commit/db22f6dcd773c7ece6c8a22bc33c27f4f5c70bdf))
+* **spotify:** handle tls_client.cffi without __file__ in tests ([947fc9f](https://github.com/curlsops/ffo-bot/commit/947fc9f8d617e2409ea44a0e7912d23db5400094))
+* **spotify:** prevent SpotAPI SIGSEGV on Debian slim ([3a484f9](https://github.com/curlsops/ffo-bot/commit/3a484f9cf8842b996d20dfcfaebce65a1275bca6))
+* **voice:** add davey and harden Lavalink voice on Alpine ([e93686c](https://github.com/curlsops/ffo-bot/commit/e93686c932605585f80a627d7b8e48fb2bdf18ab))
+
 ## [4.2.1](https://github.com/curlsops/ffo-bot/compare/v4.2.0...v4.2.1) (2026-04-14)
 
 
