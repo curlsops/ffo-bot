@@ -7,8 +7,8 @@ from unittest.mock import AsyncMock, MagicMock, patch
 from urllib.parse import urlparse
 
 import pytest
-from mafic import EndReason, Playlist, SearchType
-from mafic.errors import PlayerNotConnected, TrackLoadException
+from mafic import EndReason, SearchType
+from mafic.errors import PlayerNotConnected
 
 from bot.commands.music import (
     CONNECTION_FAILED_MSG,
@@ -25,7 +25,6 @@ from bot.commands.music import (
     _clear_queue,
     _ensure_player,
     _fetch_one_track,
-    _fetch_one_track_spotify,
     _fetch_playlist_tracks,
     _format_duration,
     _get_leave_tasks,
@@ -34,7 +33,6 @@ from bot.commands.music import (
     _is_spotify_url,
     _is_tidal_url,
     _is_youtube_url,
-    _load_tracks_from_lavalink_identifier,
     _music_lazy_prefetch_tasks,
     _music_lazy_prefetch_worker,
     _other_members_in_channel,
@@ -180,75 +178,90 @@ class TestMusicTidalResolve:
 
 class TestMusicSpotifyResolve:
     @pytest.mark.asyncio
-    async def test_resolve_spotify_native_returns_tracks(self, cog):
-        p = MagicMock()
-        tr = MagicMock()
-        with patch(
-            "bot.commands.music._load_tracks_from_lavalink_identifier", AsyncMock(return_value=[tr])
-        ):
-            r = await _resolve_url_tracks(
-                p, "https://open.spotify.com/playlist/7soPh0TWD5LFOt7doETqNq", cog.bot
-            )
-        assert r.tracks == [tr] and r.lazy_tail is None and r.err is None
-
-    @pytest.mark.asyncio
-    async def test_resolve_spotify_native_multi_lazy_preloads(self, cog):
-        p = MagicMock()
-        a, b, c = MagicMock(), MagicMock(), MagicMock()
-        with patch(
-            "bot.commands.music._load_tracks_from_lavalink_identifier",
-            AsyncMock(return_value=[a, b, c]),
-        ):
-            r = await _resolve_url_tracks(
-                p, "https://open.spotify.com/playlist/7soPh0TWD5LFOt7doETqNq", cog.bot
-            )
-        assert r.tracks == [a] and r.playlist
-        assert r.lazy_tail is not None
-        assert r.lazy_tail.preloaded_tracks == (b, c)
-        assert not r.lazy_tail.search_queries
-
-    @pytest.mark.asyncio
     async def test_resolve_spotify_lazy_tail_after_first_track(self, cog):
-        cog.bot.settings = SimpleNamespace(
-            feature_music=True, spotify_client_id="c", spotify_client_secret="s"
-        )
         p = MagicMock()
         first = MagicMock(title="First")
         with patch(
-            "bot.commands.music._load_tracks_from_lavalink_identifier", AsyncMock(return_value=None)
+            "bot.commands.music.spotify_playlist_catalog_queries",
+            AsyncMock(return_value=["Artist - A", "Artist - B"]),
         ):
-            with patch(
-                "bot.commands.music.spotify_playlist_catalog_queries",
-                AsyncMock(return_value=["Artist - A", "Artist - B"]),
-            ):
-                with patch(
-                    "bot.commands.music._fetch_one_track_spotify", AsyncMock(return_value=first)
-                ):
-                    r = await _resolve_url_tracks(
-                        p,
-                        "https://open.spotify.com/playlist/7soPh0TWD5LFOt7doETqNq",
-                        cog.bot,
-                    )
+            with patch("bot.commands.music._fetch_one_track", AsyncMock(return_value=first)):
+                r = await _resolve_url_tracks(
+                    p,
+                    "https://open.spotify.com/playlist/7soPh0TWD5LFOt7doETqNq",
+                    cog.bot,
+                )
         assert r.tracks == [first] and r.playlist
         assert r.lazy_tail is not None
         assert r.lazy_tail.search_queries == ("Artist - B",)
-        assert r.lazy_tail.search_type == SearchType.SPOTIFY_SEARCH
+        assert r.lazy_tail.search_type == SearchType.YOUTUBE
 
     @pytest.mark.asyncio
-    async def test_resolve_spotify_playlist_no_native_no_web_api_creds(self, cog):
-        cog.bot.settings = SimpleNamespace(
-            feature_music=True, spotify_client_id=None, spotify_client_secret=None
-        )
+    async def test_resolve_spotify_artist_catalog(self, cog):
         p = MagicMock()
+        first = MagicMock(title="Top")
         with patch(
-            "bot.commands.music._load_tracks_from_lavalink_identifier", AsyncMock(return_value=None)
+            "bot.commands.music.spotify_playlist_catalog_queries",
+            AsyncMock(return_value=None),
+        ):
+            with patch(
+                "bot.commands.music.spotify_album_catalog_queries",
+                AsyncMock(return_value=None),
+            ):
+                with patch(
+                    "bot.commands.music.spotify_artist_catalog_queries",
+                    AsyncMock(return_value=["Band - Hit", "Band - Two"]),
+                ):
+                    with patch(
+                        "bot.commands.music._fetch_one_track", AsyncMock(return_value=first)
+                    ):
+                        r = await _resolve_url_tracks(
+                            p,
+                            "https://open.spotify.com/artist/06HL4z0CvFAxyc27GXpf02",
+                            cog.bot,
+                        )
+        assert r.tracks == [first] and r.playlist
+        assert r.lazy_tail.search_queries == ("Band - Two",)
+        assert r.lazy_tail.search_type == SearchType.YOUTUBE
+
+    @pytest.mark.asyncio
+    async def test_resolve_spotify_catalog_truncated_at_max(self, cog):
+        p = MagicMock()
+        first = MagicMock(title="First")
+        over = [f"A - T{n}" for n in range(YOUTUBE_PLAYLIST_CATALOG_MAX + 3)]
+        with patch(
+            "bot.commands.music.spotify_playlist_catalog_queries",
+            AsyncMock(return_value=over),
+        ):
+            with patch("bot.commands.music._fetch_one_track", AsyncMock(return_value=first)):
+                r = await _resolve_url_tracks(
+                    p,
+                    "https://open.spotify.com/playlist/7soPh0TWD5LFOt7doETqNq",
+                    cog.bot,
+                )
+        assert r.tracks == [first]
+        assert len(r.lazy_tail.search_queries) == YOUTUBE_PLAYLIST_CATALOG_MAX - 1
+
+    @pytest.mark.asyncio
+    async def test_resolve_spotify_playlist_unresolved_when_catalog_empty(self, cog):
+        p = MagicMock()
+        with (
+            patch(
+                "bot.commands.music.spotify_playlist_catalog_queries",
+                AsyncMock(return_value=None),
+            ),
+            patch("bot.commands.music.spotify_album_catalog_queries", AsyncMock(return_value=None)),
+            patch(
+                "bot.commands.music.spotify_artist_catalog_queries",
+                AsyncMock(return_value=None),
+            ),
         ):
             r = await _resolve_url_tracks(
                 p,
                 "https://open.spotify.com/playlist/7soPh0TWD5LFOt7doETqNq?si=b14fe019fa6a47fa",
                 cog.bot,
             )
-        assert r.err and "SPOTIFY_CLIENT_ID" in r.err and "SPOTIFY_CLIENT_SECRET" in r.err
+        assert r.err and "Could not resolve Spotify" in r.err
 
 
 class TestMusicLazyHelpers:
@@ -289,7 +302,7 @@ class TestMusicLazyHelpers:
     @pytest.mark.asyncio
     async def test_lazy_prefetch_worker_cancelled_on_sleep(self, mock_bot):
         mock_bot._music_queues = {1: deque()}
-        tail = MusicLazyTail(search_queries=("a",), search_type=SearchType.SPOTIFY_SEARCH)
+        tail = MusicLazyTail(search_queries=("a",), search_type=SearchType.YOUTUBE)
         with patch(
             "bot.commands.music.asyncio.sleep", AsyncMock(side_effect=asyncio.CancelledError())
         ):
@@ -299,16 +312,16 @@ class TestMusicLazyHelpers:
     @pytest.mark.asyncio
     async def test_lazy_prefetch_worker_stops_when_queue_removed(self, mock_bot):
         mock_bot._music_queues = {}
-        tail = MusicLazyTail(search_queries=("q",), search_type=SearchType.SPOTIFY_SEARCH)
+        tail = MusicLazyTail(search_queries=("q",), search_type=SearchType.YOUTUBE)
         with patch("bot.commands.music.asyncio.sleep", new_callable=AsyncMock):
             await _music_lazy_prefetch_worker(mock_bot, 9, MagicMock(), tail)
 
     @pytest.mark.asyncio
     async def test_lazy_prefetch_worker_skips_when_resolve_returns_none(self, mock_bot):
         mock_bot._music_queues = {1: deque()}
-        tail = MusicLazyTail(search_queries=("q",), search_type=SearchType.SPOTIFY_SEARCH)
+        tail = MusicLazyTail(search_queries=("q",), search_type=SearchType.YOUTUBE)
         with patch("bot.commands.music.asyncio.sleep", new_callable=AsyncMock):
-            with patch("bot.commands.music._fetch_one_track_spotify", AsyncMock(return_value=None)):
+            with patch("bot.commands.music._fetch_one_track", AsyncMock(return_value=None)):
                 await _music_lazy_prefetch_worker(mock_bot, 1, MagicMock(), tail)
         assert len(_get_queue(mock_bot, 1)) == 0
 
@@ -318,9 +331,7 @@ class TestMusicLazyHelpers:
         tr = MagicMock()
         p = MagicMock()
         p.fetch_tracks = AsyncMock(return_value=[tr])
-        tail = MusicLazyTail(
-            search_queries=("artist - song",), search_type=SearchType.SPOTIFY_SEARCH
-        )
+        tail = MusicLazyTail(search_queries=("artist - song",), search_type=SearchType.YOUTUBE)
         with patch("bot.commands.music.asyncio.sleep", new_callable=AsyncMock):
             await _music_lazy_prefetch_worker(mock_bot, 1, p, tail)
         assert list(_get_queue(mock_bot, 1)) == [tr]
@@ -364,7 +375,7 @@ class TestMusicLazyHelpers:
 
         tmap = _music_lazy_prefetch_tasks(cast(Any, bot))
         tmap[4] = asyncio.create_task(slow())
-        tail = MusicLazyTail(search_queries=("only",), search_type=SearchType.SPOTIFY_SEARCH)
+        tail = MusicLazyTail(search_queries=("only",), search_type=SearchType.YOUTUBE)
         _schedule_music_lazy_prefetch(cast(Any, bot), 4, MagicMock(), tail)
         assert 4 in tmap
         tmap[4].cancel()
@@ -380,7 +391,7 @@ class TestMusicLazyHelpers:
         bot._music_queues = {6: deque()}
         p = MagicMock()
         p.fetch_tracks = AsyncMock(return_value=[MagicMock()])
-        tail = MusicLazyTail(search_queries=("one",), search_type=SearchType.SPOTIFY_SEARCH)
+        tail = MusicLazyTail(search_queries=("one",), search_type=SearchType.YOUTUBE)
         with patch("bot.commands.music.asyncio.sleep", new_callable=AsyncMock):
             _schedule_music_lazy_prefetch(cast(Any, bot), 6, p, tail)
         t = bot._music_lazy_prefetch_tasks[6]
@@ -401,120 +412,37 @@ class TestMusicLazyHelpers:
         assert 1 not in (mock_bot._music_queues or {})
 
     @pytest.mark.asyncio
-    async def test_load_tracks_from_lavalink_on_trackload(self):
-        p = MagicMock()
-        p.fetch_tracks = AsyncMock(
-            side_effect=TrackLoadException(message="m", severity="common", cause="c")
-        )
-        assert (
-            await _load_tracks_from_lavalink_identifier(p, "https://open.spotify.com/track/x")
-            is None
-        )
-
-    @pytest.mark.asyncio
-    async def test_load_tracks_from_lavalink_none_result(self):
-        p = MagicMock()
-        p.fetch_tracks = AsyncMock(return_value=None)
-        assert await _load_tracks_from_lavalink_identifier(p, "https://x") is None
-
-    @pytest.mark.asyncio
-    async def test_load_tracks_from_lavalink_empty_list(self):
-        p = MagicMock()
-        p.fetch_tracks = AsyncMock(return_value=[])
-        assert await _load_tracks_from_lavalink_identifier(p, "https://x") is None
-
-    @pytest.mark.asyncio
-    async def test_load_tracks_from_lavalink_empty_playlist(self):
-        p = MagicMock()
-        pl = Playlist(info={"name": "p", "selectedTrack": 0}, tracks=[], plugin_info={})
-        p.fetch_tracks = AsyncMock(return_value=pl)
-        assert await _load_tracks_from_lavalink_identifier(p, "https://x") is None
-
-    @pytest.mark.asyncio
-    async def test_load_tracks_from_lavalink_unknown_shape(self):
-        p = MagicMock()
-        p.fetch_tracks = AsyncMock(return_value=object())
-        assert await _load_tracks_from_lavalink_identifier(p, "https://x") is None
-
-    @pytest.mark.asyncio
-    async def test_fetch_one_track_spotify_on_trackload(self):
-        p = MagicMock()
-        p.fetch_tracks = AsyncMock(
-            side_effect=TrackLoadException(message="m", severity="common", cause="c")
-        )
-        assert await _fetch_one_track_spotify(p, "q") is None
-
-    @pytest.mark.asyncio
-    async def test_fetch_one_track_spotify_non_list_with_tracks(self):
-        t0 = MagicMock()
-        load = MagicMock(spec=["tracks"])
-        load.tracks = [t0]
-        p = MagicMock()
-        p.fetch_tracks = AsyncMock(return_value=load)
-        assert await _fetch_one_track_spotify(p, "q") is t0
-
-    @pytest.mark.asyncio
-    async def test_fetch_one_track_spotify_empty_list_returns_none(self):
-        p = MagicMock()
-        p.fetch_tracks = AsyncMock(return_value=[])
-        assert await _fetch_one_track_spotify(p, "q") is None
-
-    @pytest.mark.asyncio
-    async def test_fetch_one_track_spotify_unknown_result_returns_none(self):
-        p = MagicMock()
-        load = MagicMock(spec=["tracks"])
-        load.tracks = []
-        p.fetch_tracks = AsyncMock(return_value=load)
-        assert await _fetch_one_track_spotify(p, "q") is None
-
-    @pytest.mark.asyncio
     async def test_resolve_spotify_single_catalog_entry_no_lazy_tail(self, cog):
-        cog.bot.settings = SimpleNamespace(
-            feature_music=True, spotify_client_id="c", spotify_client_secret="s"
-        )
         p = MagicMock()
         only = MagicMock(title="Solo")
         with patch(
-            "bot.commands.music._load_tracks_from_lavalink_identifier", AsyncMock(return_value=None)
+            "bot.commands.music.spotify_playlist_catalog_queries",
+            AsyncMock(return_value=["Only Artist - Only Song"]),
         ):
-            with patch(
-                "bot.commands.music.spotify_playlist_catalog_queries",
-                AsyncMock(return_value=["Only Artist - Only Song"]),
-            ):
-                with patch(
-                    "bot.commands.music._fetch_one_track_spotify", AsyncMock(return_value=only)
-                ):
-                    r = await _resolve_url_tracks(
-                        p, "https://open.spotify.com/playlist/7soPh0TWD5LFOt7doETqNq", cog.bot
-                    )
+            with patch("bot.commands.music._fetch_one_track", AsyncMock(return_value=only)):
+                r = await _resolve_url_tracks(
+                    p, "https://open.spotify.com/playlist/7soPh0TWD5LFOt7doETqNq", cog.bot
+                )
         assert r.tracks == [only] and r.lazy_tail is None and not r.playlist
 
     @pytest.mark.asyncio
     async def test_resolve_spotify_first_track_unresolvable(self, cog):
-        cog.bot.settings = SimpleNamespace(
-            feature_music=True, spotify_client_id="c", spotify_client_secret="s"
-        )
         p = MagicMock()
         with patch(
-            "bot.commands.music._load_tracks_from_lavalink_identifier", AsyncMock(return_value=None)
+            "bot.commands.music.spotify_playlist_catalog_queries",
+            AsyncMock(return_value=["A - B"]),
         ):
-            with patch(
-                "bot.commands.music.spotify_playlist_catalog_queries",
-                AsyncMock(return_value=["A - B"]),
-            ):
-                with patch(
-                    "bot.commands.music._fetch_one_track_spotify", AsyncMock(return_value=None)
-                ):
-                    r = await _resolve_url_tracks(
-                        p, "https://open.spotify.com/playlist/7soPh0TWD5LFOt7doETqNq", cog.bot
-                    )
+            with patch("bot.commands.music._fetch_one_track", AsyncMock(return_value=None)):
+                r = await _resolve_url_tracks(
+                    p, "https://open.spotify.com/playlist/7soPh0TWD5LFOt7doETqNq", cog.bot
+                )
         assert r.err and "first track" in r.err.lower()
 
     @pytest.mark.asyncio
     async def test_play_lazy_while_playing_schedules_prefetch_without_extra_copy(self, cog):
         t1 = MagicMock(title="QueuedFirst")
         i, player = _play_ctx(cog, tracks=[t1], current=MagicMock(title="Now"))
-        tail = MusicLazyTail(search_queries=("tail-query",), search_type=SearchType.SPOTIFY_SEARCH)
+        tail = MusicLazyTail(search_queries=("tail-query",), search_type=SearchType.YOUTUBE)
         ru = ResolvedUrl([t1], True, None, None, tail)
         with patch("bot.commands.music._resolve_url_tracks", AsyncMock(return_value=ru)):
             with patch("bot.commands.music._schedule_music_lazy_prefetch", MagicMock()) as sched:
@@ -530,7 +458,7 @@ class TestMusicLazyHelpers:
     async def test_play_lazy_idle_schedules_prefetch_without_extra_copy(self, cog):
         t1 = MagicMock(title="Only")
         i, player = _play_ctx(cog, tracks=[t1], current=None)
-        tail = MusicLazyTail(search_queries=("tail",), search_type=SearchType.SPOTIFY_SEARCH)
+        tail = MusicLazyTail(search_queries=("tail",), search_type=SearchType.YOUTUBE)
         ru = ResolvedUrl([t1], True, None, None, tail)
         with patch("bot.commands.music._resolve_url_tracks", AsyncMock(return_value=ru)):
             with patch("bot.commands.music._schedule_music_lazy_prefetch", MagicMock()) as sched:
@@ -1095,22 +1023,10 @@ class TestMusicPlay:
     )
     async def test_play_url_resolved_to_youtube(self, cog, resolver, url, search_query, tracks):
         i, player = _play_ctx(cog, tracks=tracks)
-        spotify_native = (
-            patch(
-                "bot.commands.music._load_tracks_from_lavalink_identifier",
-                AsyncMock(return_value=None),
-            )
-            if resolver.startswith("spotify")
-            else nullcontext()
-        )
-        with spotify_native:
-            with patch(f"bot.commands.music.{resolver}", AsyncMock(return_value=search_query)):
-                with _patch_player():
-                    await cog.music_group.play.callback(cog.music_group, i, url)
-        expected = (
-            SearchType.SPOTIFY_SEARCH if resolver.startswith("spotify") else SearchType.YOUTUBE
-        )
-        player.fetch_tracks.assert_called_once_with(search_query, search_type=expected)
+        with patch(f"bot.commands.music.{resolver}", AsyncMock(return_value=search_query)):
+            with _patch_player():
+                await cog.music_group.play.callback(cog.music_group, i, url)
+        player.fetch_tracks.assert_called_once_with(search_query, search_type=SearchType.YOUTUBE)
         assert "Playing" in i.followup.send.call_args[1]["embed"].title
 
     @pytest.mark.asyncio
@@ -1142,16 +1058,7 @@ class TestMusicPlay:
     async def test_play_playlist_queues_tracks(self, cog, resolver, url, queries):
         t1, t2 = MagicMock(title="A"), MagicMock(title="B")
         i, player = _play_ctx(cog, fetch_side_effect=[[t1], [t2]])
-        spotify_native = (
-            patch(
-                "bot.commands.music._load_tracks_from_lavalink_identifier",
-                AsyncMock(return_value=None),
-            )
-            if resolver.startswith("spotify")
-            else nullcontext()
-        )
         with (
-            spotify_native,
             patch("bot.commands.music._schedule_music_lazy_prefetch", MagicMock()),
             patch(f"bot.commands.music.{resolver}", AsyncMock(return_value=queries)),
             _patch_player(),
@@ -1193,14 +1100,10 @@ class TestMusicPlay:
             "bot.commands.music.spotify_url_to_search_query",
             AsyncMock(return_value="Yuka Kitamura - Slave Knight Gael"),
         ):
-            with patch(
-                "bot.commands.music._load_tracks_from_lavalink_identifier",
-                AsyncMock(return_value=None),
-            ):
-                with _patch_player():
-                    await cog.music_group.play.callback(
-                        cog.music_group, i, "https://open.spotify.com/track/74m8PoL6GZulfVzeYS6W0C"
-                    )
+            with _patch_player():
+                await cog.music_group.play.callback(
+                    cog.music_group, i, "https://open.spotify.com/track/74m8PoL6GZulfVzeYS6W0C"
+                )
         player.play.assert_not_called()
         kw = i.followup.send.call_args[1]
         assert "Pick a track" in kw["embed"].title and kw.get("view") and kw["ephemeral"]
@@ -1235,14 +1138,10 @@ class TestMusicPlay:
             "bot.commands.music.spotify_url_to_search_query",
             AsyncMock(return_value="Suicide Silence - Unanswered"),
         ):
-            with patch(
-                "bot.commands.music._load_tracks_from_lavalink_identifier",
-                AsyncMock(return_value=None),
-            ):
-                with _patch_player():
-                    await cog.music_group.play.callback(
-                        cog.music_group, i, "https://open.spotify.com/track/4iV5W9uYEdYUVa79Axb7Rh"
-                    )
+            with _patch_player():
+                await cog.music_group.play.callback(
+                    cog.music_group, i, "https://open.spotify.com/track/4iV5W9uYEdYUVa79Axb7Rh"
+                )
         assert len(_get_queue(cog.bot, GUILD_ID)) == 0
         kw = i.followup.send.call_args[1]
         assert "Pick a track" in kw["embed"].title and kw.get("view")

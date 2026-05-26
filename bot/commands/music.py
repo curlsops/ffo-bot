@@ -9,15 +9,14 @@ from urllib.parse import urlparse
 import discord
 from discord import app_commands
 from discord.ext import commands
-from mafic import EndReason, Player, Playlist, SearchType, Track, TrackEndEvent
-from mafic.errors import PlayerNotConnected, TrackLoadException
+from mafic import EndReason, Player, SearchType, Track, TrackEndEvent
+from mafic.errors import PlayerNotConnected
 
 from bot.auth.command_helpers import require_admin
 from bot.auth.permissions import PermissionContext
 from bot.services.spotify import (
-    SPOTIFY_ALBUM_PATTERN,
-    SPOTIFY_PLAYLIST_PATTERN,
     spotify_album_catalog_queries,
+    spotify_artist_catalog_queries,
     spotify_playlist_catalog_queries,
     spotify_url_to_search_query,
 )
@@ -225,11 +224,7 @@ async def _music_lazy_prefetch_worker(
         if queues is None or guild_id not in queues:
             return
         queue = cast(deque[Track], queues[guild_id])
-        st = tail.search_type
-        if st == SearchType.SPOTIFY_SEARCH:
-            track = await _fetch_one_track_spotify(player, sq)
-        else:
-            track = await _fetch_one_track(player, sq)
+        track = await _fetch_one_track(player, sq)
         if track:
             queue.append(track)
 
@@ -253,37 +248,8 @@ def _schedule_music_lazy_prefetch(
     tmap[guild_id] = asyncio.create_task(_run())
 
 
-async def _load_tracks_from_lavalink_identifier(
-    player: Player, identifier: str
-) -> list[Track] | None:
-    try:
-        raw = await player.fetch_tracks(identifier, search_type=SearchType.SPOTIFY_SEARCH)
-    except TrackLoadException as e:
-        logger.debug("Lavalink Spotify load failed for %s: %s", identifier, e)
-        return None
-    if raw is None:
-        return None
-    if isinstance(raw, Playlist):
-        return raw.tracks if raw.tracks else None
-    if isinstance(raw, list):
-        return raw if raw else None
-    return None
-
-
 async def _fetch_one_track(player: Player, query: str) -> Track | None:
     result = await player.fetch_tracks(query, search_type=SearchType.YOUTUBE)
-    if result and isinstance(result, list) and result:
-        return result[0]
-    if result and not isinstance(result, list) and result.tracks:
-        return result.tracks[0]
-    return None
-
-
-async def _fetch_one_track_spotify(player: Player, query: str) -> Track | None:
-    try:
-        result = await player.fetch_tracks(query, search_type=SearchType.SPOTIFY_SEARCH)
-    except TrackLoadException:
-        return None
     if result and isinstance(result, list) and result:
         return result[0]
     if result and not isinstance(result, list) and result.tracks:
@@ -350,28 +316,20 @@ async def _resolve_url_tracks(player: Player, query: str, bot: "FFOBot") -> Reso
             )
         )
     if _is_spotify_url(query):
-        native = await _load_tracks_from_lavalink_identifier(player, query)
-        if native:
-            if len(native) <= 1:
-                return ResolvedUrl(native, False, None, None, None)
-            return ResolvedUrl(
-                [native[0]],
-                True,
-                None,
-                None,
-                MusicLazyTail(preloaded_tracks=tuple(native[1:])),
-            )
-        s = getattr(bot, "settings", None)
-        cid, csec = (
-            (getattr(s, "spotify_client_id", None), getattr(s, "spotify_client_secret", None))
-            if s
-            else (None, None)
-        )
-        catalog = await spotify_playlist_catalog_queries(query, cid, csec)
+        catalog = await spotify_playlist_catalog_queries(query)
         if not catalog:
-            catalog = await spotify_album_catalog_queries(query, cid, csec)
+            catalog = await spotify_album_catalog_queries(query)
+        if not catalog:
+            catalog = await spotify_artist_catalog_queries(query)
         if catalog:
-            first = await _fetch_one_track_spotify(player, catalog[0])
+            if len(catalog) > YOUTUBE_PLAYLIST_CATALOG_MAX:
+                logger.warning(
+                    "Spotify catalog truncated from %s to %s tracks",
+                    len(catalog),
+                    YOUTUBE_PLAYLIST_CATALOG_MAX,
+                )
+                catalog = catalog[:YOUTUBE_PLAYLIST_CATALOG_MAX]
+            first = await _fetch_one_track(player, catalog[0])
             if not first:
                 return ResolvedUrl(
                     None,
@@ -389,24 +347,13 @@ async def _resolve_url_tracks(player: Player, query: str, bot: "FFOBot") -> Reso
                     None,
                     MusicLazyTail(
                         search_queries=tuple(tail),
-                        search_type=SearchType.SPOTIFY_SEARCH,
+                        search_type=SearchType.YOUTUBE,
                     ),
                 )
             return ResolvedUrl([first], False, None, None, None)
         sq = await spotify_url_to_search_query(query)
         if sq:
             return ResolvedUrl(None, False, sq, None, None)
-        if (not cid or not csec) and (
-            SPOTIFY_PLAYLIST_PATTERN.search(query) or SPOTIFY_ALBUM_PATTERN.search(query)
-        ):
-            return ResolvedUrl(
-                None,
-                False,
-                None,
-                "Spotify playlist or album URLs need SPOTIFY_CLIENT_ID and SPOTIFY_CLIENT_SECRET "
-                "when Lavalink does not return tracks for the link. Set both env vars and restart the bot.",
-                None,
-            )
         return ResolvedUrl(
             None,
             False,
@@ -566,7 +513,7 @@ class MusicGroup(app_commands.Group):
         query=(
             "YouTube URL (incl. playlists). "
             "Tidal track/album/playlist/mix. "
-            "Spotify track/album/playlist (Web API credentials when the node has no native Spotify). "
+            "Spotify track/album/playlist/artist (public catalog via SpotAPI, YouTube playback). "
             "Or plain search text."
         ),
         force_next="Play next in queue (mod+ only)",
@@ -582,7 +529,6 @@ class MusicGroup(app_commands.Group):
             return
         player, ch = r
         bot = i.client
-        original_url = query
         is_url = query.startswith(("http://", "https://"))
         search_type = None if is_url else SearchType.YOUTUBE
         tracks = None
@@ -595,11 +541,7 @@ class MusicGroup(app_commands.Group):
                 return
             if ru.resolved_query:
                 query = ru.resolved_query
-                search_type = (
-                    SearchType.SPOTIFY_SEARCH
-                    if _is_spotify_url(original_url)
-                    else SearchType.YOUTUBE
-                )
+                search_type = SearchType.YOUTUBE
             tracks = ru.tracks
             playlist = ru.playlist
             lazy_tail = ru.lazy_tail

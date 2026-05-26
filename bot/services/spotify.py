@@ -1,25 +1,30 @@
+# SpotAPI (GPL-3.0) provides unauthenticated public Spotify catalog metadata.
 import asyncio
-import base64
 import logging
+import random
 import re
-import time
+from collections.abc import Callable
+from typing import Any, TypeVar
 from urllib.parse import quote
 
 import aiohttp
+from spotapi.album import PublicAlbum
+from spotapi.artist import Artist
+from spotapi.exceptions import AlbumError, ArtistError, PlaylistError, SongError
+from spotapi.playlist import PublicPlaylist
+from spotapi.song import Song
 
 from bot.utils.http_session import get_session, session_scope
 
 logger = logging.getLogger(__name__)
 
-SPOTIFY_OEMBED = "https://open.spotify.com/oembed"
-SPOTIFY_TOKEN_URL = "https://accounts.spotify.com/api/token"
-SPOTIFY_API_BASE = "https://api.spotify.com/v1"
-SPOTIFY_PLAYLIST_PAGE_SIZE = 50
-TIMEOUT = aiohttp.ClientTimeout(total=10)
+SPOTAPI_PAGE_SIZE = 100
+ARTIST_TRACK_POOL_TARGET = 100
+ARTIST_PLAY_COUNT = 20
+QUERY_MAX_LEN = 200
 
-_SPOTIFY_TOKEN_CACHE: tuple[str, float] | None = None
-_SPOTIFY_TOKEN_TTL = 3500
-_SPOTIFY_TOKEN_LOCK = asyncio.Lock()
+SPOTIFY_OEMBED = "https://open.spotify.com/oembed"
+TIMEOUT = aiohttp.ClientTimeout(total=10)
 
 SPOTIFY_TRACK_PATTERN = re.compile(
     r"https?://(?:open\.)?spotify\.com/track/([a-zA-Z0-9]+)",
@@ -33,13 +38,249 @@ SPOTIFY_ALBUM_PATTERN = re.compile(
     r"https?://(?:open\.)?spotify\.com/album/([a-zA-Z0-9]+)",
     re.IGNORECASE,
 )
+SPOTIFY_ARTIST_PATTERN = re.compile(
+    r"https?://(?:open\.)?spotify\.com/artist/([a-zA-Z0-9]+)",
+    re.IGNORECASE,
+)
+
+T = TypeVar("T")
+
+
+def _entry_to_search_query(title: str, artist: str | None) -> str:
+    title = title.strip()
+    if artist:
+        artist = artist.strip()
+        if artist:
+            return f"{artist} - {title}"[:QUERY_MAX_LEN]
+    return title[:QUERY_MAX_LEN]
+
+
+def _artist_names_from_block(artists_field: Any) -> list[str]:
+    if not isinstance(artists_field, dict):
+        return []
+    names: list[str] = []
+    for item in artists_field.get("items") or []:
+        if not isinstance(item, dict):
+            continue
+        profile = item.get("profile")
+        if isinstance(profile, dict):
+            name = profile.get("name")
+            if isinstance(name, str) and name.strip():
+                names.append(name.strip())
+    return names
+
+
+def _track_body_to_query(body: Any) -> str | None:
+    if not isinstance(body, dict):
+        return None
+    name = body.get("name")
+    if not isinstance(name, str) or not name.strip():
+        return None
+    artists = _artist_names_from_block(body.get("artists"))
+    if not artists:
+        artists = _artist_names_from_block(body.get("firstArtist"))
+    return _entry_to_search_query(name, artists[0] if artists else None)
+
+
+def _playlist_item_to_query(item: Any) -> str | None:
+    if not isinstance(item, dict):
+        return None
+    item_v2 = item.get("itemV2")
+    if not isinstance(item_v2, dict):
+        return None
+    return _track_body_to_query(item_v2.get("data"))
+
+
+def _wrapped_track_item_to_query(item: Any) -> str | None:
+    if not isinstance(item, dict):
+        return None
+    track = item.get("track")
+    if isinstance(track, dict):
+        return _track_body_to_query(track)
+    return _track_body_to_query(item)
+
+
+def _search_track_item_to_query(item: Any) -> str | None:
+    if not isinstance(item, dict):
+        return None
+    wrapped = item.get("item")
+    if isinstance(wrapped, dict):
+        return _track_body_to_query(wrapped.get("data"))
+    return None
+
+
+async def _run_spotapi(func: Callable[..., T], /, *args: Any, **kwargs: Any) -> T:
+    loop = asyncio.get_running_loop()
+    return await loop.run_in_executor(None, lambda: func(*args, **kwargs))
+
+
+def _sync_playlist_catalog(playlist_id: str) -> list[str] | None:
+    playlist = PublicPlaylist(playlist_id)
+    first = playlist.get_playlist_info(limit=SPOTAPI_PAGE_SIZE, offset=0)
+    content = first["data"]["playlistV2"]["content"]
+    total = int(content.get("totalCount") or 0)
+    queries: list[str] = []
+
+    def consume(items: Any) -> None:
+        if not isinstance(items, list):
+            return
+        for item in items:
+            q = _playlist_item_to_query(item)
+            if q:
+                queries.append(q)
+
+    consume(content.get("items"))
+    offset = SPOTAPI_PAGE_SIZE
+    while offset < total:
+        page = playlist.get_playlist_info(limit=SPOTAPI_PAGE_SIZE, offset=offset)
+        consume(page["data"]["playlistV2"]["content"].get("items"))
+        offset += SPOTAPI_PAGE_SIZE
+    return queries or None
+
+
+def _sync_album_catalog(album_id: str) -> list[str] | None:
+    album = PublicAlbum(album_id)
+    first = album.get_album_info(limit=SPOTAPI_PAGE_SIZE, offset=0)
+    tracks_v2 = first["data"]["albumUnion"]["tracksV2"]
+    total = int(tracks_v2.get("totalCount") or 0)
+    queries: list[str] = []
+
+    def consume(items: Any) -> None:
+        if not isinstance(items, list):
+            return
+        for item in items:
+            q = _wrapped_track_item_to_query(item)
+            if q:
+                queries.append(q)
+
+    consume(tracks_v2.get("items"))
+    offset = SPOTAPI_PAGE_SIZE
+    while offset < total:
+        page = album.get_album_info(limit=SPOTAPI_PAGE_SIZE, offset=offset)
+        consume(page["data"]["albumUnion"]["tracksV2"].get("items"))
+        offset += SPOTAPI_PAGE_SIZE
+    return queries or None
+
+
+def _sync_artist_catalog(artist_id: str) -> list[str] | None:
+    artist = Artist()
+    overview = artist.get_artist(artist_id)
+    artist_union = overview.get("data", {}).get("artistUnion") or {}
+    profile_raw = artist_union.get("profile")
+    profile = profile_raw if isinstance(profile_raw, dict) else {}
+    name_raw = profile.get("name")
+    artist_name = name_raw if isinstance(name_raw, str) else None
+
+    pool: list[str] = []
+    seen: set[str] = set()
+
+    def add_query(q: str | None) -> None:
+        if not q or q in seen:
+            return
+        seen.add(q)
+        pool.append(q)
+
+    top_items = ((artist_union.get("discography") or {}).get("topTracks") or {}).get("items") or []
+    for item in top_items:
+        add_query(_wrapped_track_item_to_query(item))
+        if len(pool) >= ARTIST_TRACK_POOL_TARGET:
+            break
+
+    if len(pool) < ARTIST_TRACK_POOL_TARGET and artist_name:
+        song = Song()
+        offset = 0
+        while len(pool) < ARTIST_TRACK_POOL_TARGET:
+            search = song.query_songs(artist_name, limit=SPOTAPI_PAGE_SIZE, offset=offset)
+            items = (
+                search.get("data", {}).get("searchV2", {}).get("tracksV2", {}).get("items") or []
+            )
+            if not items:
+                break
+            for item in items:
+                add_query(_search_track_item_to_query(item))
+                if len(pool) >= ARTIST_TRACK_POOL_TARGET:
+                    break
+            if len(items) < SPOTAPI_PAGE_SIZE:
+                break
+            offset += SPOTAPI_PAGE_SIZE
+
+    if not pool:
+        return None
+    count = min(ARTIST_PLAY_COUNT, len(pool))
+    return random.sample(pool, count)
+
+
+def _sync_track_query(track_id: str) -> str | None:
+    info = Song().get_track_info(track_id)
+    track_union = info.get("data", {}).get("trackUnion")
+    return _track_body_to_query(track_union)
+
+
+async def _spotify_catalog_from_url(
+    pattern: re.Pattern[str],
+    sync_fetch: Callable[[str], list[str] | None],
+    url: str,
+    *,
+    error_label: str,
+) -> list[str] | None:
+    match = pattern.search(url)
+    if not match:
+        return None
+    entity_id = match.group(1)
+    try:
+        return await _run_spotapi(sync_fetch, entity_id)
+    except (PlaylistError, AlbumError, ArtistError, SongError) as e:
+        logger.debug("SpotAPI %s fetch failed for %s: %s", error_label, url, e)
+        return None
+    except Exception as e:
+        logger.debug("SpotAPI %s fetch error for %s: %s", error_label, url, e)
+        return None
+
+
+async def spotify_playlist_catalog_queries(url: str) -> list[str] | None:
+    return await _spotify_catalog_from_url(
+        SPOTIFY_PLAYLIST_PATTERN, _sync_playlist_catalog, url, error_label="playlist"
+    )
+
+
+async def spotify_playlist_to_search_queries(url: str) -> list[str] | None:
+    return await spotify_playlist_catalog_queries(url)
+
+
+async def spotify_album_catalog_queries(url: str) -> list[str] | None:
+    return await _spotify_catalog_from_url(
+        SPOTIFY_ALBUM_PATTERN, _sync_album_catalog, url, error_label="album"
+    )
+
+
+async def spotify_album_to_search_queries(url: str) -> list[str] | None:
+    return await spotify_album_catalog_queries(url)
+
+
+async def spotify_artist_catalog_queries(url: str) -> list[str] | None:
+    return await _spotify_catalog_from_url(
+        SPOTIFY_ARTIST_PATTERN, _sync_artist_catalog, url, error_label="artist"
+    )
 
 
 async def spotify_url_to_search_query(url: str) -> str | None:
-    if SPOTIFY_PLAYLIST_PATTERN.search(url) or SPOTIFY_ALBUM_PATTERN.search(url):
+    if (
+        SPOTIFY_PLAYLIST_PATTERN.search(url)
+        or SPOTIFY_ALBUM_PATTERN.search(url)
+        or SPOTIFY_ARTIST_PATTERN.search(url)
+    ):
         return None
-    if not SPOTIFY_TRACK_PATTERN.search(url):
+    track_match = SPOTIFY_TRACK_PATTERN.search(url)
+    if not track_match:
         return None
+    track_id = track_match.group(1)
+    try:
+        query = await _run_spotapi(_sync_track_query, track_id)
+    except (SongError, Exception) as e:
+        logger.debug("SpotAPI track fetch failed for %s: %s", url, e)
+        query = None
+    if query:
+        return query
     oembed_url = f"{SPOTIFY_OEMBED}?url={quote(url, safe='')}"
     try:
         async with session_scope(timeout=TIMEOUT, session=get_session()) as session:
@@ -53,175 +294,5 @@ async def spotify_url_to_search_query(url: str) -> str | None:
     title = data.get("title")
     if not title or not isinstance(title, str):
         return None
-    title = title.strip()[:200]
+    title = title.strip()[:QUERY_MAX_LEN]
     return title or None
-
-
-async def _get_spotify_token(client_id: str, client_secret: str) -> str | None:
-    global _SPOTIFY_TOKEN_CACHE
-    now = time.monotonic()
-    if _SPOTIFY_TOKEN_CACHE and (now - _SPOTIFY_TOKEN_CACHE[1]) < _SPOTIFY_TOKEN_TTL:
-        return _SPOTIFY_TOKEN_CACHE[0]
-    async with _SPOTIFY_TOKEN_LOCK:
-        now = time.monotonic()
-        if _SPOTIFY_TOKEN_CACHE and (now - _SPOTIFY_TOKEN_CACHE[1]) < _SPOTIFY_TOKEN_TTL:
-            return _SPOTIFY_TOKEN_CACHE[0]
-        creds = base64.b64encode(f"{client_id}:{client_secret}".encode()).decode()
-        try:
-            async with session_scope(timeout=TIMEOUT, session=get_session()) as session:
-                async with session.post(
-                    SPOTIFY_TOKEN_URL,
-                    headers={
-                        "Authorization": f"Basic {creds}",
-                        "Content-Type": "application/x-www-form-urlencoded",
-                    },
-                    data={"grant_type": "client_credentials"},
-                ) as resp:
-                    if resp.status != 200:
-                        return None
-                    data = await resp.json()
-        except aiohttp.ClientError as e:
-            logger.debug("Spotify token fetch failed: %s", e)
-            return None
-        token = data.get("access_token")
-        if not token or not isinstance(token, str):
-            return None
-        _SPOTIFY_TOKEN_CACHE = (token, time.monotonic())
-        return str(token)
-
-
-def _spotify_track_to_search_query(item: dict) -> str | None:
-    track = item.get("track")
-    body = track if isinstance(track, dict) else item
-    if not body or body.get("is_local"):
-        return None
-    name = body.get("name")
-    if not name or not isinstance(name, str):
-        return None
-    artists = body.get("artists") or []
-    artist_name = None
-    if artists and isinstance(artists[0], dict):
-        artist_name = artists[0].get("name")
-    if artist_name:
-        return str(f"{artist_name} - {name}".strip()[:200])
-    return str(name.strip()[:200])
-
-
-async def spotify_playlist_catalog_queries(
-    url: str, client_id: str | None, client_secret: str | None
-) -> list[str] | None:
-    if not client_id or not client_secret:
-        return None
-    m = SPOTIFY_PLAYLIST_PATTERN.search(url)
-    if not m:
-        return None
-    playlist_id = m.group(1)
-    token = await _get_spotify_token(client_id, client_secret)
-    if not token:
-        return None
-    async with session_scope(timeout=TIMEOUT, session=get_session()) as session:
-        catalog = await _spotify_playlist_fetch_catalog(session, playlist_id, token)
-    return catalog
-
-
-async def spotify_playlist_to_search_queries(
-    url: str, client_id: str | None, client_secret: str | None
-) -> list[str] | None:
-    return await spotify_playlist_catalog_queries(url, client_id, client_secret)
-
-
-async def spotify_album_catalog_queries(
-    url: str, client_id: str | None, client_secret: str | None
-) -> list[str] | None:
-    if not client_id or not client_secret:
-        return None
-    m = SPOTIFY_ALBUM_PATTERN.search(url)
-    if not m:
-        return None
-    album_id = m.group(1)
-    token = await _get_spotify_token(client_id, client_secret)
-    if not token:
-        return None
-    async with session_scope(timeout=TIMEOUT, session=get_session()) as session:
-        catalog = await _spotify_album_fetch_catalog(session, album_id, token)
-    return catalog
-
-
-async def spotify_album_to_search_queries(
-    url: str, client_id: str | None, client_secret: str | None
-) -> list[str] | None:
-    return await spotify_album_catalog_queries(url, client_id, client_secret)
-
-
-async def _spotify_playlist_fetch_catalog(
-    session: aiohttp.ClientSession, playlist_id: str, token: str
-) -> list[str] | None:
-    queries: list[str] = []
-    offset = 0
-    try:
-        while True:
-            api_url = (
-                f"{SPOTIFY_API_BASE}/playlists/{playlist_id}/tracks"
-                f"?limit={SPOTIFY_PLAYLIST_PAGE_SIZE}&offset={offset}"
-            )
-            async with session.get(
-                api_url,
-                headers={"Authorization": f"Bearer {token}"},
-            ) as resp:
-                if resp.status == 401:
-                    global _SPOTIFY_TOKEN_CACHE
-                    _SPOTIFY_TOKEN_CACHE = None
-                if resp.status != 200:
-                    return None
-                data = await resp.json()
-            items = data.get("items") or []
-            if not items:
-                break
-            for item in items:
-                q = _spotify_track_to_search_query(item)
-                if q:
-                    queries.append(q)
-            if len(items) < SPOTIFY_PLAYLIST_PAGE_SIZE:
-                break
-            offset += SPOTIFY_PLAYLIST_PAGE_SIZE
-    except aiohttp.ClientError as e:
-        logger.debug("Spotify playlist fetch failed: %s", e)
-        return None
-    return queries or None
-
-
-async def _spotify_album_fetch_catalog(
-    session: aiohttp.ClientSession, album_id: str, token: str
-) -> list[str] | None:
-    queries: list[str] = []
-    offset = 0
-    try:
-        while True:
-            api_url = (
-                f"{SPOTIFY_API_BASE}/albums/{album_id}/tracks"
-                f"?limit={SPOTIFY_PLAYLIST_PAGE_SIZE}&offset={offset}"
-            )
-            async with session.get(
-                api_url,
-                headers={"Authorization": f"Bearer {token}"},
-            ) as resp:
-                if resp.status == 401:
-                    global _SPOTIFY_TOKEN_CACHE
-                    _SPOTIFY_TOKEN_CACHE = None
-                if resp.status != 200:
-                    return None
-                data = await resp.json()
-            items = data.get("items") or []
-            if not items:
-                break
-            for item in items:
-                q = _spotify_track_to_search_query(item)
-                if q:
-                    queries.append(q)
-            if len(items) < SPOTIFY_PLAYLIST_PAGE_SIZE:
-                break
-            offset += SPOTIFY_PLAYLIST_PAGE_SIZE
-    except aiohttp.ClientError as e:
-        logger.debug("Spotify album fetch failed: %s", e)
-        return None
-    return queries or None

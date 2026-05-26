@@ -32,6 +32,12 @@ mcrcon==0.7.0
 
 mafic @ git+https://github.com/ArtiArtem8/mafic.git@b1079d54597240e3e7984914df58500f74f62e9f
 
+# Spotify public catalog (GPL-3.0)
+spotapi==1.2.7
+pymongo==4.16.0
+redis==7.2.1
+websockets==15.0.1
+
 # Transitive pins
 authlib==1.7.2
 cryptography==48.0.0
