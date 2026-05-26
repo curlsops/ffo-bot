@@ -382,7 +382,6 @@ class TestMusicLazyHelpers:
         try:
             _ = await tmap[4]
         except asyncio.CancelledError:
-            # Expected after cancel() on the replaced prefetch task.
             pass
 
     @pytest.mark.asyncio

@@ -20,9 +20,6 @@ class SyncFromRconResult:
     reachable_targets: int = 0
     unreachable_target_ids: tuple[str, ...] = ()
 
-    def __bool__(self) -> bool:
-        return self.ok
-
 
 def _invalidate_whitelist_cache(cache: "InMemoryCache | None", server_id: int) -> None:
     if cache:

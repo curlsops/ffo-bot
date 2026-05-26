@@ -144,12 +144,7 @@ def _rcon_command(host: str, port: int, password: str, command: str, timeout: fl
 class MinecraftRCONClient:
     def __init__(self, settings: Settings):
         self._targets: list[RconTarget] = _parse_rcon_targets(settings)
-        raw_timeout = getattr(settings, "minecraft_rcon_connect_timeout_seconds", 10.0)
-        if isinstance(raw_timeout, (int, float)) and not isinstance(raw_timeout, bool):
-            t = float(raw_timeout)
-        else:
-            t = 10.0
-        self._connect_timeout = max(1.0, min(120.0, t))
+        self._connect_timeout = float(settings.minecraft_rcon_connect_timeout_seconds)
 
     def _is_configured(self) -> bool:
         return bool(self._targets)

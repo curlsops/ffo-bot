@@ -1,4 +1,3 @@
-# SpotAPI (GPL-3.0) provides unauthenticated public Spotify catalog metadata.
 import asyncio
 import logging
 import random
@@ -276,7 +275,7 @@ async def spotify_url_to_search_query(url: str) -> str | None:
     track_id = track_match.group(1)
     try:
         query = await _run_spotapi(_sync_track_query, track_id)
-    except (SongError, Exception) as e:
+    except Exception as e:
         logger.debug("SpotAPI track fetch failed for %s: %s", url, e)
         query = None
     if query:
