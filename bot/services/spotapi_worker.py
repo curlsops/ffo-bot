@@ -1,13 +1,7 @@
-#!/usr/bin/env python3
 import json
 import sys
-from pathlib import Path
 
-_ROOT = Path(__file__).resolve().parents[1]
-if str(_ROOT) not in sys.path:
-    sys.path.insert(0, str(_ROOT))
-
-from bot.services.spotapi_sync import run_spotapi_operation_sync  # noqa: E402
+from bot.services.spotapi_sync import run_spotapi_operation_sync
 
 
 def main() -> int:

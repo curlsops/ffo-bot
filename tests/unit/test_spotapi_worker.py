@@ -2,7 +2,7 @@ import json
 from io import StringIO
 from unittest.mock import patch
 
-from scripts import spotapi_worker
+from bot.services import spotapi_worker
 
 
 class TestSpotapiWorkerMain:
@@ -11,7 +11,7 @@ class TestSpotapiWorkerMain:
         with (
             patch("sys.stdin", stdin),
             patch(
-                "scripts.spotapi_worker.run_spotapi_operation_sync",
+                "bot.services.spotapi_worker.run_spotapi_operation_sync",
                 return_value="Artist - Song",
             ),
             patch("sys.stdout", new_callable=StringIO) as stdout,
@@ -40,7 +40,7 @@ class TestSpotapiWorkerMain:
         with (
             patch("sys.stdin", stdin),
             patch(
-                "scripts.spotapi_worker.run_spotapi_operation_sync",
+                "bot.services.spotapi_worker.run_spotapi_operation_sync",
                 side_effect=RuntimeError("boom"),
             ),
             patch("sys.stdout", new_callable=StringIO) as stdout,

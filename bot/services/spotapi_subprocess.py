@@ -10,7 +10,7 @@ from bot.services.spotapi_sync import SPOTAPI_OPERATIONS
 logger = logging.getLogger(__name__)
 
 _APP_ROOT = Path(__file__).resolve().parents[2]
-_WORKER_SCRIPT = _APP_ROOT / "scripts" / "spotapi_worker.py"
+WORKER_MODULE = "bot.services.spotapi_worker"
 
 
 def _subprocess_env() -> dict[str, str]:
@@ -41,7 +41,8 @@ async def run_spotapi_subprocess(
     request = json.dumps({"operation": operation, "id": entity_id}).encode()
     proc = await asyncio.create_subprocess_exec(
         sys.executable,
-        str(_WORKER_SCRIPT),
+        "-m",
+        WORKER_MODULE,
         stdin=asyncio.subprocess.PIPE,
         stdout=asyncio.subprocess.PIPE,
         stderr=asyncio.subprocess.PIPE,

@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, patch
 
 import pytest
 
-from scripts import spotapi_probe
+from bot.services import spotapi_probe
 
 
 class TestSpotapiProbe:
@@ -21,7 +21,7 @@ class TestSpotapiProbe:
     @pytest.mark.asyncio
     async def test_run_probe_in_process(self):
         with patch(
-            "scripts.spotapi_probe.run_spotapi_operation_sync",
+            "bot.services.spotapi_probe.run_spotapi_operation_sync",
             return_value="Artist - Song",
         ):
             result = await spotapi_probe._run_probe(
@@ -34,7 +34,7 @@ class TestSpotapiProbe:
     @pytest.mark.asyncio
     async def test_run_probe_subprocess(self):
         with patch(
-            "scripts.spotapi_probe.spotapi_subprocess.run_spotapi_subprocess",
+            "bot.services.spotapi_probe.spotapi_subprocess.run_spotapi_subprocess",
             AsyncMock(return_value=["A - B"]),
         ) as sub_mock:
             result = await spotapi_probe._run_probe(
@@ -47,7 +47,7 @@ class TestSpotapiProbe:
 
     def test_main_success(self, capsys):
         with patch(
-            "scripts.spotapi_probe.asyncio.run",
+            "bot.services.spotapi_probe.asyncio.run",
             return_value="Artist - Title",
         ):
             code = spotapi_probe.main(["https://open.spotify.com/track/4iV5W9uYEdYUVa79Axb7Rh"])
@@ -56,6 +56,6 @@ class TestSpotapiProbe:
         assert out == "Artist - Title"
 
     def test_main_failure(self, capsys):
-        with patch("scripts.spotapi_probe.asyncio.run", return_value=None):
+        with patch("bot.services.spotapi_probe.asyncio.run", return_value=None):
             code = spotapi_probe.main(["https://open.spotify.com/track/4iV5W9uYEdYUVa79Axb7Rh"])
         assert code == 1

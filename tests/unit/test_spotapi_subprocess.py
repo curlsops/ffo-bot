@@ -1,5 +1,6 @@
 import asyncio
 import json
+import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -33,6 +34,15 @@ class TestDecodeWorkerResponse:
 
 
 class TestRunSpotapiSubprocess:
+    @pytest.mark.asyncio
+    async def test_spawns_worker_as_module(self):
+        stdout = json.dumps({"ok": True, "result": "x"}).encode()
+        proc = MagicMock(returncode=0, communicate=AsyncMock(return_value=(stdout, b"")))
+        with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)) as spawn:
+            await subprocess_module.run_spotapi_subprocess("track", "tid", timeout_sec=30.0)
+        spawn.assert_awaited_once()
+        assert spawn.await_args.args[:3] == (sys.executable, "-m", subprocess_module.WORKER_MODULE)
+
     @pytest.mark.asyncio
     async def test_success(self):
         stdout = json.dumps({"ok": True, "result": "Artist - Title"}).encode()

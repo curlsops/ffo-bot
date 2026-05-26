@@ -1346,7 +1346,7 @@ class TestMusicPlay:
 
     @pytest.mark.asyncio
     async def test_play_youtube_playlist_prefix_size(self, cog):
-        many = [MagicMock(title=f"T{n}") for n in range(60)]
+        many = [MagicMock(title=f"T{n}") for n in range(YOUTUBE_PLAYLIST_RESOLVE_SAMPLE + 1)]
         load = MagicMock(tracks=many)
         ch = _channel()
         p = _player(ch, tracks=None, current=MagicMock(title="Now"))

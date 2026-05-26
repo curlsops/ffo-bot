@@ -43,7 +43,7 @@ COPY --chown=discord:discord bot/ ./bot/
 COPY --chown=discord:discord database/ ./database/
 COPY --chown=discord:discord config/ ./config/
 COPY --chown=discord:discord main.py .
-COPY --chown=discord:discord scripts/entrypoint.sh scripts/smoke_test.py scripts/spotapi_worker.py scripts/spotapi_probe.py .
+COPY --chown=discord:discord scripts/entrypoint.sh scripts/smoke_test.py .
 COPY --chown=discord:discord alembic.ini .
 RUN chmod +x entrypoint.sh
 
