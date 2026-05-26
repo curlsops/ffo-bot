@@ -7,6 +7,7 @@ RUN apk add --no-cache \
     postgresql-dev \
     libffi-dev \
     curl \
+    gcompat \
     nodejs \
     npm
 

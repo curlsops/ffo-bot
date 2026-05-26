@@ -65,6 +65,9 @@ jobs:
               - 'alembic.ini'
               - '.github/images/ci/**'
 
+      - name: Install SpotAPI tls_client runtime
+        run: apk add --no-cache gcompat
+
       - name: Install Python dependencies
         run: pip install --no-cache-dir -r requirements-dev.txt
 

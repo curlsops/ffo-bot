@@ -124,6 +124,8 @@ def _youtube_video_id(uri: str | None, identifier: str) -> str | None:
 
 
 def _is_trusted_youtube_watch_url(url: str) -> bool:
+    if not isinstance(url, str):
+        return False
     parsed = urlparse(url)
     if parsed.scheme != "https":
         return False
