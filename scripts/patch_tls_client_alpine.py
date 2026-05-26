@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-"""Patch tls_client to load the musl amd64 shared library on x86_64 Alpine."""
 
 from __future__ import annotations
 

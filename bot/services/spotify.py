@@ -167,10 +167,9 @@ def _sync_artist_catalog(artist_id: str) -> list[str] | None:
     artist = Artist()
     overview = artist.get_artist(artist_id)
     artist_union = overview.get("data", {}).get("artistUnion") or {}
-    profile_raw = artist_union.get("profile")
-    profile = profile_raw if isinstance(profile_raw, dict) else {}
-    name_raw = profile.get("name")
-    artist_name = name_raw if isinstance(name_raw, str) else None
+    profile = artist_union.get("profile")
+    name = profile.get("name") if isinstance(profile, dict) else None
+    artist_name = name if isinstance(name, str) else None
 
     pool: list[str] = []
     seen: set[str] = set()
@@ -230,15 +229,10 @@ async def _spotify_catalog_from_url(
     if not match:
         return None
     entity_id = match.group(1)
-    from spotapi.exceptions import AlbumError, ArtistError, PlaylistError, SongError
-
     try:
         return await _run_spotapi(sync_fetch, entity_id)
-    except (PlaylistError, AlbumError, ArtistError, SongError) as e:
-        logger.debug("SpotAPI %s fetch failed for %s: %s", error_label, url, e)
-        return None
     except Exception as e:
-        logger.debug("SpotAPI %s fetch error for %s: %s", error_label, url, e)
+        logger.debug("SpotAPI %s fetch failed for %s: %s", error_label, url, e)
         return None
 
 
