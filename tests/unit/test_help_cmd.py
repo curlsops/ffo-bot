@@ -272,7 +272,7 @@ def test_group_help_entries_skips_leaf_when_member_cannot_see():
 @pytest.mark.parametrize(
     "check",
     [
-        lambda bot, member: _visible_top_level_names(bot, member),
+        _visible_top_level_names,
         lambda bot, member: [f.name for f in _build_help_embed(bot, MagicMock(user=member)).fields],
     ],
 )

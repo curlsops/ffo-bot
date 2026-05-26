@@ -48,11 +48,11 @@ async def test_tracing_exports_spans_and_reconfigure_warnings(caplog):
         try:
             tracer = trace.get_tracer("test")
             with tracer.start_as_current_span("hello"):
-                ...
+                pass
             with telemetry_mod.trace_span("wrapped", feature="messages"):
-                ...
+                pass
             with telemetry_mod.trace_span("bare"):
-                ...
+                pass
 
             bot = MagicMock()
             bot.metrics = None
@@ -206,7 +206,7 @@ def test_trace_span_without_feature():
     )
     try:
         with telemetry_mod.trace_span("plain"):
-            ...
+            pass
         trace.get_tracer_provider().force_flush()
         assert any(s.name == "plain" for s in exporter.get_finished_spans())
     finally:

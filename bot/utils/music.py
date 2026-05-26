@@ -79,7 +79,7 @@ def _format_duration(ms: int) -> str:
 
 def _get_queue(bot: "FFOBot", guild_id: int) -> deque[Track]:
     if not hasattr(bot, "_music_queues"):
-        bot._music_queues = defaultdict(lambda: deque())
+        bot._music_queues = defaultdict(deque)
     return cast(deque[Track], bot._music_queues[guild_id])
 
 

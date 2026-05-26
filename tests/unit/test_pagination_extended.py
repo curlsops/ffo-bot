@@ -138,7 +138,7 @@ class TestEmbedListPaginatedView:
 
     @pytest.mark.asyncio
     async def test_prev_next_callbacks(self):
-        view = EmbedListPaginatedView(list(range(15)), lambda r: str(r), title="X", per_page=5)
+        view = EmbedListPaginatedView(list(range(15)), str, title="X", per_page=5)
         i = MagicMock()
         i.response.edit_message = AsyncMock()
         await view._next_callback(i)
@@ -148,7 +148,7 @@ class TestEmbedListPaginatedView:
 
     @pytest.mark.asyncio
     async def test_prev_at_zero_no_op(self):
-        view = EmbedListPaginatedView([1, 2], lambda r: str(r), title="X")
+        view = EmbedListPaginatedView([1, 2], str, title="X")
         i = MagicMock()
         i.response.edit_message = AsyncMock()
         await view._prev_callback(i)
@@ -157,7 +157,7 @@ class TestEmbedListPaginatedView:
 
     @pytest.mark.asyncio
     async def test_next_at_max_no_op(self):
-        view = EmbedListPaginatedView([1, 2], lambda r: str(r), title="X")
+        view = EmbedListPaginatedView([1, 2], str, title="X")
         view.page = 1
         i = MagicMock()
         i.response.edit_message = AsyncMock()
