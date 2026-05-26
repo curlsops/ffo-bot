@@ -1,6 +1,6 @@
 FROM python:3.14-alpine3.22
 
-# gcompat: SpotAPI/tls_client wheels expect glibc (e.g. libresolv.so.2) on musl Alpine.
+# gcompat + libstdc++: glibc shims for SpotAPI/tls_client and davey on musl Alpine.
 RUN apk add --no-cache \
     bash \
     git \
@@ -9,6 +9,7 @@ RUN apk add --no-cache \
     libffi-dev \
     curl \
     gcompat \
+    libstdc++ \
     nodejs \
     npm
 

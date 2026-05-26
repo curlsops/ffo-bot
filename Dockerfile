@@ -30,11 +30,12 @@ RUN addgroup -g 1000 discord && \
 
 WORKDIR /app
 
-# gcompat: SpotAPI/tls_client wheels expect glibc (e.g. libresolv.so.2) on musl Alpine.
+# gcompat: glibc shims for SpotAPI/tls_client and davey manylinux wheels on musl Alpine.
 RUN apk add --no-cache \
     postgresql-libs \
     ca-certificates \
-    gcompat
+    gcompat \
+    libstdc++
 
 COPY --from=builder --chown=discord:discord /root/.local /home/discord/.local
 

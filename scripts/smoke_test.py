@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import davey
+
 import bot.utils.channel_config
 import config
 import database

@@ -1,6 +1,15 @@
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 
 import pytest
+
+
+@pytest.fixture(autouse=True)
+def _music_voice_deps_available():
+    with patch(
+        "bot.commands.music.discord_voice_dependencies_available",
+        return_value=True,
+    ):
+        yield
 
 
 @pytest.fixture

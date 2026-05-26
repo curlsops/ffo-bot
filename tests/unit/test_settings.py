@@ -83,6 +83,7 @@ class TestSettingsDefaults:
             ("feature_minecraft_whitelist", False),
             ("whitelist_cache_reconcile_interval_hours", 24.0),
             ("feature_music", False),
+            ("music_voice_recovery_on_ready", True),
             ("discord_sharding_enabled", False),
         ],
     )

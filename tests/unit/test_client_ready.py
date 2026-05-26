@@ -163,6 +163,37 @@ class TestFFOBotOnReady:
         rec.assert_awaited_once_with(bot)
 
     @pytest.mark.asyncio
+    async def test_on_ready_skips_music_voice_recovery_when_disabled(self, mock_settings):
+        from bot.client import FFOBot
+
+        mock_settings.feature_music = True
+        mock_settings.music_voice_recovery_on_ready = False
+        mock_settings.lavalink_host = "127.0.0.1"
+        mock_settings.lavalink_port = 2333
+        mock_settings.lavalink_password = "secret"
+        bot = FFOBot(mock_settings)
+        mock_pool = MagicMock(create_node=AsyncMock())
+        bot.pool = mock_pool
+        bot.db_pool = MagicMock()
+
+        mock_http = MagicMock()
+        mock_http.bulk_upsert_global_commands = AsyncMock()
+        mock_http.bulk_upsert_guild_commands = AsyncMock()
+        mock_conn = MagicMock(http=mock_http)
+        with (
+            patch.object(discord.Client, "user", PropertyMock(return_value=MagicMock(id=123))),
+            patch.object(discord.Client, "guilds", PropertyMock(return_value=[])),
+            patch.object(bot, "_register_server", new_callable=AsyncMock),
+            patch.object(bot, "_connection", mock_conn),
+            patch.object(bot.tree, "copy_global_to"),
+            patch.object(bot.tree, "sync", new_callable=AsyncMock),
+            patch("bot.commands.music.reconnect_music_voice_after_ready", AsyncMock()) as rec,
+        ):
+            await bot.on_ready()
+
+        rec.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_on_ready_skips_music_voice_recovery_without_db_pool(self, mock_settings):
         from bot.client import FFOBot
 

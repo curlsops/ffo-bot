@@ -133,6 +133,9 @@ class _FFOBotMixin(commands.Bot):
             if self.settings.feature_music and self.settings.lavalink_password:
                 from mafic import NodePool
 
+                from bot.utils.discord_voice import log_voice_dependency_status
+
+                log_voice_dependency_status()
                 self.pool = NodePool(self)
             self.tree.on_error = self._on_app_command_error
 
@@ -247,7 +250,12 @@ class _FFOBotMixin(commands.Bot):
                 logger.warning("Lavalink connection failed, music disabled: %s", e)
                 self.pool = None
 
-        if self.pool and self.db_pool and getattr(self.settings, "feature_music", False):
+        if (
+            self.pool
+            and self.db_pool
+            and self.settings.feature_music
+            and self.settings.music_voice_recovery_on_ready
+        ):
             try:
                 from bot.commands.music import reconnect_music_voice_after_ready
 

@@ -31,6 +31,10 @@ from bot.utils.channel_config import (
     get_music_voice_channel_id,
     set_music_voice_channel,
 )
+from bot.utils.discord_voice import (
+    VOICE_DEPS_MISSING_USER_MSG,
+    discord_voice_dependencies_available,
+)
 from bot.utils.music import (
     EMBED_COLOR,
     _clear_queue,
@@ -121,10 +125,17 @@ def _other_members_in_channel(channel: discord.VoiceChannel, bot_user_id: int) -
     return sum(1 for m in channel.members if m.id != bot_user_id)
 
 
+async def _followup_voice_connect_failed(i: discord.Interaction, e: RuntimeError) -> None:
+    logger.warning("Voice connect failed: %s", e, exc_info=True)
+    await i.followup.send(VOICE_DEPS_MISSING_USER_MSG, ephemeral=True)
+
+
 async def reconnect_music_voice_after_ready(bot: "FFOBot") -> None:
     if not getattr(bot.settings, "feature_music", False) or not getattr(bot, "pool", None):
         return
     if not bot.db_pool:
+        return
+    if not discord_voice_dependencies_available():
         return
     targets = await fetch_music_voice_channel_targets(bot.db_pool)
     if not targets:
@@ -140,6 +151,7 @@ async def reconnect_music_voice_after_ready(bot: "FFOBot") -> None:
         if vc:
             try:
                 await vc.disconnect(force=True)
+                await asyncio.sleep(1.0)
             except Exception as e:
                 logger.warning("Music recovery: disconnect failed guild %s: %s", guild_id, e)
         ch = guild.get_channel(channel_id)
@@ -155,7 +167,7 @@ async def reconnect_music_voice_after_ready(bot: "FFOBot") -> None:
             await set_music_voice_channel(bot.db_pool, guild_id, None, bot.cache)
             continue
         try:
-            await ch.connect(cls=Player, timeout=30.0, reconnect=True)
+            await ch.connect(cls=Player, timeout=30.0, reconnect=False)
             logger.info("Music recovery: rejoined guild %s channel %s", guild_id, channel_id)
         except Exception as e:
             logger.warning(
@@ -450,6 +462,9 @@ async def _check_voice_pool(
     if not i.user.voice or not i.user.voice.channel:
         await i.followup.send("Join a voice channel first.", ephemeral=True)
         return None
+    if not discord_voice_dependencies_available():
+        await i.followup.send(VOICE_DEPS_MISSING_USER_MSG, ephemeral=True)
+        return None
     if not i.client.pool:
         await i.followup.send("Music is not enabled.", ephemeral=True)
         return None
@@ -470,6 +485,9 @@ async def _ensure_player(i: discord.Interaction) -> tuple[Player, discord.VoiceC
             await ch.connect(cls=Player)
         except TimeoutError:
             await i.followup.send("Voice connection timed out. Try again.", ephemeral=True)
+            return None
+        except RuntimeError as e:
+            await _followup_voice_connect_failed(i, e)
             return None
         player = i.guild.voice_client
     if player.channel.id != ch.id:
@@ -504,6 +522,9 @@ class MusicGroup(app_commands.Group):
             await ch.connect(cls=Player)
         except TimeoutError:
             await i.followup.send("Voice connection timed out. Try again.", ephemeral=True)
+            return
+        except RuntimeError as e:
+            await _followup_voice_connect_failed(i, e)
             return
         await i.followup.send(embed=_music_embed("🎵 Joined", f"Connected to {ch.mention}."))
 

@@ -1529,6 +1529,21 @@ class TestMusicVoiceRecovery:
         f.assert_not_called()
 
     @pytest.mark.asyncio
+    async def test_reconnect_skips_without_davey(self, mock_bot):
+        mock_bot.settings.feature_music = True
+        mock_bot.pool = MagicMock()
+        mock_bot.db_pool = MagicMock()
+        with (
+            patch(
+                "bot.commands.music.discord_voice_dependencies_available",
+                return_value=False,
+            ),
+            patch("bot.commands.music.fetch_music_voice_channel_targets", AsyncMock()) as f,
+        ):
+            await reconnect_music_voice_after_ready(mock_bot)
+        f.assert_not_called()
+
+    @pytest.mark.asyncio
     async def test_reconnect_calls_connect(self, mock_bot):
         mock_bot.settings.feature_music = True
         mock_bot.pool = MagicMock()
@@ -1768,6 +1783,33 @@ async def test_reconnect_skips_when_guild_unknown(mock_bot):
 
 
 @pytest.mark.asyncio
+async def test_reconnect_disconnect_sleeps_before_reconnect(mock_bot):
+    mock_bot.settings.feature_music = True
+    mock_bot.pool = MagicMock()
+    mock_bot.db_pool = MagicMock()
+    vc = MagicMock()
+    vc.channel = MagicMock(id=2)
+    vc.disconnect = AsyncMock()
+    guild = MagicMock(id=1, voice_client=vc)
+    guild.get_channel = MagicMock(return_value=_channel(id_=88))
+    guild.me = MagicMock()
+    mock_bot.guilds = [guild]
+    ch = guild.get_channel.return_value
+    ch.permissions_for = MagicMock(return_value=MagicMock(connect=True, speak=True))
+    ch.connect = AsyncMock()
+    with patch(
+        "bot.commands.music.fetch_music_voice_channel_targets",
+        AsyncMock(return_value=[(1, 88)]),
+    ):
+        with patch("bot.commands.music._is_voice_or_stage", return_value=True):
+            with patch("bot.commands.music.asyncio.sleep", AsyncMock()) as sleep:
+                with _patch_player():
+                    await reconnect_music_voice_after_ready(mock_bot)
+    sleep.assert_awaited_once_with(1.0)
+    ch.connect.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_reconnect_disconnect_failure_logged(mock_bot):
     mock_bot.settings.feature_music = True
     mock_bot.pool = MagicMock()
@@ -1944,6 +1986,43 @@ async def test_check_voice_pool_returns_none_without_guild(mock_bot, cog):
     i.guild = None
     i.followup.send = AsyncMock()
     assert await _check_voice_pool(i) is None
+
+
+@pytest.mark.asyncio
+async def test_check_voice_pool_returns_none_without_davey(mock_bot, cog):
+    mock_bot.pool = MagicMock()
+    ch = _channel()
+    i = _interaction(mock_bot, voice_channel=ch)
+    i.followup.send = AsyncMock()
+    with patch("bot.commands.music.discord_voice_dependencies_available", return_value=False):
+        assert await _check_voice_pool(i) is None
+    assert "davey" in i.followup.send.call_args[0][0].lower()
+
+
+@pytest.mark.asyncio
+async def test_ensure_player_runtime_error_on_connect(mock_bot, cog):
+    mock_bot.pool = MagicMock()
+    ch = _channel()
+    ch.connect = AsyncMock(side_effect=RuntimeError("davey library needed"))
+    i = _interaction(mock_bot, voice_channel=ch)
+    i.guild.voice_client = None
+    i.followup.send = AsyncMock()
+    with _patch_player():
+        assert await _ensure_player(i) is None
+    assert "davey" in i.followup.send.call_args[0][0].lower()
+
+
+@pytest.mark.asyncio
+async def test_join_runtime_error_on_connect(mock_bot, cog):
+    mock_bot.pool = MagicMock()
+    ch = _channel()
+    ch.connect = AsyncMock(side_effect=RuntimeError("davey library needed"))
+    i = _interaction(mock_bot, voice_channel=ch)
+    i.guild.voice_client = None
+    i.followup.send = AsyncMock()
+    with _patch_player():
+        await cog.music_group.join.callback(cog.music_group, i)
+    assert "davey" in i.followup.send.call_args[0][0].lower()
 
 
 @pytest.mark.asyncio
