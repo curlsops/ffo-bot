@@ -73,9 +73,19 @@ class MusicLazyTail(NamedTuple):
     search_queries: tuple[str, ...] = ()
     search_type: SearchType | None = None
     preloaded_tracks: tuple[Track, ...] = ()
+    catalog_size: int = 0
 
     def has_work(self) -> bool:
         return bool(self.search_queries) or bool(self.preloaded_tracks)
+
+
+def _playlist_intended_track_count(tracks: Sequence[Track], lazy_tail: MusicLazyTail | None) -> int:
+    n = len(tracks)
+    if lazy_tail is None:
+        return n
+    if lazy_tail.catalog_size > 0:
+        return lazy_tail.catalog_size
+    return n + len(lazy_tail.preloaded_tracks) + len(lazy_tail.search_queries)
 
 
 class ResolvedUrl(NamedTuple):
@@ -335,7 +345,11 @@ async def _resolve_url_tracks(player: Player, query: str, bot: "FFOBot") -> Reso
                     True,
                     None,
                     None,
-                    MusicLazyTail(search_queries=rest, search_type=SearchType.YOUTUBE),
+                    MusicLazyTail(
+                        search_queries=rest,
+                        search_type=SearchType.YOUTUBE,
+                        catalog_size=len(pq),
+                    ),
                 )
             return ResolvedUrl([first], False, None, None, None)
         sq = await tidal_url_to_search_query(query)
@@ -379,6 +393,7 @@ async def _resolve_url_tracks(player: Player, query: str, bot: "FFOBot") -> Reso
                     MusicLazyTail(
                         search_queries=tuple(tail),
                         search_type=SearchType.YOUTUBE,
+                        catalog_size=len(catalog),
                     ),
                 )
             return ResolvedUrl([first], False, None, None, None)
@@ -600,12 +615,18 @@ class MusicGroup(app_commands.Group):
                 k = min(YOUTUBE_PLAYLIST_RESOLVE_SAMPLE, len(catalog))
                 head = catalog[:k]
                 tracks = [head[0]]
-                lazy_tail = MusicLazyTail(preloaded_tracks=tuple(head[1:]))
+                lazy_tail = MusicLazyTail(
+                    preloaded_tracks=tuple(head[1:]),
+                    catalog_size=len(catalog),
+                )
                 playlist = True
             elif not isinstance(result, list) and search_type is None and len(tracks) > 1:
                 lt = list(tracks)
                 tracks = [lt[0]]
-                lazy_tail = MusicLazyTail(preloaded_tracks=tuple(lt[1:]))
+                lazy_tail = MusicLazyTail(
+                    preloaded_tracks=tuple(lt[1:]),
+                    catalog_size=len(lt),
+                )
                 playlist = True
         if not tracks:
             await i.followup.send("No tracks found.", ephemeral=True)
@@ -640,7 +661,7 @@ class MusicGroup(app_commands.Group):
             )
             return
         if player.current:
-            count = len(tracks)
+            count = _playlist_intended_track_count(tracks, lazy_tail)
             if force_next:
                 for t in reversed(tracks):
                     queue.appendleft(t)
@@ -650,7 +671,7 @@ class MusicGroup(app_commands.Group):
                 queue.extend(tracks)
             pr = f"#{start_pos}–#{start_pos + count - 1}" if count > 1 else f"#{start_pos}"
             desc = (
-                f"Added {count} tracks at {pr}."
+                f"Added {count} track{'s' if count != 1 else ''} at {pr}."
                 if playlist
                 else f"**{tracks[0].title}** at #{start_pos}"
                 + (
@@ -676,8 +697,9 @@ class MusicGroup(app_commands.Group):
                 return
             if playlist and len(tracks) > 1:
                 queue.extend(tracks[1:])
+            queued_after = _playlist_intended_track_count(tracks, lazy_tail) - 1
             desc = f"▶️ **{tracks[0].title}**" + (
-                f"\n📥 +{len(tracks) - 1} queued" if playlist else ""
+                f"\n📥 +{queued_after} queued" if playlist and queued_after > 0 else ""
             )
             await i.followup.send(embed=_music_embed("🎵 Playing", desc))
             if lazy_tail and lazy_tail.has_work():
