@@ -1,0 +1,95 @@
+# yaml-language-server: $schema=https://squidfunk.github.io/mkdocs-material/schema.json
+
+site_name: FFO Bot
+site_description: Documentation for the FFO Discord bot
+site_author: FFO Bot contributors
+site_dir: ../site
+docs_dir: .
+
+exclude_docs: |
+  CHANGELOG.md.bak
+
+repo_name: ffo-bot
+repo_url: https://github.com/curlsops/ffo-bot
+edit_uri: edit/main/docs/
+
+copyright: CC BY-NC-SA 4.0
+
+nav:
+  - Home: index.md
+  - Changelog:
+      - changelog/index.md
+      - v4: changelog/v4.md
+      - v3: changelog/v3.md
+      - v2: changelog/v2.md
+      - Full changelog: changelog/CHANGELOG.md
+
+theme:
+  name: material
+  palette:
+    - media: "(prefers-color-scheme: light)"
+      scheme: default
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-7
+        name: Switch to dark mode
+    - media: "(prefers-color-scheme: dark)"
+      scheme: slate
+      primary: indigo
+      accent: indigo
+      toggle:
+        icon: material/brightness-4
+        name: Switch to light mode
+  features:
+    - navigation.instant
+    - navigation.tracking
+    - navigation.tabs
+    - navigation.top
+    - navigation.tabs.sticky
+    - navigation.footer
+    - navigation.path
+    - navigation.indexes
+    - toc.follow
+    - content.code.copy
+    - content.code.annotate
+  font:
+    text: Roboto
+    code: Roboto Mono
+  icon:
+    repo: fontawesome/brands/github
+
+markdown_extensions:
+  - admonition
+  - meta
+  - pymdownx.details
+  - pymdownx.superfences
+  - pymdownx.highlight
+  - pymdownx.caret
+  - pymdownx.mark
+  - pymdownx.tilde
+  - pymdownx.inlinehilite
+  - footnotes
+  - def_list
+  - attr_list
+  - md_in_html
+  - toc:
+      permalink: true
+  - pymdownx.tasklist:
+      custom_checkbox: true
+  - pymdownx.tabbed:
+      alternate_style: true
+  - pymdownx.emoji:
+      emoji_index: !!python/name:material.extensions.emoji.twemoji
+      emoji_generator: !!python/name:material.extensions.emoji.to_svg
+
+plugins:
+  - same-dir
+  - search:
+      lang: en
+
+extra:
+  generator: false
+  social:
+    - icon: fontawesome/brands/github
+      link: https://github.com/curlsops/ffo-bot
