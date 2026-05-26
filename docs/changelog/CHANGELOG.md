@@ -122,34 +122,29 @@
 
 ### ⚠ BREAKING CHANGES
 
-* **deps:** Update actions/create-github-app-token action ( v2 ➔ v3 )
-* **deps:** Update dorny/paths-filter action ( v3.0.3 ➔ v4.0.0 )
-* **deps:** Update github/codeql-action action ( v3 ➔ v4 )
-* **deps:** Update GitHub Artifact Actions
-* **deps:** Update github/codeql-action action ( v3 ➔ v4 )
-* **deps:** Update pre-commit hook pre-commit/pre-commit-hooks ( v4.5.0 ➔ v6.0.0 )
-* **deps:** Update docker/setup-buildx-action action ( v3 ➔ v4 )
-* **deps:** Update docker/metadata-action action ( v5 ➔ v6 )
-* **deps:** Update docker/login-action action ( v3 ➔ v4 )
-* **deps:** Update docker/build-push-action action ( v6 ➔ v7 )
+* **commands:** remove anonymous post feature
+* **python:** Update dependency cryptography ( 47.0.0 ➔ 48.0.0 )
+* **python:** Update dependency mypy ( 1.20.2 ➔ 2.1.0 )
+* **python:** Update dependency cryptography ( 46.0.7 ➔ 47.0.0 )
+* **deps:** Update googleapis/release-please-action action ( v4 ➔ v5 )
 
 ### Features
 
-* add anonymous post, help command, Tidal mix, whitelist refactor ([ceb5be5](https://github.com/curlsops/ffo-bot/commit/ceb5be5082cddf8419243f83e1393d0e01595c5f))
-* **deps:** Update actions/create-github-app-token action ( v2 ➔ v3 ) ([8929a0c](https://github.com/curlsops/ffo-bot/commit/8929a0cf8e5b9221b3f9fb1759a5a18e667a120f))
-* **deps:** Update docker/build-push-action action ( v6 ➔ v7 ) ([501ee49](https://github.com/curlsops/ffo-bot/commit/501ee49f24c7fd2fda5d47c28ac5fde8e31b0bba))
-* **deps:** Update docker/login-action action ( v3 ➔ v4 ) ([98b1da4](https://github.com/curlsops/ffo-bot/commit/98b1da4537fdc8244401c79ce44ce4dc821aefee))
-* **deps:** Update docker/metadata-action action ( v5 ➔ v6 ) ([d6dfb4b](https://github.com/curlsops/ffo-bot/commit/d6dfb4bd127284dfee9ad6646529876c1457423f))
-* **deps:** Update docker/setup-buildx-action action ( v3 ➔ v4 ) ([72390a1](https://github.com/curlsops/ffo-bot/commit/72390a1d4535fefc0b2f828c7cde6f403f3c254e))
-* **deps:** Update dorny/paths-filter action ( v3.0.3 ➔ v4.0.0 ) ([bbe4c72](https://github.com/curlsops/ffo-bot/commit/bbe4c7268d32b3c55dd75b898fd0226151fe6c85))
-* **deps:** Update GitHub Artifact Actions ([96cb7c6](https://github.com/curlsops/ffo-bot/commit/96cb7c66e62af57c4c4a4dacb66ab3a972c23c44))
-* **deps:** Update github/codeql-action action ( v3 ➔ v4 ) ([be69340](https://github.com/curlsops/ffo-bot/commit/be693407fad5344205ac5f0f3dace5e59665972c))
-* **deps:** Update github/codeql-action action ( v3 ➔ v4 ) ([bc42158](https://github.com/curlsops/ffo-bot/commit/bc421582a82666015f29c82fffa765316dbf4c0d))
-* **deps:** Update pre-commit hook pre-commit/pre-commit-hooks ( v4.5.0 ➔ v6.0.0 ) ([a3798ed](https://github.com/curlsops/ffo-bot/commit/a3798edd80a90323381a6bb846659b3a5f085cf2))
-* **health:** cache metrics size, explicit UTF-8 decode, configurable host ([b7af526](https://github.com/curlsops/ffo-bot/commit/b7af526a67b8903560fd791749d84540d0082f62))
-* **pre-commit:** update hook psf/black ( 26.1.0 ➔ 26.3.0 ) ([#114](https://github.com/curlsops/ffo-bot/issues/114)) ([24d77bf](https://github.com/curlsops/ffo-bot/commit/24d77bf4a61f14c2e5bb7182ef24f41e3c62a805))
-* **pre-commit:** update hook pycqa/flake8 ( 7.0.0 ➔ 7.3.0 ) ([#115](https://github.com/curlsops/ffo-bot/issues/115)) ([9236a0f](https://github.com/curlsops/ffo-bot/commit/9236a0fa93b3b4014ae600808a83427bf4687aa4))
-* **python:** update dependency black ( 26.1.0 ➔ 26.3.0 ) ([#105](https://github.com/curlsops/ffo-bot/issues/105)) ([4367374](https://github.com/curlsops/ffo-bot/commit/4367374fb98d28291bb086233256819bed96a9c1))
+* **commands:** remove anonymous post feature ([ab5106e](https://github.com/curlsops/ffo-bot/commit/ab5106eb8b1262afee58521bc14577fa5af497c7))
+* **deps:** Update googleapis/release-please-action action ( v4 ➔ v5 ) ([2f26fbf](https://github.com/curlsops/ffo-bot/commit/2f26fbf6fb9dead13518e18fee1f6d45c6e60386))
+* **github-action:** update action actions/labeler ( v6.0.1 ➔ v6.1.0 ) ([#218](https://github.com/curlsops/ffo-bot/issues/218)) ([e2eb22b](https://github.com/curlsops/ffo-bot/commit/e2eb22bfb410f03b03b46eef9414287ea3bd3e35))
+* **github-action:** update action useblacksmith/setup-docker-builder ( v1.7.0 ➔ v1.8.0 ) ([#212](https://github.com/curlsops/ffo-bot/issues/212)) ([d8ae668](https://github.com/curlsops/ffo-bot/commit/d8ae668d95a433a471f79906eb9694d6dc9cd2f9))
+* **music:** generalize lazy playlist prefetch and tidal sampling ([9c43e23](https://github.com/curlsops/ffo-bot/commit/9c43e237ddda2e8247b5e2729dbf92353173c753))
+* **music:** Spotify-first URLs and lazy playlist resolution ([f734696](https://github.com/curlsops/ffo-bot/commit/f7346967309ed7a9b895620bbb70f3cfa76bb0ed))
+* **python:** Update dependency cryptography ( 46.0.7 ➔ 47.0.0 ) ([52e043e](https://github.com/curlsops/ffo-bot/commit/52e043e564fbc80806afd9ec4a687cc0f918818f))
+* **python:** Update dependency cryptography ( 47.0.0 ➔ 48.0.0 ) ([08dfaae](https://github.com/curlsops/ffo-bot/commit/08dfaae6cd811bc3a77893707b801ff91e516288))
+* **python:** Update dependency mypy ( 1.20.2 ➔ 2.1.0 ) ([31646f8](https://github.com/curlsops/ffo-bot/commit/31646f86f8407097dac2b30265dbad2066e47ab8))
+* **python:** update dependency pre-commit ( 4.5.1 ➔ 4.6.0 ) ([#206](https://github.com/curlsops/ffo-bot/issues/206)) ([f22594d](https://github.com/curlsops/ffo-bot/commit/f22594d1c71715b56439e23c00c553674bad0116))
+* **python:** update dependency pydantic ( 2.12.5 ➔ 2.13.4 ) ([#190](https://github.com/curlsops/ffo-bot/issues/190)) ([3e4cc61](https://github.com/curlsops/ffo-bot/commit/3e4cc61731a0b47c036d285aaae9b65e5397219f))
+* **python:** update dependency pydantic-settings ( 2.13.1 ➔ 2.14.0 ) ([#207](https://github.com/curlsops/ffo-bot/issues/207)) ([ffc9197](https://github.com/curlsops/ffo-bot/commit/ffc9197130a0c85a4c19ede4bd3d64feaea2d49d))
+* **python:** update dependency requests ( 2.33.1 ➔ 2.34.1 ) ([#219](https://github.com/curlsops/ffo-bot/issues/219)) ([675eb35](https://github.com/curlsops/ffo-bot/commit/675eb35843aee5ba86182873ab4d56e7a29f2a86))
+* **python:** update dependency urllib3 ( 2.6.3 ➔ 2.7.0 ) ([#214](https://github.com/curlsops/ffo-bot/issues/214)) ([9922929](https://github.com/curlsops/ffo-bot/commit/9922929b103ad19926c588ade799866077cfd426))
+* **spotify:** fetch full playlists without cap or sampling ([4cb0cb8](https://github.com/curlsops/ffo-bot/commit/4cb0cb821d95afc4c426d9cfec50b8b11a528f47))
 
 
 ### Bug Fixes
