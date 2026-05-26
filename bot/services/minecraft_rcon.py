@@ -6,6 +6,7 @@ import socket
 import struct
 from dataclasses import dataclass, field
 
+from bot.utils.telemetry import trace_span
 from config.settings import Settings
 
 logger = logging.getLogger(__name__)
@@ -144,12 +145,7 @@ def _rcon_command(host: str, port: int, password: str, command: str, timeout: fl
 class MinecraftRCONClient:
     def __init__(self, settings: Settings):
         self._targets: list[RconTarget] = _parse_rcon_targets(settings)
-        raw_timeout = getattr(settings, "minecraft_rcon_connect_timeout_seconds", 10.0)
-        if isinstance(raw_timeout, (int, float)) and not isinstance(raw_timeout, bool):
-            t = float(raw_timeout)
-        else:
-            t = 10.0
-        self._connect_timeout = max(1.0, min(120.0, t))
+        self._connect_timeout = float(settings.minecraft_rcon_connect_timeout_seconds)
 
     def _is_configured(self) -> bool:
         return bool(self._targets)
@@ -157,6 +153,8 @@ class MinecraftRCONClient:
     async def _run_rcon_on(self, target: RconTarget, command: str) -> str:
         if not self._is_configured():
             raise MinecraftRCONError("Minecraft RCON not configured")
+
+        cmd_head = command.split()[0] if command else "unknown"
 
         def _sync_command() -> str:
             return _rcon_command(
@@ -167,8 +165,16 @@ class MinecraftRCONClient:
                 timeout=self._connect_timeout,
             )
 
-        loop = asyncio.get_event_loop()
-        return await loop.run_in_executor(None, _sync_command)
+        with trace_span(
+            "minecraft.rcon",
+            feature="whitelist",
+            attributes={
+                "rcon.target_id": target.id,
+                "rcon.command": cmd_head,
+            },
+        ):
+            loop = asyncio.get_event_loop()
+            return await loop.run_in_executor(None, _sync_command)
 
     async def _run_rcon(self, command: str) -> str:
         if not self._targets:

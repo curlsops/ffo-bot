@@ -7,7 +7,7 @@ import pytest
 from bot.commands.admin import AdminCommands, RegisterCommandsView
 
 
-def _admin_bot(admin=True, notifier_success=True, current_notify_channel_id=None, super_admin=True):
+def _admin_bot(admin=True, notifier_success=True, current_notify_channel_id=None):
     bot = MagicMock()
     bot.permission_checker.check_role = AsyncMock(return_value=admin)
     bot.latency = 0.05
@@ -22,6 +22,10 @@ def _admin_bot(admin=True, notifier_success=True, current_notify_channel_id=None
     bot.tree.sync = AsyncMock(return_value=[MagicMock()])
     bot.tree.clear_commands = MagicMock()
     return bot
+
+
+def _view_button(view, label):
+    return next(c for c in view.children if getattr(c, "label", None) == label)
 
 
 def _interaction(guild_id=111, user_id=222, channel_id=333):
@@ -41,7 +45,7 @@ async def test_register_commands_view_guild_mismatch():
     bot = _admin_bot()
     view = RegisterCommandsView(bot, guild_id=999)
     i = _interaction(guild_id=111)
-    btn = [c for c in view.children if getattr(c, "label", None) == "Register (this server)"][0]
+    btn = _view_button(view, "Register (this server)")
     await btn.callback(i)
     i.response.send_message.assert_awaited_once()
     assert "same server" in i.response.send_message.call_args[0][0].lower()
@@ -52,7 +56,7 @@ async def test_register_commands_view_register_guild_success():
     bot = _admin_bot()
     view = RegisterCommandsView(bot, guild_id=111)
     i = _interaction(guild_id=111)
-    btn = [c for c in view.children if getattr(c, "label", None) == "Register (this server)"][0]
+    btn = _view_button(view, "Register (this server)")
     await btn.callback(i)
     bot.tree.copy_global_to.assert_called_once_with(guild=i.guild)
     bot.tree.sync.assert_awaited_once_with(guild=i.guild)
@@ -65,7 +69,7 @@ async def test_register_commands_view_register_guild_failure():
     bot.tree.sync = AsyncMock(side_effect=RuntimeError("sync failed"))
     view = RegisterCommandsView(bot, guild_id=111)
     i = _interaction(guild_id=111)
-    btn = [c for c in view.children if getattr(c, "label", None) == "Register (this server)"][0]
+    btn = _view_button(view, "Register (this server)")
     await btn.callback(i)
     assert "Failed" in i.followup.send.call_args[0][0]
 
@@ -75,7 +79,7 @@ async def test_register_commands_view_register_global_success():
     bot = _admin_bot()
     view = RegisterCommandsView(bot, guild_id=111)
     i = _interaction()
-    btn = [c for c in view.children if getattr(c, "label", None) == "Register (global)"][0]
+    btn = _view_button(view, "Register (global)")
     await btn.callback(i)
     bot.tree.sync.assert_awaited_once_with()
     assert "globally" in i.followup.send.call_args[0][0].lower()
@@ -87,7 +91,7 @@ async def test_register_commands_view_register_global_failure():
     bot.tree.sync = AsyncMock(side_effect=RuntimeError("no"))
     view = RegisterCommandsView(bot, guild_id=111)
     i = _interaction()
-    btn = [c for c in view.children if getattr(c, "label", None) == "Register (global)"][0]
+    btn = _view_button(view, "Register (global)")
     await btn.callback(i)
     assert "Failed" in i.followup.send.call_args[0][0]
 
@@ -97,7 +101,7 @@ async def test_register_commands_view_clear_guild_wrong_server():
     bot = _admin_bot()
     view = RegisterCommandsView(bot, guild_id=999)
     i = _interaction(guild_id=111)
-    btn = [c for c in view.children if getattr(c, "label", None) == "Clear (this server)"][0]
+    btn = _view_button(view, "Clear (this server)")
     await btn.callback(i)
     i.response.send_message.assert_awaited_once()
 
@@ -107,7 +111,7 @@ async def test_register_commands_view_clear_guild_success():
     bot = _admin_bot()
     view = RegisterCommandsView(bot, guild_id=111)
     i = _interaction(guild_id=111)
-    btn = [c for c in view.children if getattr(c, "label", None) == "Clear (this server)"][0]
+    btn = _view_button(view, "Clear (this server)")
     await btn.callback(i)
     bot.tree.clear_commands.assert_called_once_with(guild=i.guild)
     assert "cleared" in i.followup.send.call_args[0][0].lower()
@@ -119,7 +123,7 @@ async def test_register_commands_view_clear_guild_failure():
     bot.tree.sync = AsyncMock(side_effect=ValueError("x"))
     view = RegisterCommandsView(bot, guild_id=111)
     i = _interaction(guild_id=111)
-    btn = [c for c in view.children if getattr(c, "label", None) == "Clear (this server)"][0]
+    btn = _view_button(view, "Clear (this server)")
     await btn.callback(i)
     assert "Failed" in i.followup.send.call_args[0][0]
 
@@ -277,7 +281,7 @@ async def test_notify_channel_success_new_channel():
     g = AdminCommands(bot).admin_group
     await g.notify_channel.callback(g, i, channel=ch)
     bot.notifier.notify_notify_channel_changed.assert_awaited()
-    assert "3" in i.followup.send.call_args[0][0] or "mention" in str(i.followup.send.call_args)
+    assert ch.mention in i.followup.send.call_args[0][0]
 
 
 @pytest.mark.asyncio
@@ -288,6 +292,9 @@ async def test_ping():
     await cog.ping.callback(cog, i)
     assert "Pong" in i.response.send_message.call_args[0][0]
 
+
+@pytest.mark.asyncio
+async def test_admin_cog_load_unload():
     bot = MagicMock()
     bot.tree.add_command = MagicMock()
     bot.tree.remove_command = MagicMock()
@@ -297,8 +304,12 @@ async def test_ping():
     await cog.cog_unload()
     bot.tree.remove_command.assert_called_once_with("admin")
 
+
+@pytest.mark.asyncio
+async def test_admin_setup():
     from bot.commands import admin as admin_mod
 
+    bot = MagicMock()
     bot.add_cog = AsyncMock()
     await admin_mod.setup(bot)
     bot.add_cog.assert_awaited_once()

@@ -1,11 +1,11 @@
-from contextlib import asynccontextmanager
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock
+from unittest.mock import AsyncMock
 
 import pytest
 
 from bot.utils.server_roles import set_server_role
 from config.constants import Role
+from tests.helpers import db_pool_with_conn, mock_db_conn
 
 _BOT = Path(__file__).resolve().parents[2] / "bot" / "commands"
 
@@ -22,19 +22,11 @@ def test_reaction_roles_add_uses_select_then_insert():
     assert "fetchval" in text or "SELECT" in text
 
 
-def _pool(conn):
-    @asynccontextmanager
-    async def acquire():
-        yield conn
-
-    return MagicMock(acquire=acquire)
-
-
 @pytest.mark.asyncio
 async def test_set_server_role_upserts_when_server_missing():
-    conn = MagicMock()
+    conn = mock_db_conn()
     conn.execute = AsyncMock()
-    pool = _pool(conn)
+    pool = db_pool_with_conn(conn)
     assert await set_server_role(pool, 123, Role.MODERATOR, 999, server_name="Test") is True
     conn.execute.assert_awaited_once()
     sql, server_id, server_name, merge = conn.execute.call_args.args

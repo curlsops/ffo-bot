@@ -7,6 +7,7 @@ from discord.ext import commands
 from bot.auth.command_helpers import require_admin, require_mod, require_rcon
 from bot.services.minecraft_rcon import MinecraftRCONError, parse_whitelist_list_response
 from bot.services.mojang import get_profile, get_profile_by_uuid, get_profiles_batch
+from bot.utils.log_context import log_command_start
 from bot.utils.pagination import ListPaginatedView, truncate_for_discord
 from bot.utils.whitelist_cache import (
     add_to_cache,
@@ -109,6 +110,7 @@ def _whitelist_command(cog: "WhitelistCommands"):
         channel: discord.TextChannel | None = None,
     ):
         await interaction.response.defer(ephemeral=True)
+        log_command_start(logger, "whitelist", "whitelist", interaction)
         await cog.dispatch_whitelist(
             interaction,
             operation=operation,

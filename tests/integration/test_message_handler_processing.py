@@ -1,32 +1,10 @@
-from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock
 
 import asyncpg
 import pytest
 
 from bot.handlers.messages import MessageHandler
-
-
-def make_db_pool(fetchval_result=None):
-    conn = MagicMock()
-    conn.fetchval = AsyncMock(return_value=fetchval_result)
-    conn.execute = AsyncMock()
-
-    @asynccontextmanager
-    async def acquire():
-        yield conn
-
-    pool = MagicMock()
-    pool.acquire = acquire
-    return pool, conn
-
-
-def _bot_with_metrics(shutting_down=False):
-    bot = MagicMock()
-    bot.is_shutting_down.return_value = shutting_down
-    bot.metrics = MagicMock()
-    bot.metrics.messages_processed.labels.return_value.inc = MagicMock()
-    return bot
+from tests.integration.conftest import bot_with_metrics, message_db_pool
 
 
 @pytest.mark.asyncio
@@ -39,7 +17,7 @@ def _bot_with_metrics(shutting_down=False):
     ],
 )
 async def test_message_handler_early_returns(bot_msg, guild, shutdown):
-    bot = _bot_with_metrics(shutting_down=shutdown)
+    bot = bot_with_metrics(shutting_down=shutdown)
     handler = MessageHandler(bot)
     msg = MagicMock()
     msg.author.bot = bot_msg
@@ -50,8 +28,8 @@ async def test_message_handler_early_returns(bot_msg, guild, shutdown):
 
 @pytest.mark.asyncio
 async def test_message_handler_user_opted_out_skips_processing():
-    db_pool, conn = make_db_pool(fetchval_result=True)
-    bot = _bot_with_metrics()
+    db_pool, conn = message_db_pool(fetchval_result=True)
+    bot = bot_with_metrics()
     bot.db_pool = db_pool
     bot.phrase_matcher = MagicMock(match_phrases=AsyncMock(return_value=[]))
     bot.voice_transcriber = None
@@ -77,8 +55,8 @@ async def test_message_handler_user_opted_out_skips_processing():
     ],
 )
 async def test_message_handler_voice_transcription(transcribe_result, should_reply):
-    db_pool, _ = make_db_pool(fetchval_result=None)
-    bot = _bot_with_metrics()
+    db_pool, _ = message_db_pool(fetchval_result=None)
+    bot = bot_with_metrics()
     bot.cache = None
     bot.phrase_matcher = None
     bot.db_pool = db_pool
@@ -114,8 +92,8 @@ async def test_message_handler_voice_transcription(transcribe_result, should_rep
 
 @pytest.mark.asyncio
 async def test_message_handler_non_voice_attachment_no_transcription():
-    db_pool, _ = make_db_pool(fetchval_result=None)
-    bot = _bot_with_metrics()
+    db_pool, _ = message_db_pool(fetchval_result=None)
+    bot = bot_with_metrics()
     bot.phrase_matcher = None
     bot.db_pool = db_pool
     vt = MagicMock()
@@ -142,9 +120,9 @@ async def test_message_handler_non_voice_attachment_no_transcription():
 
 @pytest.mark.asyncio
 async def test_message_handler_check_user_opt_out_error_continues_processing():
-    pool, conn = make_db_pool(fetchval_result=None)
+    pool, conn = message_db_pool(fetchval_result=None)
     conn.fetchval = AsyncMock(side_effect=asyncpg.PostgresConnectionError("DB"))
-    bot = _bot_with_metrics()
+    bot = bot_with_metrics()
     bot.cache = None
     bot.db_pool = pool
     bot.phrase_matcher = MagicMock(match_phrases=AsyncMock(return_value=[]))

@@ -1,28 +1,13 @@
-from contextlib import asynccontextmanager
-from unittest.mock import AsyncMock, MagicMock
-
 import pytest
 
 from bot.processors.phrase_matcher import PhraseMatcher
 from bot.utils.regex_validator import RegexValidationError
-
-
-def _pool(fetch):
-    conn = AsyncMock()
-    conn.fetch.return_value = fetch
-
-    @asynccontextmanager
-    async def acquire():
-        yield conn
-
-    pool = MagicMock()
-    pool.acquire = acquire
-    return pool
+from tests.helpers import mock_db_pool
 
 
 @pytest.mark.asyncio
 async def test_phrase_matcher_simple_match(mock_cache):
-    pool = _pool([{"id": "uuid-1", "phrase": r"hello", "emoji": "👋"}])
+    pool, _ = mock_db_pool(fetch=[{"id": "uuid-1", "phrase": r"hello", "emoji": "👋"}])
     matcher = PhraseMatcher(pool, mock_cache)
     await matcher.load_patterns(123456789)
     matches = await matcher.match_phrases("Hello world!", 123456789)
@@ -32,7 +17,7 @@ async def test_phrase_matcher_simple_match(mock_cache):
 
 @pytest.mark.asyncio
 async def test_phrase_matcher_case_insensitive(mock_cache):
-    pool = _pool([{"id": "uuid-1", "phrase": r"test", "emoji": "✅"}])
+    pool, _ = mock_db_pool(fetch=[{"id": "uuid-1", "phrase": r"test", "emoji": "✅"}])
     matcher = PhraseMatcher(pool, mock_cache)
     await matcher.load_patterns(123456789)
 

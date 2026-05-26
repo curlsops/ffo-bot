@@ -5,6 +5,7 @@ import aiohttp
 
 from bot.utils.http_session import get_session as _get_session
 from bot.utils.http_session import session_scope
+from bot.utils.telemetry import trace_span
 
 get_session = _get_session
 
@@ -107,26 +108,32 @@ async def get_profile_by_uuid(uuid_str: str) -> tuple[str, str] | None:
     if len(u) != 32:
         return None
     url = SESSION_PROFILE_BY_UUID_URL.format(uuid_no_dashes=u)
-    try:
-        async with session_scope(session=get_session()) as session:
-            async with session.get(url) as resp:
-                if resp.status == 200:
-                    data = await resp.json()
-                    id_raw = data.get("id")
-                    name = data.get("name")
-                    if id_raw and name:
-                        return (_format_uuid(id_raw), name)
+    with trace_span("mojang.profile_by_uuid", feature="whitelist"):
+        try:
+            async with session_scope(session=get_session()) as session:
+                async with session.get(url) as resp:
+                    if resp.status == 200:
+                        data = await resp.json()
+                        id_raw = data.get("id")
+                        name = data.get("name")
+                        if id_raw and name:
+                            return (_format_uuid(id_raw), name)
+                        return None
+                    if resp.status in (204, 404):
+                        return None
+                    logger.debug("Session server profile lookup %s for uuid", resp.status)
                     return None
-                if resp.status in (204, 404):
-                    return None
-                logger.debug("Session server profile lookup %s for uuid", resp.status)
-                return None
-    except aiohttp.ClientError as e:
-        logger.debug("Session server request failed: %s", e)
-        return None
+        except aiohttp.ClientError as e:
+            logger.debug("Session server request failed: %s", e)
+            return None
 
 
 async def get_profile(username: str) -> tuple[str, str] | None:
+    with trace_span("mojang.profile", feature="whitelist"):
+        return await _get_profile_impl(username)
+
+
+async def _get_profile_impl(username: str) -> tuple[str, str] | None:
     result = await _get_profile_from_mojang(username)
     if result:
         return result
@@ -151,15 +158,20 @@ async def get_profiles_batch(usernames: list[str]) -> dict[str, tuple[str, str]]
     if not usernames:
         return {}
 
-    results: dict[str, tuple[str, str]] = {}
-    remaining = list(usernames)
+    with trace_span(
+        "mojang.profiles_batch",
+        feature="whitelist",
+        attributes={"mojang.batch_count": len(usernames)},
+    ):
+        results: dict[str, tuple[str, str]] = {}
+        remaining = list(usernames)
 
-    for batch_start in range(0, len(remaining), BATCH_SIZE):
-        batch = remaining[batch_start : batch_start + BATCH_SIZE]
-        batch_results = await _batch_lookup(batch)
-        results.update(batch_results)
+        for batch_start in range(0, len(remaining), BATCH_SIZE):
+            batch = remaining[batch_start : batch_start + BATCH_SIZE]
+            batch_results = await _batch_lookup(batch)
+            results.update(batch_results)
 
-    return results
+        return results
 
 
 async def _batch_lookup(usernames: list[str]) -> dict[str, tuple[str, str]]:

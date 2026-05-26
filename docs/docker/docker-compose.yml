@@ -1,0 +1,13 @@
+services:
+  mkdocs:
+    build:
+      context: ../../
+      dockerfile: docs/docker/Dockerfile
+    container_name: ffo-bot-mkdocs
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    volumes:
+      - ../../:/docs/
+    environment:
+      - TZ=America/Chicago

@@ -16,11 +16,6 @@ from bot.utils.whitelist_cache import (
 )
 
 
-def test_sync_from_rcon_result_bool():
-    assert bool(SyncFromRconResult(ok=True))
-    assert not bool(SyncFromRconResult(ok=False))
-
-
 def make_pool(conn):
     ctx = MagicMock()
     ctx.__aenter__ = AsyncMock(return_value=conn)

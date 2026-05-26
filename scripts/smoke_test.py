@@ -1,4 +1,6 @@
 #!/usr/bin/env python3
+import davey
+
 import bot.utils.channel_config
 import config
 import database
@@ -22,7 +24,7 @@ from bot.handlers.reactions import ReactionHandler
 from bot.processors.phrase_matcher import PhraseMatcher
 from bot.processors.unit_converter import detect_and_convert
 from bot.processors.voice_transcriber import VoiceTranscriber
-from bot.services import spotify
+from bot.services import spotapi_subprocess, spotify, tls_client_alpine
 from bot.services.minecraft_rcon import MinecraftRCONClient, parse_whitelist_list_response
 from bot.services.mojang import username_exists
 from bot.services.tidal import (
@@ -55,5 +57,13 @@ from bot.utils.whitelist_cache import (
 from config.settings import Settings
 from database.connection import DatabasePool
 
+
+def _assert_spotapi_worker_present() -> None:
+    from importlib import import_module
+
+    import_module(spotapi_subprocess.WORKER_MODULE)
+
+
 if __name__ == "__main__":
-    print("All modules imported successfully", music, spotify)
+    _assert_spotapi_worker_present()
+    print("All modules imported successfully", music, spotify, tls_client_alpine)

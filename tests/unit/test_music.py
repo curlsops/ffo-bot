@@ -1,14 +1,14 @@
 import asyncio
 from collections import deque
-from contextlib import contextmanager, nullcontext
+from contextlib import contextmanager
 from types import SimpleNamespace
 from typing import Any, cast
 from unittest.mock import AsyncMock, MagicMock, patch
 from urllib.parse import urlparse
 
 import pytest
-from mafic import EndReason, Playlist, SearchType
-from mafic.errors import PlayerNotConnected, TrackLoadException
+from mafic import EndReason, SearchType
+from mafic.errors import PlayerNotConnected
 
 from bot.commands.music import (
     CONNECTION_FAILED_MSG,
@@ -25,7 +25,6 @@ from bot.commands.music import (
     _clear_queue,
     _ensure_player,
     _fetch_one_track,
-    _fetch_one_track_spotify,
     _fetch_playlist_tracks,
     _format_duration,
     _get_leave_tasks,
@@ -34,7 +33,6 @@ from bot.commands.music import (
     _is_spotify_url,
     _is_tidal_url,
     _is_youtube_url,
-    _load_tracks_from_lavalink_identifier,
     _music_lazy_prefetch_tasks,
     _music_lazy_prefetch_worker,
     _other_members_in_channel,
@@ -132,6 +130,68 @@ def _interaction(bot, guild_id=1, channel_id=2, user_id=3, voice_channel=None):
     return i
 
 
+def _prime_music_bot(mock_bot, *, feature_music=True, pool=None):
+    mock_bot.settings.feature_music = feature_music
+    mock_bot.pool = pool if pool is not None else MagicMock()
+    mock_bot.user = MagicMock(id=999)
+
+
+def _reconnect_ready_bot(mock_bot, *, guilds=None):
+    _prime_music_bot(mock_bot)
+    mock_bot.db_pool = MagicMock()
+    mock_bot.guilds = guilds if guilds is not None else []
+
+
+async def _run_idle_leave(
+    cog,
+    *,
+    get_vc_present,
+    other_members,
+    expect_disconnect,
+    expect_clear,
+    instant_sleep=False,
+):
+    from bot.commands import music as music_mod
+
+    _prime_music_bot(cog.bot)
+    cog.bot.db_pool = None
+    cog.bot._music_leave_tasks = {}
+    ch = _channel(id_=5, members=[MagicMock(id=999)])
+    vc = MagicMock(channel=ch, guild=ch.guild, disconnect=AsyncMock())
+    cog.bot.voice_clients = [vc]
+    member = MagicMock(id=7)
+    before = MagicMock(channel=ch)
+    after = MagicMock(channel=None)
+    sleep_patch = (
+        patch("bot.commands.music.asyncio.sleep", AsyncMock(return_value=None))
+        if instant_sleep
+        else patch.object(music_mod.asyncio, "sleep", new_callable=AsyncMock)
+    )
+    om = (
+        MagicMock(side_effect=other_members)
+        if isinstance(other_members, list)
+        else MagicMock(return_value=other_members)
+    )
+    with sleep_patch:
+        with patch("bot.commands.music.IDLE_LEAVE_SECONDS", 0):
+            with patch(
+                "bot.commands.music._get_voice_client",
+                return_value=vc if get_vc_present else None,
+            ):
+                with patch("bot.commands.music._other_members_in_channel", om):
+                    with patch("bot.commands.music._clear_queue") as cq:
+                        with patch("bot.commands.music.logger"):
+                            await cog._on_voice_state_update(member, before, after)
+                            await cog.bot._music_leave_tasks[GUILD_ID]
+    if expect_disconnect:
+        vc.disconnect.assert_awaited()
+        cq.assert_called_once_with(cog.bot, GUILD_ID)
+    else:
+        vc.disconnect.assert_not_awaited()
+        cq.assert_not_called()
+    assert GUILD_ID not in cog.bot._music_leave_tasks
+
+
 class TestMusicTidalResolve:
     @pytest.mark.asyncio
     async def test_resolve_tidal_catalog_lazy_tail_youtube_search(self, cog):
@@ -180,75 +240,105 @@ class TestMusicTidalResolve:
 
 class TestMusicSpotifyResolve:
     @pytest.mark.asyncio
-    async def test_resolve_spotify_native_returns_tracks(self, cog):
-        p = MagicMock()
-        tr = MagicMock()
-        with patch(
-            "bot.commands.music._load_tracks_from_lavalink_identifier", AsyncMock(return_value=[tr])
-        ):
-            r = await _resolve_url_tracks(
-                p, "https://open.spotify.com/playlist/7soPh0TWD5LFOt7doETqNq", cog.bot
-            )
-        assert r.tracks == [tr] and r.lazy_tail is None and r.err is None
-
-    @pytest.mark.asyncio
-    async def test_resolve_spotify_native_multi_lazy_preloads(self, cog):
-        p = MagicMock()
-        a, b, c = MagicMock(), MagicMock(), MagicMock()
-        with patch(
-            "bot.commands.music._load_tracks_from_lavalink_identifier",
-            AsyncMock(return_value=[a, b, c]),
-        ):
-            r = await _resolve_url_tracks(
-                p, "https://open.spotify.com/playlist/7soPh0TWD5LFOt7doETqNq", cog.bot
-            )
-        assert r.tracks == [a] and r.playlist
-        assert r.lazy_tail is not None
-        assert r.lazy_tail.preloaded_tracks == (b, c)
-        assert not r.lazy_tail.search_queries
-
-    @pytest.mark.asyncio
     async def test_resolve_spotify_lazy_tail_after_first_track(self, cog):
-        cog.bot.settings = SimpleNamespace(
-            feature_music=True, spotify_client_id="c", spotify_client_secret="s"
-        )
         p = MagicMock()
         first = MagicMock(title="First")
         with patch(
-            "bot.commands.music._load_tracks_from_lavalink_identifier", AsyncMock(return_value=None)
+            "bot.commands.music.spotify_playlist_catalog_queries",
+            AsyncMock(return_value=["Artist - A", "Artist - B"]),
         ):
-            with patch(
-                "bot.commands.music.spotify_playlist_catalog_queries",
-                AsyncMock(return_value=["Artist - A", "Artist - B"]),
-            ):
-                with patch(
-                    "bot.commands.music._fetch_one_track_spotify", AsyncMock(return_value=first)
-                ):
-                    r = await _resolve_url_tracks(
-                        p,
-                        "https://open.spotify.com/playlist/7soPh0TWD5LFOt7doETqNq",
-                        cog.bot,
-                    )
+            with patch("bot.commands.music._fetch_one_track", AsyncMock(return_value=first)):
+                r = await _resolve_url_tracks(
+                    p,
+                    "https://open.spotify.com/playlist/7soPh0TWD5LFOt7doETqNq",
+                    cog.bot,
+                )
         assert r.tracks == [first] and r.playlist
         assert r.lazy_tail is not None
         assert r.lazy_tail.search_queries == ("Artist - B",)
-        assert r.lazy_tail.search_type == SearchType.SPOTIFY_SEARCH
+        assert r.lazy_tail.search_type == SearchType.YOUTUBE
 
     @pytest.mark.asyncio
-    async def test_resolve_spotify_playlist_no_native_no_web_api_creds(self, cog):
-        cog.bot.settings = SimpleNamespace(
-            feature_music=True, spotify_client_id=None, spotify_client_secret=None
-        )
+    async def test_resolve_spotify_artist_catalog(self, cog):
         p = MagicMock()
+        first = MagicMock(title="Top")
         with patch(
-            "bot.commands.music._load_tracks_from_lavalink_identifier", AsyncMock(return_value=None)
+            "bot.commands.music.spotify_playlist_catalog_queries",
+            AsyncMock(return_value=None),
+        ):
+            with patch(
+                "bot.commands.music.spotify_album_catalog_queries",
+                AsyncMock(return_value=None),
+            ):
+                with patch(
+                    "bot.commands.music.spotify_artist_catalog_queries",
+                    AsyncMock(return_value=["Band - Hit", "Band - Two"]),
+                ):
+                    with patch(
+                        "bot.commands.music._fetch_one_track", AsyncMock(return_value=first)
+                    ):
+                        r = await _resolve_url_tracks(
+                            p,
+                            "https://open.spotify.com/artist/06HL4z0CvFAxyc27GXpf02",
+                            cog.bot,
+                        )
+        assert r.tracks == [first] and r.playlist
+        assert r.lazy_tail.search_queries == ("Band - Two",)
+        assert r.lazy_tail.search_type == SearchType.YOUTUBE
+
+    @pytest.mark.asyncio
+    async def test_resolve_spotify_catalog_truncated_at_max(self, cog):
+        p = MagicMock()
+        first = MagicMock(title="First")
+        over = [f"A - T{n}" for n in range(YOUTUBE_PLAYLIST_CATALOG_MAX + 3)]
+        with patch(
+            "bot.commands.music.spotify_playlist_catalog_queries",
+            AsyncMock(return_value=over),
+        ):
+            with patch("bot.commands.music._fetch_one_track", AsyncMock(return_value=first)):
+                r = await _resolve_url_tracks(
+                    p,
+                    "https://open.spotify.com/playlist/7soPh0TWD5LFOt7doETqNq",
+                    cog.bot,
+                )
+        assert r.tracks == [first]
+        assert len(r.lazy_tail.search_queries) == YOUTUBE_PLAYLIST_CATALOG_MAX - 1
+
+    @pytest.mark.asyncio
+    async def test_resolve_spotify_playlist_unresolved_when_catalog_empty(self, cog):
+        p = MagicMock()
+        with (
+            patch(
+                "bot.commands.music.spotify_playlist_catalog_queries",
+                AsyncMock(return_value=None),
+            ),
+            patch("bot.commands.music.spotify_album_catalog_queries", AsyncMock(return_value=None)),
+            patch(
+                "bot.commands.music.spotify_artist_catalog_queries",
+                AsyncMock(return_value=None),
+            ),
         ):
             r = await _resolve_url_tracks(
                 p,
                 "https://open.spotify.com/playlist/7soPh0TWD5LFOt7doETqNq?si=b14fe019fa6a47fa",
                 cog.bot,
             )
-        assert r.err and "SPOTIFY_CLIENT_ID" in r.err and "SPOTIFY_CLIENT_SECRET" in r.err
+        assert r.err and "Could not resolve Spotify" in r.err
+
+    @pytest.mark.asyncio
+    async def test_resolve_spotify_track_sets_single_track_yt(self, cog):
+        p = MagicMock()
+        with patch(
+            "bot.commands.music.spotify_url_to_search_query",
+            AsyncMock(return_value="Artist - Song"),
+        ):
+            r = await _resolve_url_tracks(
+                p,
+                "https://open.spotify.com/track/4iV5W9uYEdYUVa79Axb7Rh",
+                cog.bot,
+            )
+        assert r.resolved_query == "Artist - Song"
+        assert r.single_track_yt is True
 
 
 class TestMusicLazyHelpers:
@@ -289,7 +379,7 @@ class TestMusicLazyHelpers:
     @pytest.mark.asyncio
     async def test_lazy_prefetch_worker_cancelled_on_sleep(self, mock_bot):
         mock_bot._music_queues = {1: deque()}
-        tail = MusicLazyTail(search_queries=("a",), search_type=SearchType.SPOTIFY_SEARCH)
+        tail = MusicLazyTail(search_queries=("a",), search_type=SearchType.YOUTUBE)
         with patch(
             "bot.commands.music.asyncio.sleep", AsyncMock(side_effect=asyncio.CancelledError())
         ):
@@ -299,16 +389,16 @@ class TestMusicLazyHelpers:
     @pytest.mark.asyncio
     async def test_lazy_prefetch_worker_stops_when_queue_removed(self, mock_bot):
         mock_bot._music_queues = {}
-        tail = MusicLazyTail(search_queries=("q",), search_type=SearchType.SPOTIFY_SEARCH)
+        tail = MusicLazyTail(search_queries=("q",), search_type=SearchType.YOUTUBE)
         with patch("bot.commands.music.asyncio.sleep", new_callable=AsyncMock):
             await _music_lazy_prefetch_worker(mock_bot, 9, MagicMock(), tail)
 
     @pytest.mark.asyncio
     async def test_lazy_prefetch_worker_skips_when_resolve_returns_none(self, mock_bot):
         mock_bot._music_queues = {1: deque()}
-        tail = MusicLazyTail(search_queries=("q",), search_type=SearchType.SPOTIFY_SEARCH)
+        tail = MusicLazyTail(search_queries=("q",), search_type=SearchType.YOUTUBE)
         with patch("bot.commands.music.asyncio.sleep", new_callable=AsyncMock):
-            with patch("bot.commands.music._fetch_one_track_spotify", AsyncMock(return_value=None)):
+            with patch("bot.commands.music._fetch_one_track", AsyncMock(return_value=None)):
                 await _music_lazy_prefetch_worker(mock_bot, 1, MagicMock(), tail)
         assert len(_get_queue(mock_bot, 1)) == 0
 
@@ -318,9 +408,7 @@ class TestMusicLazyHelpers:
         tr = MagicMock()
         p = MagicMock()
         p.fetch_tracks = AsyncMock(return_value=[tr])
-        tail = MusicLazyTail(
-            search_queries=("artist - song",), search_type=SearchType.SPOTIFY_SEARCH
-        )
+        tail = MusicLazyTail(search_queries=("artist - song",), search_type=SearchType.YOUTUBE)
         with patch("bot.commands.music.asyncio.sleep", new_callable=AsyncMock):
             await _music_lazy_prefetch_worker(mock_bot, 1, p, tail)
         assert list(_get_queue(mock_bot, 1)) == [tr]
@@ -364,14 +452,13 @@ class TestMusicLazyHelpers:
 
         tmap = _music_lazy_prefetch_tasks(cast(Any, bot))
         tmap[4] = asyncio.create_task(slow())
-        tail = MusicLazyTail(search_queries=("only",), search_type=SearchType.SPOTIFY_SEARCH)
+        tail = MusicLazyTail(search_queries=("only",), search_type=SearchType.YOUTUBE)
         _schedule_music_lazy_prefetch(cast(Any, bot), 4, MagicMock(), tail)
         assert 4 in tmap
         tmap[4].cancel()
         try:
             _ = await tmap[4]
         except asyncio.CancelledError:
-            # Expected after cancel() on the replaced prefetch task.
             pass
 
     @pytest.mark.asyncio
@@ -380,7 +467,7 @@ class TestMusicLazyHelpers:
         bot._music_queues = {6: deque()}
         p = MagicMock()
         p.fetch_tracks = AsyncMock(return_value=[MagicMock()])
-        tail = MusicLazyTail(search_queries=("one",), search_type=SearchType.SPOTIFY_SEARCH)
+        tail = MusicLazyTail(search_queries=("one",), search_type=SearchType.YOUTUBE)
         with patch("bot.commands.music.asyncio.sleep", new_callable=AsyncMock):
             _schedule_music_lazy_prefetch(cast(Any, bot), 6, p, tail)
         t = bot._music_lazy_prefetch_tasks[6]
@@ -401,120 +488,37 @@ class TestMusicLazyHelpers:
         assert 1 not in (mock_bot._music_queues or {})
 
     @pytest.mark.asyncio
-    async def test_load_tracks_from_lavalink_on_trackload(self):
-        p = MagicMock()
-        p.fetch_tracks = AsyncMock(
-            side_effect=TrackLoadException(message="m", severity="common", cause="c")
-        )
-        assert (
-            await _load_tracks_from_lavalink_identifier(p, "https://open.spotify.com/track/x")
-            is None
-        )
-
-    @pytest.mark.asyncio
-    async def test_load_tracks_from_lavalink_none_result(self):
-        p = MagicMock()
-        p.fetch_tracks = AsyncMock(return_value=None)
-        assert await _load_tracks_from_lavalink_identifier(p, "https://x") is None
-
-    @pytest.mark.asyncio
-    async def test_load_tracks_from_lavalink_empty_list(self):
-        p = MagicMock()
-        p.fetch_tracks = AsyncMock(return_value=[])
-        assert await _load_tracks_from_lavalink_identifier(p, "https://x") is None
-
-    @pytest.mark.asyncio
-    async def test_load_tracks_from_lavalink_empty_playlist(self):
-        p = MagicMock()
-        pl = Playlist(info={"name": "p", "selectedTrack": 0}, tracks=[], plugin_info={})
-        p.fetch_tracks = AsyncMock(return_value=pl)
-        assert await _load_tracks_from_lavalink_identifier(p, "https://x") is None
-
-    @pytest.mark.asyncio
-    async def test_load_tracks_from_lavalink_unknown_shape(self):
-        p = MagicMock()
-        p.fetch_tracks = AsyncMock(return_value=object())
-        assert await _load_tracks_from_lavalink_identifier(p, "https://x") is None
-
-    @pytest.mark.asyncio
-    async def test_fetch_one_track_spotify_on_trackload(self):
-        p = MagicMock()
-        p.fetch_tracks = AsyncMock(
-            side_effect=TrackLoadException(message="m", severity="common", cause="c")
-        )
-        assert await _fetch_one_track_spotify(p, "q") is None
-
-    @pytest.mark.asyncio
-    async def test_fetch_one_track_spotify_non_list_with_tracks(self):
-        t0 = MagicMock()
-        load = MagicMock(spec=["tracks"])
-        load.tracks = [t0]
-        p = MagicMock()
-        p.fetch_tracks = AsyncMock(return_value=load)
-        assert await _fetch_one_track_spotify(p, "q") is t0
-
-    @pytest.mark.asyncio
-    async def test_fetch_one_track_spotify_empty_list_returns_none(self):
-        p = MagicMock()
-        p.fetch_tracks = AsyncMock(return_value=[])
-        assert await _fetch_one_track_spotify(p, "q") is None
-
-    @pytest.mark.asyncio
-    async def test_fetch_one_track_spotify_unknown_result_returns_none(self):
-        p = MagicMock()
-        load = MagicMock(spec=["tracks"])
-        load.tracks = []
-        p.fetch_tracks = AsyncMock(return_value=load)
-        assert await _fetch_one_track_spotify(p, "q") is None
-
-    @pytest.mark.asyncio
     async def test_resolve_spotify_single_catalog_entry_no_lazy_tail(self, cog):
-        cog.bot.settings = SimpleNamespace(
-            feature_music=True, spotify_client_id="c", spotify_client_secret="s"
-        )
         p = MagicMock()
         only = MagicMock(title="Solo")
         with patch(
-            "bot.commands.music._load_tracks_from_lavalink_identifier", AsyncMock(return_value=None)
+            "bot.commands.music.spotify_playlist_catalog_queries",
+            AsyncMock(return_value=["Only Artist - Only Song"]),
         ):
-            with patch(
-                "bot.commands.music.spotify_playlist_catalog_queries",
-                AsyncMock(return_value=["Only Artist - Only Song"]),
-            ):
-                with patch(
-                    "bot.commands.music._fetch_one_track_spotify", AsyncMock(return_value=only)
-                ):
-                    r = await _resolve_url_tracks(
-                        p, "https://open.spotify.com/playlist/7soPh0TWD5LFOt7doETqNq", cog.bot
-                    )
+            with patch("bot.commands.music._fetch_one_track", AsyncMock(return_value=only)):
+                r = await _resolve_url_tracks(
+                    p, "https://open.spotify.com/playlist/7soPh0TWD5LFOt7doETqNq", cog.bot
+                )
         assert r.tracks == [only] and r.lazy_tail is None and not r.playlist
 
     @pytest.mark.asyncio
     async def test_resolve_spotify_first_track_unresolvable(self, cog):
-        cog.bot.settings = SimpleNamespace(
-            feature_music=True, spotify_client_id="c", spotify_client_secret="s"
-        )
         p = MagicMock()
         with patch(
-            "bot.commands.music._load_tracks_from_lavalink_identifier", AsyncMock(return_value=None)
+            "bot.commands.music.spotify_playlist_catalog_queries",
+            AsyncMock(return_value=["A - B"]),
         ):
-            with patch(
-                "bot.commands.music.spotify_playlist_catalog_queries",
-                AsyncMock(return_value=["A - B"]),
-            ):
-                with patch(
-                    "bot.commands.music._fetch_one_track_spotify", AsyncMock(return_value=None)
-                ):
-                    r = await _resolve_url_tracks(
-                        p, "https://open.spotify.com/playlist/7soPh0TWD5LFOt7doETqNq", cog.bot
-                    )
+            with patch("bot.commands.music._fetch_one_track", AsyncMock(return_value=None)):
+                r = await _resolve_url_tracks(
+                    p, "https://open.spotify.com/playlist/7soPh0TWD5LFOt7doETqNq", cog.bot
+                )
         assert r.err and "first track" in r.err.lower()
 
     @pytest.mark.asyncio
     async def test_play_lazy_while_playing_schedules_prefetch_without_extra_copy(self, cog):
         t1 = MagicMock(title="QueuedFirst")
         i, player = _play_ctx(cog, tracks=[t1], current=MagicMock(title="Now"))
-        tail = MusicLazyTail(search_queries=("tail-query",), search_type=SearchType.SPOTIFY_SEARCH)
+        tail = MusicLazyTail(search_queries=("tail-query",), search_type=SearchType.YOUTUBE)
         ru = ResolvedUrl([t1], True, None, None, tail)
         with patch("bot.commands.music._resolve_url_tracks", AsyncMock(return_value=ru)):
             with patch("bot.commands.music._schedule_music_lazy_prefetch", MagicMock()) as sched:
@@ -530,7 +534,7 @@ class TestMusicLazyHelpers:
     async def test_play_lazy_idle_schedules_prefetch_without_extra_copy(self, cog):
         t1 = MagicMock(title="Only")
         i, player = _play_ctx(cog, tracks=[t1], current=None)
-        tail = MusicLazyTail(search_queries=("tail",), search_type=SearchType.SPOTIFY_SEARCH)
+        tail = MusicLazyTail(search_queries=("tail",), search_type=SearchType.YOUTUBE)
         ru = ResolvedUrl([t1], True, None, None, tail)
         with patch("bot.commands.music._resolve_url_tracks", AsyncMock(return_value=ru)):
             with patch("bot.commands.music._schedule_music_lazy_prefetch", MagicMock()) as sched:
@@ -562,9 +566,9 @@ class TestMusicUtils:
     def test_ms_none_returns_zero(self):
         assert _ms(None) == 0
 
-    def test_ms_invalid_returns_zero(self):
-        assert _ms("x") == 0
-        assert _ms(object()) == 0
+    @pytest.mark.parametrize("value", ["x", object()])
+    def test_ms_invalid_returns_zero(self, value):
+        assert _ms(value) == 0
 
     def test_ms_valid_returns_int(self):
         assert _ms(5000) == 5000
@@ -633,43 +637,30 @@ class TestMusicUtils:
         assert "in " in result
 
 
-class TestYoutubeVideoId:
-    def test_from_watch_url(self):
-        assert _youtube_video_id("https://www.youtube.com/watch?v=dQw4w9WgXcQ", "") == "dQw4w9WgXcQ"
+@pytest.mark.parametrize(
+    ("url", "identifier", "expected"),
+    [
+        ("https://www.youtube.com/watch?v=dQw4w9WgXcQ", "", "dQw4w9WgXcQ"),
+        ("https://youtu.be/dQw4w9WgXcQ", "", "dQw4w9WgXcQ"),
+        ("https://www.youtube.com/embed/dQw4w9WgXcQ", "", "dQw4w9WgXcQ"),
+        ("https://www.youtube.com/shorts/dQw4w9WgXcQ", "", "dQw4w9WgXcQ"),
+        ("https://m.youtube.com/watch?v=jNQXAC9IVRw", "", "jNQXAC9IVRw"),
+        ("https://www.youtube.com/watch", "jNQXAC9IVRw", "jNQXAC9IVRw"),
+        (None, "dQw4w9WgXcQ", "dQw4w9WgXcQ"),
+        (None, "tooshort", None),
+        ("http:///watch?v=jNQXAC9IVRw", "jNQXAC9IVRw", "jNQXAC9IVRw"),
+        ("https://youtu.be/", "dQw4w9WgXcQ", "dQw4w9WgXcQ"),
+    ],
+)
+def test_youtube_video_id(url, identifier, expected):
+    assert _youtube_video_id(url, identifier) == expected
 
-    def test_from_youtu_be(self):
-        assert _youtube_video_id("https://youtu.be/dQw4w9WgXcQ", "") == "dQw4w9WgXcQ"
 
-    def test_from_embed_path(self):
-        assert _youtube_video_id("https://www.youtube.com/embed/dQw4w9WgXcQ", "") == "dQw4w9WgXcQ"
-
-    def test_from_shorts_path(self):
-        assert _youtube_video_id("https://www.youtube.com/shorts/dQw4w9WgXcQ", "") == "dQw4w9WgXcQ"
-
-    def test_from_m_youtube_host(self):
-        assert _youtube_video_id("https://m.youtube.com/watch?v=jNQXAC9IVRw", "") == "jNQXAC9IVRw"
-
-    def test_watch_path_without_v_query_falls_back_to_identifier(self):
-        assert _youtube_video_id("https://www.youtube.com/watch", "jNQXAC9IVRw") == "jNQXAC9IVRw"
-
-    def test_from_identifier_only(self):
-        assert _youtube_video_id(None, "dQw4w9WgXcQ") == "dQw4w9WgXcQ"
-
-    def test_identifier_wrong_length(self):
-        assert _youtube_video_id(None, "tooshort") is None
-
-    def test_uri_without_hostname_falls_back_to_identifier(self):
-        assert _youtube_video_id("http:///watch?v=jNQXAC9IVRw", "jNQXAC9IVRw") == "jNQXAC9IVRw"
-
-    def test_youtu_be_empty_segment_falls_back(self):
-        assert _youtube_video_id("https://youtu.be/", "dQw4w9WgXcQ") == "dQw4w9WgXcQ"
-
-    def test_urlparse_error_falls_back_to_identifier(self):
-        with patch("bot.utils.music.urlparse", side_effect=ValueError("bad")):
-            assert (
-                _youtube_video_id("https://www.youtube.com/watch?v=xx", "dQw4w9WgXcQ")
-                == "dQw4w9WgXcQ"
-            )
+def test_youtube_video_id_urlparse_error_falls_back_to_identifier():
+    with patch("bot.utils.music.urlparse", side_effect=ValueError("bad")):
+        assert (
+            _youtube_video_id("https://www.youtube.com/watch?v=xx", "dQw4w9WgXcQ") == "dQw4w9WgXcQ"
+        )
 
 
 class TestTrackListenAndArt:
@@ -1095,22 +1086,10 @@ class TestMusicPlay:
     )
     async def test_play_url_resolved_to_youtube(self, cog, resolver, url, search_query, tracks):
         i, player = _play_ctx(cog, tracks=tracks)
-        spotify_native = (
-            patch(
-                "bot.commands.music._load_tracks_from_lavalink_identifier",
-                AsyncMock(return_value=None),
-            )
-            if resolver.startswith("spotify")
-            else nullcontext()
-        )
-        with spotify_native:
-            with patch(f"bot.commands.music.{resolver}", AsyncMock(return_value=search_query)):
-                with _patch_player():
-                    await cog.music_group.play.callback(cog.music_group, i, url)
-        expected = (
-            SearchType.SPOTIFY_SEARCH if resolver.startswith("spotify") else SearchType.YOUTUBE
-        )
-        player.fetch_tracks.assert_called_once_with(search_query, search_type=expected)
+        with patch(f"bot.commands.music.{resolver}", AsyncMock(return_value=search_query)):
+            with _patch_player():
+                await cog.music_group.play.callback(cog.music_group, i, url)
+        player.fetch_tracks.assert_called_once_with(search_query, search_type=SearchType.YOUTUBE)
         assert "Playing" in i.followup.send.call_args[1]["embed"].title
 
     @pytest.mark.asyncio
@@ -1142,16 +1121,7 @@ class TestMusicPlay:
     async def test_play_playlist_queues_tracks(self, cog, resolver, url, queries):
         t1, t2 = MagicMock(title="A"), MagicMock(title="B")
         i, player = _play_ctx(cog, fetch_side_effect=[[t1], [t2]])
-        spotify_native = (
-            patch(
-                "bot.commands.music._load_tracks_from_lavalink_identifier",
-                AsyncMock(return_value=None),
-            )
-            if resolver.startswith("spotify")
-            else nullcontext()
-        )
         with (
-            spotify_native,
             patch("bot.commands.music._schedule_music_lazy_prefetch", MagicMock()),
             patch(f"bot.commands.music.{resolver}", AsyncMock(return_value=queries)),
             _patch_player(),
@@ -1185,7 +1155,7 @@ class TestMusicPlay:
         assert msg in i.followup.send.call_args[0][0]
 
     @pytest.mark.asyncio
-    async def test_play_spotify_url_multiple_hits_shows_picker(self, cog):
+    async def test_play_spotify_track_url_multiple_hits_plays_best_match(self, cog):
         t_react = MagicMock(title="Slave Knight Gael REACTION", author="Fan")
         t_official = MagicMock(title="Slave Knight Gael (Official Video)", author="From")
         i, player = _play_ctx(cog, tracks=[t_react, t_official])
@@ -1193,21 +1163,15 @@ class TestMusicPlay:
             "bot.commands.music.spotify_url_to_search_query",
             AsyncMock(return_value="Yuka Kitamura - Slave Knight Gael"),
         ):
-            with patch(
-                "bot.commands.music._load_tracks_from_lavalink_identifier",
-                AsyncMock(return_value=None),
-            ):
-                with _patch_player():
-                    await cog.music_group.play.callback(
-                        cog.music_group, i, "https://open.spotify.com/track/74m8PoL6GZulfVzeYS6W0C"
-                    )
-        player.play.assert_not_called()
-        kw = i.followup.send.call_args[1]
-        assert "Pick a track" in kw["embed"].title and kw.get("view") and kw["ephemeral"]
+            with _patch_player():
+                await cog.music_group.play.callback(
+                    cog.music_group, i, "https://open.spotify.com/track/74m8PoL6GZulfVzeYS6W0C"
+                )
+        player.play.assert_called_once()
         assert len(_get_queue(cog.bot, GUILD_ID)) == 0
 
     @pytest.mark.asyncio
-    async def test_play_tidal_track_url_multiple_hits_shows_picker(self, cog):
+    async def test_play_tidal_track_url_multiple_hits_plays_best_match(self, cog):
         t_lyrics = MagicMock(title="Unanswered (Lyrics)", author="Ch")
         t_official = MagicMock(title="Unanswered (OFFICIAL VIDEO)", author="SS")
         i, player = _play_ctx(cog, tracks=[t_lyrics, t_official])
@@ -1219,13 +1183,11 @@ class TestMusicPlay:
                 await cog.music_group.play.callback(
                     cog.music_group, i, "https://tidal.com/track/51982148/u"
                 )
-        player.play.assert_not_called()
-        kw = i.followup.send.call_args[1]
-        assert "Pick a track" in kw["embed"].title and kw.get("view")
+        player.play.assert_called_once()
         assert len(_get_queue(cog.bot, GUILD_ID)) == 0
 
     @pytest.mark.asyncio
-    async def test_play_spotify_track_url_while_playing_multiple_hits_shows_picker(self, cog):
+    async def test_play_spotify_track_url_while_playing_queues_single_match(self, cog):
         t_react = MagicMock(title="Unanswered REACTION", author="X")
         t_official = MagicMock(title="Unanswered (Official Video)", author="Y")
         i, player = _play_ctx(
@@ -1235,17 +1197,12 @@ class TestMusicPlay:
             "bot.commands.music.spotify_url_to_search_query",
             AsyncMock(return_value="Suicide Silence - Unanswered"),
         ):
-            with patch(
-                "bot.commands.music._load_tracks_from_lavalink_identifier",
-                AsyncMock(return_value=None),
-            ):
-                with _patch_player():
-                    await cog.music_group.play.callback(
-                        cog.music_group, i, "https://open.spotify.com/track/4iV5W9uYEdYUVa79Axb7Rh"
-                    )
-        assert len(_get_queue(cog.bot, GUILD_ID)) == 0
-        kw = i.followup.send.call_args[1]
-        assert "Pick a track" in kw["embed"].title and kw.get("view")
+            with _patch_player():
+                await cog.music_group.play.callback(
+                    cog.music_group, i, "https://open.spotify.com/track/4iV5W9uYEdYUVa79Axb7Rh"
+                )
+        assert len(_get_queue(cog.bot, GUILD_ID)) == 1
+        assert _get_queue(cog.bot, GUILD_ID)[0] is t_official
 
     @pytest.mark.asyncio
     async def test_play_force_next_mod_inserts_at_front(self, cog):
@@ -1389,7 +1346,7 @@ class TestMusicPlay:
 
     @pytest.mark.asyncio
     async def test_play_youtube_playlist_prefix_size(self, cog):
-        many = [MagicMock(title=f"T{n}") for n in range(60)]
+        many = [MagicMock(title=f"T{n}") for n in range(YOUTUBE_PLAYLIST_RESOLVE_SAMPLE + 1)]
         load = MagicMock(tracks=many)
         ch = _channel()
         p = _player(ch, tracks=None, current=MagicMock(title="Now"))
@@ -1446,6 +1403,22 @@ class TestMusicPlay:
                     cog.music_group, i, "https://open.spotify.com/playlist/abc"
                 )
         assert list(cog.bot._music_queues[GUILD_ID]) == [t1]
+
+    @pytest.mark.asyncio
+    async def test_play_single_track_yt_trims_pre_resolved_tracks(self, cog):
+        t0, t1 = MagicMock(title="A"), MagicMock(title="B")
+        ch = _channel()
+        p = _player(ch, tracks=[t0], current=None)
+        i = _interaction(cog.bot, voice_channel=ch)
+        i.guild.voice_client = p
+        cog.bot._music_queues = {GUILD_ID: deque()}
+        ru = ResolvedUrl([t0, t1], False, None, None, single_track_yt=True)
+        with patch("bot.commands.music._resolve_url_tracks", AsyncMock(return_value=ru)):
+            with _patch_player():
+                await cog.music_group.play.callback(
+                    cog.music_group, i, "https://open.spotify.com/track/abc"
+                )
+        p.play.assert_called_once_with(t0)
 
     @pytest.mark.asyncio
     async def test_status_music_disabled(self, cog):
@@ -1604,37 +1577,38 @@ class TestMusicCogUnload:
 
 class TestMusicVoiceRecovery:
     @pytest.mark.asyncio
-    async def test_reconnect_skips_without_pool(self, mock_bot):
-        mock_bot.settings.feature_music = True
-        mock_bot.pool = None
-        mock_bot.db_pool = MagicMock()
-        with patch("bot.commands.music.fetch_music_voice_channel_targets", AsyncMock()) as f:
-            await reconnect_music_voice_after_ready(mock_bot)
-        f.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_reconnect_skips_without_db_pool(self, mock_bot):
-        mock_bot.settings.feature_music = True
-        mock_bot.pool = MagicMock()
-        mock_bot.db_pool = None
-        with patch("bot.commands.music.fetch_music_voice_channel_targets", AsyncMock()) as f:
-            await reconnect_music_voice_after_ready(mock_bot)
-        f.assert_not_called()
-
-    @pytest.mark.asyncio
-    async def test_reconnect_skips_when_feature_off(self, mock_bot):
-        mock_bot.settings.feature_music = False
-        mock_bot.pool = MagicMock()
-        mock_bot.db_pool = MagicMock()
-        with patch("bot.commands.music.fetch_music_voice_channel_targets", AsyncMock()) as f:
-            await reconnect_music_voice_after_ready(mock_bot)
+    @pytest.mark.parametrize(
+        "pool,db_pool,feature_music,davey",
+        [
+            (None, MagicMock(), True, True),
+            (MagicMock(), None, True, True),
+            (MagicMock(), MagicMock(), False, True),
+            (MagicMock(), MagicMock(), True, False),
+        ],
+    )
+    async def test_reconnect_skips_when_unavailable(
+        self, mock_bot, pool, db_pool, feature_music, davey
+    ):
+        mock_bot.settings.feature_music = feature_music
+        mock_bot.pool = pool
+        mock_bot.db_pool = db_pool
+        if davey:
+            with patch("bot.commands.music.fetch_music_voice_channel_targets", AsyncMock()) as f:
+                await reconnect_music_voice_after_ready(mock_bot)
+        else:
+            with patch(
+                "bot.commands.music.discord_voice_dependencies_available",
+                return_value=False,
+            ):
+                with patch(
+                    "bot.commands.music.fetch_music_voice_channel_targets", AsyncMock()
+                ) as f:
+                    await reconnect_music_voice_after_ready(mock_bot)
         f.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_reconnect_calls_connect(self, mock_bot):
-        mock_bot.settings.feature_music = True
-        mock_bot.pool = MagicMock()
-        mock_bot.db_pool = MagicMock()
+        _reconnect_ready_bot(mock_bot)
         ch = MagicMock()
         ch.id = 88
         ch.connect = AsyncMock()
@@ -1654,9 +1628,7 @@ class TestMusicVoiceRecovery:
 
     @pytest.mark.asyncio
     async def test_reconnect_clears_when_not_voice_channel(self, mock_bot):
-        mock_bot.settings.feature_music = True
-        mock_bot.pool = MagicMock()
-        mock_bot.db_pool = MagicMock()
+        _reconnect_ready_bot(mock_bot)
         guild = MagicMock(id=1, voice_client=None)
         guild.get_channel = MagicMock(return_value=MagicMock())
         mock_bot.guilds = [guild]
@@ -1836,9 +1808,7 @@ async def test_cancel_leave_task_swallows_cancelled():
 
 @pytest.mark.asyncio
 async def test_voice_idle_schedules_leave(cog):
-    cog.bot.settings.feature_music = True
-    cog.bot.pool = MagicMock()
-    cog.bot.user = MagicMock(id=999)
+    _prime_music_bot(cog.bot)
     cog.bot.db_pool = None
     channel = _channel(id_=5, members=[MagicMock(id=999)])
     vc = MagicMock(channel=channel, guild=channel.guild)
@@ -1858,10 +1828,7 @@ async def test_voice_idle_schedules_leave(cog):
 
 @pytest.mark.asyncio
 async def test_reconnect_skips_when_guild_unknown(mock_bot):
-    mock_bot.settings.feature_music = True
-    mock_bot.pool = MagicMock()
-    mock_bot.db_pool = MagicMock()
-    mock_bot.guilds = []
+    _reconnect_ready_bot(mock_bot)
     with patch(
         "bot.commands.music.fetch_music_voice_channel_targets",
         AsyncMock(return_value=[(999, 1)]),
@@ -1870,10 +1837,33 @@ async def test_reconnect_skips_when_guild_unknown(mock_bot):
 
 
 @pytest.mark.asyncio
+async def test_reconnect_disconnect_sleeps_before_reconnect(mock_bot):
+    _reconnect_ready_bot(mock_bot)
+    vc = MagicMock()
+    vc.channel = MagicMock(id=2)
+    vc.disconnect = AsyncMock()
+    guild = MagicMock(id=1, voice_client=vc)
+    guild.get_channel = MagicMock(return_value=_channel(id_=88))
+    guild.me = MagicMock()
+    mock_bot.guilds = [guild]
+    ch = guild.get_channel.return_value
+    ch.permissions_for = MagicMock(return_value=MagicMock(connect=True, speak=True))
+    ch.connect = AsyncMock()
+    with patch(
+        "bot.commands.music.fetch_music_voice_channel_targets",
+        AsyncMock(return_value=[(1, 88)]),
+    ):
+        with patch("bot.commands.music._is_voice_or_stage", return_value=True):
+            with patch("bot.commands.music.asyncio.sleep", AsyncMock()) as sleep:
+                with _patch_player():
+                    await reconnect_music_voice_after_ready(mock_bot)
+    sleep.assert_awaited_once_with(1.0)
+    ch.connect.assert_awaited_once()
+
+
+@pytest.mark.asyncio
 async def test_reconnect_disconnect_failure_logged(mock_bot):
-    mock_bot.settings.feature_music = True
-    mock_bot.pool = MagicMock()
-    mock_bot.db_pool = MagicMock()
+    _reconnect_ready_bot(mock_bot)
     vc = MagicMock()
     vc.channel = MagicMock(id=2)
     vc.disconnect = AsyncMock(side_effect=RuntimeError("dc"))
@@ -1895,9 +1885,7 @@ async def test_reconnect_disconnect_failure_logged(mock_bot):
 
 @pytest.mark.asyncio
 async def test_reconnect_skips_when_already_connected_same_channel(mock_bot):
-    mock_bot.settings.feature_music = True
-    mock_bot.pool = MagicMock()
-    mock_bot.db_pool = MagicMock()
+    _reconnect_ready_bot(mock_bot)
     ch = _channel(id_=88)
     vc = MagicMock(channel=ch)
     guild = MagicMock(id=1, voice_client=vc)
@@ -1914,9 +1902,7 @@ async def test_reconnect_skips_when_already_connected_same_channel(mock_bot):
 
 @pytest.mark.asyncio
 async def test_reconnect_empty_targets(mock_bot):
-    mock_bot.settings.feature_music = True
-    mock_bot.pool = MagicMock()
-    mock_bot.db_pool = MagicMock()
+    _reconnect_ready_bot(mock_bot)
     with patch(
         "bot.commands.music.fetch_music_voice_channel_targets",
         AsyncMock(return_value=[]),
@@ -1926,9 +1912,7 @@ async def test_reconnect_empty_targets(mock_bot):
 
 @pytest.mark.asyncio
 async def test_reconnect_skips_when_guild_me_none(mock_bot):
-    mock_bot.settings.feature_music = True
-    mock_bot.pool = MagicMock()
-    mock_bot.db_pool = MagicMock()
+    _reconnect_ready_bot(mock_bot)
     ch = _channel(id_=88)
     guild = MagicMock(id=1, voice_client=None)
     guild.get_channel = MagicMock(return_value=ch)
@@ -1944,9 +1928,7 @@ async def test_reconnect_skips_when_guild_me_none(mock_bot):
 
 @pytest.mark.asyncio
 async def test_reconnect_clears_binding_when_channel_not_voice(mock_bot):
-    mock_bot.settings.feature_music = True
-    mock_bot.pool = MagicMock()
-    mock_bot.db_pool = MagicMock()
+    _reconnect_ready_bot(mock_bot)
     guild = MagicMock(id=1, voice_client=None)
     guild.get_channel = MagicMock(return_value=MagicMock())
     guild.me = MagicMock()
@@ -1963,9 +1945,7 @@ async def test_reconnect_clears_binding_when_channel_not_voice(mock_bot):
 
 @pytest.mark.asyncio
 async def test_reconnect_connect_failure_clears_binding(mock_bot):
-    mock_bot.settings.feature_music = True
-    mock_bot.pool = MagicMock()
-    mock_bot.db_pool = MagicMock()
+    _reconnect_ready_bot(mock_bot)
     ch = _channel(id_=88)
     ch.connect = AsyncMock(side_effect=RuntimeError("fail"))
     ch.permissions_for = MagicMock(return_value=MagicMock(connect=True, speak=True))
@@ -1986,9 +1966,7 @@ async def test_reconnect_connect_failure_clears_binding(mock_bot):
 
 @pytest.mark.asyncio
 async def test_reconnect_missing_voice_permissions(mock_bot):
-    mock_bot.settings.feature_music = True
-    mock_bot.pool = MagicMock()
-    mock_bot.db_pool = MagicMock()
+    _reconnect_ready_bot(mock_bot)
     ch = _channel(id_=88)
     ch.permissions_for = MagicMock(return_value=MagicMock(connect=False, speak=True))
     guild = MagicMock(id=1, voice_client=None)
@@ -2049,6 +2027,37 @@ async def test_check_voice_pool_returns_none_without_guild(mock_bot, cog):
 
 
 @pytest.mark.asyncio
+async def test_check_voice_pool_returns_none_without_davey(mock_bot, cog):
+    mock_bot.pool = MagicMock()
+    ch = _channel()
+    i = _interaction(mock_bot, voice_channel=ch)
+    i.followup.send = AsyncMock()
+    with patch("bot.commands.music.discord_voice_dependencies_available", return_value=False):
+        assert await _check_voice_pool(i) is None
+    assert "davey" in i.followup.send.call_args[0][0].lower()
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize(
+    "handler",
+    ["_ensure_player", "join"],
+)
+async def test_davey_runtime_error_on_connect(mock_bot, cog, handler):
+    mock_bot.pool = MagicMock()
+    ch = _channel()
+    ch.connect = AsyncMock(side_effect=RuntimeError("davey library needed"))
+    i = _interaction(mock_bot, voice_channel=ch)
+    i.guild.voice_client = None
+    i.followup.send = AsyncMock()
+    with _patch_player():
+        if handler == "_ensure_player":
+            assert await _ensure_player(i) is None
+        else:
+            await cog.music_group.join.callback(cog.music_group, i)
+    assert "davey" in i.followup.send.call_args[0][0].lower()
+
+
+@pytest.mark.asyncio
 async def test_ensure_player_wrong_voice_channel(mock_bot, cog):
     mock_bot.pool = MagicMock()
     ch = _channel(id_=100)
@@ -2074,27 +2083,22 @@ async def test_join_bot_already_in_user_channel(mock_bot, cog):
 
 
 @pytest.mark.asyncio
-async def test_play_fetch_returns_none(mock_bot, cog):
+@pytest.mark.parametrize(
+    "fetch_return,expected_msg",
+    [
+        (None, "No results"),
+        ([], "No tracks"),
+    ],
+)
+async def test_play_fetch_empty_results(mock_bot, cog, fetch_return, expected_msg):
     mock_bot.pool = MagicMock()
     mock_bot.permission_checker.check_role = AsyncMock(return_value=True)
     i, p = _play_ctx(cog, fetch_side_effect=None)
-    p.fetch_tracks = AsyncMock(return_value=None)
+    p.fetch_tracks = AsyncMock(return_value=fetch_return)
     p.current = MagicMock(title="Now")
     with patch("bot.commands.music._is_allowed_music_url", return_value=False):
         await cog.music_group.play.callback(cog.music_group, i, "q", False)
-    assert "No results" in i.followup.send.call_args[0][0]
-
-
-@pytest.mark.asyncio
-async def test_play_no_tracks_after_fetch(mock_bot, cog):
-    mock_bot.pool = MagicMock()
-    mock_bot.permission_checker.check_role = AsyncMock(return_value=True)
-    i, p = _play_ctx(cog, fetch_side_effect=None)
-    p.fetch_tracks = AsyncMock(return_value=[])
-    p.current = MagicMock(title="Now")
-    with patch("bot.commands.music._is_allowed_music_url", return_value=False):
-        await cog.music_group.play.callback(cog.music_group, i, "search", False)
-    assert "No tracks" in i.followup.send.call_args[0][0]
+    assert expected_msg in i.followup.send.call_args[0][0]
 
 
 @pytest.mark.asyncio
@@ -2245,9 +2249,8 @@ def test_get_leave_tasks_initializes_storage():
 
 @pytest.mark.asyncio
 async def test_voice_state_bot_disconnect_clears_binding(mock_bot, cog):
-    mock_bot.settings.feature_music = True
+    _prime_music_bot(mock_bot)
     mock_bot.db_pool = MagicMock()
-    mock_bot.user = MagicMock(id=999)
     member = MagicMock(id=999, guild=MagicMock(id=GUILD_ID))
     before = MagicMock(channel=MagicMock())
     after = MagicMock(channel=None)
@@ -2258,10 +2261,8 @@ async def test_voice_state_bot_disconnect_clears_binding(mock_bot, cog):
 
 @pytest.mark.asyncio
 async def test_voice_state_skips_vc_without_channel(mock_bot, cog):
-    mock_bot.settings.feature_music = True
-    mock_bot.pool = MagicMock()
-    mock_bot.user = MagicMock(id=999)
-    mock_bot.db_pool = None
+    _prime_music_bot(cog.bot)
+    cog.bot.db_pool = None
     vc = MagicMock(channel=None, guild=MagicMock(id=GUILD_ID))
     cog.bot.voice_clients = [vc]
     member = MagicMock(id=8)
@@ -2272,10 +2273,8 @@ async def test_voice_state_skips_vc_without_channel(mock_bot, cog):
 
 @pytest.mark.asyncio
 async def test_voice_state_cancels_leave_when_others_join(mock_bot, cog):
-    mock_bot.settings.feature_music = True
-    mock_bot.pool = MagicMock()
-    mock_bot.user = MagicMock(id=999)
-    mock_bot.db_pool = None
+    _prime_music_bot(cog.bot)
+    cog.bot.db_pool = None
     ch = _channel(id_=5, members=[MagicMock(id=1), MagicMock(id=999)])
     vc = MagicMock(channel=ch, guild=ch.guild)
     cog.bot.voice_clients = [vc]
@@ -2398,9 +2397,8 @@ async def test_force_play_replaces_current(mock_bot, cog):
 
 @pytest.mark.asyncio
 async def test_bot_joins_voice_updates_binding(mock_bot, cog):
-    mock_bot.settings.feature_music = True
+    _prime_music_bot(mock_bot)
     mock_bot.db_pool = MagicMock()
-    mock_bot.user = MagicMock(id=999)
     ch = _channel()
     member = MagicMock(id=999, guild=MagicMock(id=GUILD_ID))
     before = MagicMock(channel=None)
@@ -2415,9 +2413,8 @@ async def test_bot_joins_voice_updates_binding(mock_bot, cog):
 async def test_bot_leaves_voice_clears_music_channel_binding(mock_bot, cog):
     from bot.commands import music as music_mod
 
-    mock_bot.settings.feature_music = True
+    _prime_music_bot(mock_bot)
     mock_bot.db_pool = MagicMock()
-    mock_bot.user = MagicMock(id=999)
     ch = _channel()
     member = MagicMock(id=999, guild=MagicMock(id=GUILD_ID))
     before = MagicMock(channel=ch)
@@ -2429,9 +2426,8 @@ async def test_bot_leaves_voice_clears_music_channel_binding(mock_bot, cog):
 
 @pytest.mark.asyncio
 async def test_bot_voice_both_channels_none_skips_music_binding(mock_bot, cog):
-    mock_bot.settings.feature_music = True
+    _prime_music_bot(mock_bot)
     mock_bot.db_pool = MagicMock()
-    mock_bot.user = MagicMock(id=999)
     member = MagicMock(id=999, guild=MagicMock(id=GUILD_ID))
     before = MagicMock(channel=None)
     after = MagicMock(channel=None)
@@ -2556,182 +2552,47 @@ async def test_force_play_without_current_plays_queue_track(mock_bot, cog):
 
 @pytest.mark.asyncio
 async def test_voice_state_unrelated_channel_move_no_idle_task(mock_bot, cog):
-    mock_bot.settings.feature_music = True
-    mock_bot.pool = MagicMock()
-    mock_bot.user = MagicMock(id=999)
-    mock_bot.db_pool = None
+    _prime_music_bot(cog.bot)
+    cog.bot.db_pool = None
     cog.bot._music_leave_tasks = {}
     bot_ch = _channel(id_=5)
     vc = MagicMock(channel=bot_ch, guild=bot_ch.guild)
     cog.bot.voice_clients = [vc]
-    ch7 = MagicMock(id=7)
-    ch8 = MagicMock(id=8)
     member = MagicMock(id=22)
-    before = MagicMock(channel=ch7)
-    after = MagicMock(channel=ch8)
-    await cog._on_voice_state_update(member, before, after)
+    await cog._on_voice_state_update(
+        member, MagicMock(channel=MagicMock(id=7)), MagicMock(channel=MagicMock(id=8))
+    )
     assert GUILD_ID not in cog.bot._music_leave_tasks
 
 
 @pytest.mark.asyncio
-async def test_idle_leave_skips_disconnect_when_vc_gone_after_sleep(mock_bot, cog):
-    from bot.commands import music as music_mod
-
-    mock_bot.settings.feature_music = True
-    mock_bot.pool = MagicMock()
-    mock_bot.user = MagicMock(id=999)
-    mock_bot.db_pool = None
-    cog.bot._music_leave_tasks = {}
-    ch = _channel(id_=5, members=[MagicMock(id=999)])
-    vc = MagicMock(channel=ch, guild=ch.guild, disconnect=AsyncMock())
-    cog.bot.voice_clients = [vc]
-    before = MagicMock(channel=ch)
-    after = MagicMock(channel=None)
-    member = MagicMock(id=7)
-
-    with patch.object(music_mod.asyncio, "sleep", new_callable=AsyncMock):
-        with patch("bot.commands.music.IDLE_LEAVE_SECONDS", 0):
-            with patch("bot.commands.music._get_voice_client", return_value=None):
-                with patch("bot.commands.music._other_members_in_channel", return_value=0):
-                    with patch("bot.commands.music._clear_queue") as cq:
-                        with patch("bot.commands.music.logger"):
-                            await cog._on_voice_state_update(member, before, after)
-                            task = cog.bot._music_leave_tasks[GUILD_ID]
-                            _ = await task
-    vc.disconnect.assert_not_awaited()
-    cq.assert_not_called()
-    assert GUILD_ID not in cog.bot._music_leave_tasks
-
-
-@pytest.mark.asyncio
-async def test_idle_leave_skips_disconnect_when_others_joined(mock_bot, cog):
-    from bot.commands import music as music_mod
-
-    mock_bot.settings.feature_music = True
-    mock_bot.pool = MagicMock()
-    mock_bot.user = MagicMock(id=999)
-    mock_bot.db_pool = None
-    cog.bot._music_leave_tasks = {}
-    ch = _channel(id_=5, members=[MagicMock(id=999)])
-    vc = MagicMock(channel=ch, guild=ch.guild, disconnect=AsyncMock())
-    cog.bot.voice_clients = [vc]
-    before = MagicMock(channel=ch)
-    after = MagicMock(channel=None)
-    member = MagicMock(id=7)
-
-    with patch.object(music_mod.asyncio, "sleep", new_callable=AsyncMock):
-        with patch("bot.commands.music.IDLE_LEAVE_SECONDS", 0):
-            with patch("bot.commands.music._get_voice_client", return_value=vc):
-                with patch(
-                    "bot.commands.music._other_members_in_channel",
-                    side_effect=[0, 1],
-                ):
-                    with patch("bot.commands.music._clear_queue") as cq:
-                        with patch("bot.commands.music.logger"):
-                            await cog._on_voice_state_update(member, before, after)
-                            task = cog.bot._music_leave_tasks[GUILD_ID]
-                            _ = await task
-    vc.disconnect.assert_not_awaited()
-    cq.assert_not_called()
-    assert GUILD_ID not in cog.bot._music_leave_tasks
-
-
-@pytest.mark.asyncio
-async def test_idle_leave_task_disconnects_and_clears_queue(mock_bot, cog):
-    from bot.commands import music as music_mod
-
-    mock_bot.settings.feature_music = True
-    mock_bot.pool = MagicMock()
-    mock_bot.user = MagicMock(id=999)
-    mock_bot.db_pool = None
-    cog.bot._music_leave_tasks = {}
-    ch = _channel(id_=5, members=[MagicMock(id=999)])
-    vc = MagicMock(channel=ch, guild=ch.guild, disconnect=AsyncMock())
-    cog.bot.voice_clients = [vc]
-    cog.bot._music_queues = {GUILD_ID: deque([MagicMock()])}
-    before = MagicMock(channel=ch)
-    after = MagicMock(channel=None)
-    member = MagicMock(id=7)
-
-    with patch.object(music_mod.asyncio, "sleep", new_callable=AsyncMock):
-        with patch("bot.commands.music.IDLE_LEAVE_SECONDS", 0):
-            with patch("bot.commands.music._get_voice_client", return_value=vc):
-                with patch("bot.commands.music._other_members_in_channel", return_value=0):
-                    with patch("bot.commands.music._clear_queue") as cq:
-                        with patch("bot.commands.music.logger"):
-                            await cog._on_voice_state_update(member, before, after)
-                            task = cog.bot._music_leave_tasks[GUILD_ID]
-                            _ = await task
-    vc.disconnect.assert_awaited()
-    cq.assert_called_once_with(cog.bot, GUILD_ID)
-    assert GUILD_ID not in cog.bot._music_leave_tasks
-
-
-@pytest.mark.asyncio
-async def test_idle_leave_skips_disconnect_when_channel_repopulated(mock_bot, cog):
-    mock_bot.settings.feature_music = True
-    mock_bot.pool = MagicMock()
-    mock_bot.user = MagicMock(id=999)
-    mock_bot.db_pool = None
-    cog.bot._music_leave_tasks = {}
-    ch = _channel(id_=5, members=[MagicMock(id=999)])
-    vc = MagicMock(channel=ch, guild=ch.guild, disconnect=AsyncMock())
-    cog.bot.voice_clients = [vc]
-    before = MagicMock(channel=ch)
-    after = MagicMock(channel=None)
-    member = MagicMock(id=7)
-
-    async def instant_sleep(_):
-        return None
-
-    om = MagicMock(side_effect=[0, 1])
-
-    with patch("bot.commands.music.asyncio.sleep", instant_sleep):
-        with patch("bot.commands.music.IDLE_LEAVE_SECONDS", 0):
-            with patch("bot.commands.music._get_voice_client", return_value=vc):
-                with patch("bot.commands.music._other_members_in_channel", om):
-                    with patch("bot.commands.music._clear_queue") as cq:
-                        with patch("bot.commands.music.logger"):
-                            await cog._on_voice_state_update(member, before, after)
-                            await cog.bot._music_leave_tasks[GUILD_ID]
-    vc.disconnect.assert_not_called()
-    cq.assert_not_called()
-
-
-@pytest.mark.asyncio
-async def test_idle_leave_skips_disconnect_when_voice_client_gone(mock_bot, cog):
-    mock_bot.settings.feature_music = True
-    mock_bot.pool = MagicMock()
-    mock_bot.user = MagicMock(id=999)
-    mock_bot.db_pool = None
-    cog.bot._music_leave_tasks = {}
-    ch = _channel(id_=5, members=[MagicMock(id=999)])
-    vc = MagicMock(channel=ch, guild=ch.guild, disconnect=AsyncMock())
-    cog.bot.voice_clients = [vc]
-    before = MagicMock(channel=ch)
-    after = MagicMock(channel=None)
-    member = MagicMock(id=7)
-
-    async def instant_sleep(_):
-        return None
-
-    with patch("bot.commands.music.asyncio.sleep", instant_sleep):
-        with patch("bot.commands.music.IDLE_LEAVE_SECONDS", 0):
-            with patch("bot.commands.music._get_voice_client", return_value=None):
-                with patch("bot.commands.music._other_members_in_channel", return_value=0):
-                    with patch("bot.commands.music._clear_queue") as cq:
-                        with patch("bot.commands.music.logger"):
-                            await cog._on_voice_state_update(member, before, after)
-                            await cog.bot._music_leave_tasks[GUILD_ID]
-    vc.disconnect.assert_not_called()
-    cq.assert_not_called()
+@pytest.mark.parametrize(
+    "get_vc_present,other_members,expect_disconnect,instant_sleep",
+    [
+        (False, 0, False, False),
+        (True, [0, 1], False, False),
+        (True, 0, True, False),
+        (True, [0, 1], False, True),
+        (False, 0, False, True),
+    ],
+)
+async def test_idle_leave_outcomes(
+    mock_bot, cog, get_vc_present, other_members, expect_disconnect, instant_sleep
+):
+    await _run_idle_leave(
+        cog,
+        get_vc_present=get_vc_present,
+        other_members=other_members,
+        expect_disconnect=expect_disconnect,
+        expect_clear=expect_disconnect,
+        instant_sleep=instant_sleep,
+    )
 
 
 @pytest.mark.asyncio
 async def test_voice_state_bot_moves_non_voice_channel_skips_music_binding(mock_bot, cog):
-    mock_bot.settings.feature_music = True
+    _prime_music_bot(mock_bot)
     mock_bot.db_pool = MagicMock()
-    mock_bot.user = MagicMock(id=999)
     member = MagicMock(id=999, guild=MagicMock(id=GUILD_ID))
     before = MagicMock(channel=MagicMock(id=10))
     after = MagicMock(channel=MagicMock(id=11))

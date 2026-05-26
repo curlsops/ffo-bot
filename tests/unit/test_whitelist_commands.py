@@ -15,10 +15,6 @@ from tests.helpers import (
 )
 
 
-def _whitelist_bot():
-    return build_whitelist_bot()
-
-
 def _op_choice(value: str) -> app_commands.Choice[str]:
     return next(c for c in OPERATION_CHOICES if c.value == value)
 
@@ -57,7 +53,7 @@ class TestSetWhitelistChannel:
                 return_value=True,
             ),
         ):
-            bot = _whitelist_bot()
+            bot = build_whitelist_bot()
             bot.db_pool, _ = mock_db_pool()
             cog = WhitelistCommands(bot)
             i = mock_interaction(user_id=2)
@@ -80,7 +76,7 @@ class TestSetWhitelistChannel:
                 return_value=True,
             ),
         ):
-            bot = _whitelist_bot()
+            bot = build_whitelist_bot()
             bot.db_pool, _ = mock_db_pool()
             cog = WhitelistCommands(bot)
             i = mock_interaction(user_id=2)
@@ -103,7 +99,7 @@ class TestSetWhitelistChannel:
             new_callable=AsyncMock,
             return_value=None,
         ):
-            bot = _whitelist_bot()
+            bot = build_whitelist_bot()
             bot.db_pool, _ = mock_db_pool()
             cog = WhitelistCommands(bot)
             i = mock_interaction(user_id=2)
@@ -121,7 +117,7 @@ class TestSetWhitelistChannel:
 
     @pytest.mark.asyncio
     async def test_no_params_shows_help(self):
-        bot = _whitelist_bot()
+        bot = build_whitelist_bot()
         bot.db_pool, _ = mock_db_pool()
         cog = WhitelistCommands(bot)
         i = mock_interaction(user_id=2)
@@ -139,7 +135,7 @@ class TestSetWhitelistChannel:
 
     @pytest.mark.asyncio
     async def test_operation_set_without_channel(self):
-        bot = _whitelist_bot()
+        bot = build_whitelist_bot()
         bot.db_pool, _ = mock_db_pool()
         cog = WhitelistCommands(bot)
         i = mock_interaction(user_id=2)
@@ -169,7 +165,7 @@ class TestSetWhitelistChannel:
                 return_value=True,
             ),
         ):
-            bot = _whitelist_bot()
+            bot = build_whitelist_bot()
             bot.db_pool, _ = mock_db_pool()
             cog = WhitelistCommands(bot)
             i = mock_interaction(user_id=2)
@@ -200,7 +196,7 @@ class TestSetWhitelistChannel:
                 return_value=True,
             ),
         ):
-            bot = _whitelist_bot()
+            bot = build_whitelist_bot()
             bot.db_pool, _ = mock_db_pool()
             cog = WhitelistCommands(bot)
             i = mock_interaction(user_id=2)
@@ -225,7 +221,7 @@ class TestSetWhitelistChannel:
             new_callable=AsyncMock,
             return_value=999,
         ):
-            bot = _whitelist_bot()
+            bot = build_whitelist_bot()
             bot.db_pool, _ = mock_db_pool()
             cog = WhitelistCommands(bot)
             i = mock_interaction(user_id=2)
@@ -236,7 +232,7 @@ class TestSetWhitelistChannel:
 
     @pytest.mark.asyncio
     async def test_run_on_toggles_whitelist(self):
-        bot = _whitelist_bot()
+        bot = build_whitelist_bot()
         bot.db_pool, _ = mock_db_pool()
         cog = WhitelistCommands(bot)
         i = mock_interaction(user_id=2)
@@ -254,7 +250,7 @@ class TestSetWhitelistChannel:
 
     @pytest.mark.asyncio
     async def test_run_off_toggles_whitelist(self):
-        bot = _whitelist_bot()
+        bot = build_whitelist_bot()
         bot.db_pool, _ = mock_db_pool()
         cog = WhitelistCommands(bot)
         i = mock_interaction(user_id=2)
@@ -272,7 +268,7 @@ class TestSetWhitelistChannel:
 
     @pytest.mark.asyncio
     async def test_run_on_requires_admin(self):
-        bot = _whitelist_bot()
+        bot = build_whitelist_bot()
         bot.permission_checker.check_role = AsyncMock(return_value=False)
         bot.db_pool, _ = mock_db_pool()
         cog = WhitelistCommands(bot)
@@ -291,7 +287,7 @@ class TestSetWhitelistChannel:
 
     @pytest.mark.asyncio
     async def test_run_off_requires_admin(self):
-        bot = _whitelist_bot()
+        bot = build_whitelist_bot()
         bot.permission_checker.check_role = AsyncMock(return_value=False)
         bot.db_pool, _ = mock_db_pool()
         cog = WhitelistCommands(bot)
@@ -312,7 +308,7 @@ class TestSetWhitelistChannel:
 class TestWhitelistList:
     @pytest.mark.asyncio
     async def test_list_success(self):
-        bot = _whitelist_bot()
+        bot = build_whitelist_bot()
         bot.db_pool, _ = mock_db_pool()
         cog = WhitelistCommands(bot)
         i = mock_interaction(user_id=2)
@@ -339,7 +335,7 @@ class TestWhitelistAdd:
             ),
             patch("bot.commands.whitelist.add_to_cache", new_callable=AsyncMock),
         ):
-            bot = _whitelist_bot()
+            bot = build_whitelist_bot()
             bot.db_pool, _ = mock_db_pool()
             cog = WhitelistCommands(bot)
             i = mock_interaction(user_id=2)
@@ -355,7 +351,7 @@ class TestWhitelistAdd:
 
     @pytest.mark.asyncio
     async def test_add_invalid_username(self):
-        bot = _whitelist_bot()
+        bot = build_whitelist_bot()
         bot.db_pool, _ = mock_db_pool()
         cog = WhitelistCommands(bot)
         i = mock_interaction(user_id=2)
@@ -372,7 +368,7 @@ class TestWhitelistAdd:
 
     @pytest.mark.asyncio
     async def test_add_no_username(self):
-        bot = _whitelist_bot()
+        bot = build_whitelist_bot()
         bot.db_pool, _ = mock_db_pool()
         cog = WhitelistCommands(bot)
         i = mock_interaction(user_id=2)
@@ -389,7 +385,7 @@ class TestWhitelistAdd:
 
     @pytest.mark.asyncio
     async def test_add_no_rcon(self):
-        bot = _whitelist_bot()
+        bot = build_whitelist_bot()
         bot.minecraft_rcon = None
         bot.db_pool, _ = mock_db_pool()
         cog = WhitelistCommands(bot)
@@ -409,7 +405,7 @@ class TestWhitelistRemove:
     @pytest.mark.asyncio
     async def test_remove_success(self):
         with patch("bot.commands.whitelist.remove_from_cache", new_callable=AsyncMock):
-            bot = _whitelist_bot()
+            bot = build_whitelist_bot()
             bot.db_pool, _ = mock_db_pool()
             cog = WhitelistCommands(bot)
             i = mock_interaction(user_id=2)
@@ -425,7 +421,7 @@ class TestWhitelistRemove:
 
     @pytest.mark.asyncio
     async def test_remove_invalid_username(self):
-        bot = _whitelist_bot()
+        bot = build_whitelist_bot()
         bot.db_pool, _ = mock_db_pool()
         cog = WhitelistCommands(bot)
         i = mock_interaction(user_id=2)
@@ -442,7 +438,7 @@ class TestWhitelistRemove:
 
     @pytest.mark.asyncio
     async def test_remove_no_rcon(self):
-        bot = _whitelist_bot()
+        bot = build_whitelist_bot()
         bot.minecraft_rcon = None
         bot.db_pool, _ = mock_db_pool()
         cog = WhitelistCommands(bot)
@@ -478,7 +474,7 @@ class TestWhitelistRemove:
                 ),
             ),
         ):
-            bot = _whitelist_bot()
+            bot = build_whitelist_bot()
             bot.minecraft_rcon.whitelist_remove = AsyncMock(
                 side_effect=[
                     "That player is not whitelisted",
@@ -507,7 +503,7 @@ class TestWhitelistRemove:
                 "bot.commands.whitelist.get_cache_entry", new_callable=AsyncMock, return_value=None
             ),
         ):
-            bot = _whitelist_bot()
+            bot = build_whitelist_bot()
             bot.minecraft_rcon.whitelist_remove = AsyncMock(
                 return_value="Nothing changed. Not whitelisted."
             )
@@ -543,7 +539,7 @@ class TestWhitelistSync:
                 return_value=["Steve", "Alex"],
             ),
         ):
-            bot = _whitelist_bot()
+            bot = build_whitelist_bot()
             bot.db_pool, _ = mock_db_pool()
             cog = WhitelistCommands(bot)
             i = mock_interaction(user_id=2)
@@ -564,7 +560,7 @@ class TestWhitelistSync:
             new_callable=AsyncMock,
             return_value=SyncFromRconResult(ok=False),
         ):
-            bot = _whitelist_bot()
+            bot = build_whitelist_bot()
             bot.db_pool, _ = mock_db_pool()
             cog = WhitelistCommands(bot)
             i = mock_interaction(user_id=2)
@@ -597,7 +593,7 @@ class TestWhitelistSync:
                 return_value=["Steve"],
             ),
         ):
-            bot = _whitelist_bot()
+            bot = build_whitelist_bot()
             bot.db_pool, _ = mock_db_pool()
             cog = WhitelistCommands(bot)
             i = mock_interaction(user_id=2)
@@ -614,7 +610,7 @@ class TestWhitelistSync:
 
     @pytest.mark.asyncio
     async def test_reload_no_rcon(self):
-        bot = _whitelist_bot()
+        bot = build_whitelist_bot()
         bot.minecraft_rcon = None
         bot.db_pool, _ = mock_db_pool()
         cog = WhitelistCommands(bot)
@@ -638,7 +634,7 @@ class TestWhitelistRepair:
             new_callable=AsyncMock,
             return_value={"updated": ["Old → New"], "uuid_filled": [], "pruned": []},
         ):
-            bot = _whitelist_bot()
+            bot = build_whitelist_bot()
             bot.db_pool, _ = mock_db_pool()
             cog = WhitelistCommands(bot)
             i = mock_interaction(user_id=2)
@@ -656,7 +652,7 @@ class TestWhitelistRepair:
 class TestWhitelistPush:
     @pytest.mark.asyncio
     async def test_push_success(self):
-        bot = _whitelist_bot()
+        bot = build_whitelist_bot()
         bot.minecraft_rcon.push_master_whitelist = AsyncMock(
             return_value=[TargetPushResult(target_id="default", added=["a"], removed=[])]
         )
@@ -681,7 +677,7 @@ class TestWhitelistPush:
 
     @pytest.mark.asyncio
     async def test_push_empty_master(self):
-        bot = _whitelist_bot()
+        bot = build_whitelist_bot()
         with patch(
             "bot.commands.whitelist.get_cached_usernames",
             new_callable=AsyncMock,
@@ -703,7 +699,7 @@ class TestWhitelistPush:
 
     @pytest.mark.asyncio
     async def test_push_rcon_error(self):
-        bot = _whitelist_bot()
+        bot = build_whitelist_bot()
         bot.minecraft_rcon.push_master_whitelist = AsyncMock(side_effect=MinecraftRCONError("down"))
         with patch(
             "bot.commands.whitelist.get_cached_usernames",
@@ -727,7 +723,7 @@ class TestWhitelistPush:
 class TestWhitelistDispatch:
     @pytest.mark.asyncio
     async def test_unknown_operation_returns_error(self):
-        bot = _whitelist_bot()
+        bot = build_whitelist_bot()
         bot.db_pool, _ = mock_db_pool()
         cog = WhitelistCommands(bot)
         i = mock_interaction(user_id=2)

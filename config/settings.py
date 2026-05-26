@@ -75,6 +75,10 @@ class Settings(BaseSettings):
 
     log_level: str = Field(default="INFO", description="Log level")
     log_format: str = Field(default="json", description="Log format (json or text)")
+    log_verbose_third_party: bool | None = Field(
+        default=None,
+        description="Verbose discord.py, mafic, and aiohttp logs (default when LOG_LEVEL=DEBUG)",
+    )
 
     otel_tracing_enabled: bool = Field(
         default=False,
@@ -142,6 +146,10 @@ class Settings(BaseSettings):
     feature_music: bool = Field(
         default=False, description="Enable music commands (requires Lavalink)"
     )
+    music_voice_recovery_on_ready: bool = Field(
+        default=True,
+        description="Rejoin persisted music voice channels after ready",
+    )
     lavalink_host: Optional[str] = Field(default="127.0.0.1", description="Lavalink server host")
     lavalink_port: int = Field(default=2333, description="Lavalink server port")
     lavalink_password: Optional[str] = Field(default=None, description="Lavalink server password")
@@ -152,6 +160,16 @@ class Settings(BaseSettings):
     spotify_client_secret: Optional[str] = Field(
         default=None,
         description="Spotify app client secret for playlist support (SPOTIFY_CLIENT_SECRET env)",
+    )
+    spotapi_use_subprocess: bool = Field(
+        default=True,
+        description="Run SpotAPI in an isolated subprocess",
+    )
+    spotapi_subprocess_timeout_sec: float = Field(
+        default=90.0,
+        ge=5.0,
+        le=300.0,
+        description="Timeout for SpotAPI subprocess calls in seconds",
     )
     minecraft_rcon_host: Optional[str] = Field(
         default=None, description="Minecraft server host for RCON"

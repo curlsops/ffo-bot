@@ -3,17 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 import pytest
 
 from bot.commands.polls import PollCommands
-from tests.helpers import assert_followup_contains
-
-
-def make_interaction():
-    i = MagicMock()
-    i.guild_id = 111
-    i.user.id = 222
-    i.response.defer = AsyncMock()
-    i.followup.send = AsyncMock()
-    i.channel = MagicMock(send=AsyncMock())
-    return i
+from tests.helpers import assert_followup_contains, mock_interaction
 
 
 def make_bot(admin=True):
@@ -26,7 +16,8 @@ def make_bot(admin=True):
 async def test_poll_success():
     bot = make_bot()
     cog = PollCommands(bot)
-    i = make_interaction()
+    i = mock_interaction(guild_id=111, user_id=222)
+    i.channel.send = AsyncMock()
     await cog.poll.callback(cog, i, "What do you prefer?", "Yes,No,Maybe", "1d")
     i.channel.send.assert_awaited_once()
     call = i.channel.send.call_args
@@ -40,7 +31,7 @@ async def test_poll_success():
 async def test_poll_channel_param_requires_admin():
     bot = make_bot(admin=False)
     cog = PollCommands(bot)
-    i = make_interaction()
+    i = mock_interaction(guild_id=111, user_id=222)
     target_channel = MagicMock(send=AsyncMock())
     await cog.poll.callback(cog, i, "Question?", "Yes,No", "1d", channel=target_channel)
     target_channel.send.assert_not_awaited()
@@ -51,7 +42,8 @@ async def test_poll_channel_param_requires_admin():
 async def test_poll_validation_too_few_options():
     bot = make_bot()
     cog = PollCommands(bot)
-    i = make_interaction()
+    i = mock_interaction(guild_id=111, user_id=222)
+    i.channel.send = AsyncMock()
     await cog.poll.callback(cog, i, "Question?", "OnlyOne", "1d")
     i.channel.send.assert_not_awaited()
     assert_followup_contains(i, "at least 2 options")
@@ -61,7 +53,8 @@ async def test_poll_validation_too_few_options():
 async def test_poll_validation_invalid_duration():
     bot = make_bot()
     cog = PollCommands(bot)
-    i = make_interaction()
+    i = mock_interaction(guild_id=111, user_id=222)
+    i.channel.send = AsyncMock()
     await cog.poll.callback(cog, i, "Question?", "Yes,No", "invalid")
     i.channel.send.assert_not_awaited()
     assert_followup_contains(i, "Invalid duration")

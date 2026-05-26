@@ -15,6 +15,7 @@ from bot.services.giveaway_service import (
     select_winners,
 )
 from bot.utils.autocomplete import cached_autocomplete
+from bot.utils.log_context import log_command_start
 from bot.views.giveaway import GIVEAWAY_COLUMNS, GiveawayView
 from config.constants import Constants
 
@@ -204,6 +205,7 @@ async def _giveaway_start(
     image: str | None,
 ):
     await interaction.response.defer()
+    log_command_start(logger, "giveaway", "giveaway start", interaction)
     try:
         if not await require_admin(interaction, "giveaway", cog.bot):
             return
@@ -306,6 +308,7 @@ async def _giveaway_reroll(
     count: int | None,
 ):
     await interaction.response.defer(ephemeral=True)
+    log_command_start(logger, "giveaway", "giveaway reroll", interaction)
     try:
         if not await require_admin(interaction, "giveaway", cog.bot):
             return

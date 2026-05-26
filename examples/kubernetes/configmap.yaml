@@ -6,6 +6,12 @@ metadata:
 data:
   LOG_LEVEL: "INFO"
   LOG_FORMAT: "json"
+  # Troubleshooting (JSON logs with trace_id/span_id; bot.* at DEBUG):
+  # LOG_LEVEL: "DEBUG"
+  # LOG_FORMAT: "json"
+  # LOG_VERBOSE_THIRD_PARTY: "true"
+  # OTEL_TRACING_ENABLED: "true"
+  # OTEL_TRACE_DISCORD_MESSAGES: "false"
 
   HEALTH_CHECK_PORT: "8080"
   HEALTH_CHECK_HOST: "0.0.0.0"
@@ -20,6 +26,7 @@ data:
 
   OTEL_TRACING_ENABLED: "false"
   OTEL_TRACE_DISCORD_MESSAGES: "false"
+  # With OTEL_TRACING_ENABLED=true, set OTEL_EXPORTER_OTLP_ENDPOINT (see below).
   # OTEL_SERVICE_NAME: "ffo-bot"
   # OTEL_EXPORTER_OTLP_ENDPOINT: "http://otel-collector.opentelemetry.svc:4318"
 
@@ -35,6 +42,7 @@ data:
   FEATURE_NOTIFY_MODERATION: "true"
   FEATURE_NOTIFY_RATE_LIMIT: "false"
   FEATURE_MUSIC: "false"
+  MUSIC_VOICE_RECOVERY_ON_READY: "true"
 
   # BOT_OWNER_SERVER_ID: "123456789012345678"
   # BOT_OWNER_NOTIFY_CHANNEL_ID: "123456789012345678"
@@ -57,6 +65,9 @@ data:
   # Used when FEATURE_MUSIC=true (Lavalink Deployment/Service in-cluster)
   LAVALINK_HOST: "lavalink"
   LAVALINK_PORT: "2333"
+  # SpotAPI runs in a child process by default so native crashes (e.g. Alpine/musl) do not kill the bot
+  SPOTAPI_USE_SUBPROCESS: "true"
+  SPOTAPI_SUBPROCESS_TIMEOUT_SEC: "90"
 
   # Used when FEATURE_MINECRAFT_WHITELIST=true
   MINECRAFT_RCON_PORT: "25575"

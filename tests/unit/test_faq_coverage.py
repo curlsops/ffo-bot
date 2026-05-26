@@ -60,7 +60,10 @@ async def test_submit_success_without_notifier(cog):
     cog.bot.db_pool.acquire.return_value = mock_db_ctx(conn)
     i = mock_interaction()
     await cog.faq_group.submit_cmd.callback(cog.faq_group, i, "Question text")
-    assert i.followup.send.called
+    i.followup.send.assert_awaited_once_with(
+        "Question submitted! Admins will review it and may add it to the FAQ.",
+        ephemeral=True,
+    )
 
 
 @pytest.mark.asyncio

@@ -137,6 +137,7 @@ class TestMinecraftRCONClient:
         s.minecraft_rcon_host = "localhost"
         s.minecraft_rcon_port = 25575
         s.minecraft_rcon_password = "secret"
+        s.minecraft_rcon_connect_timeout_seconds = 10.0
         return s
 
     @pytest.fixture
@@ -470,18 +471,6 @@ class TestMinecraftRCONClient:
         s.minecraft_rcon_connect_timeout_seconds = 8.5
         client = MinecraftRCONClient(s)
         assert client._connect_timeout == 8.5
-
-    def test_client_connect_timeout_clamped_to_bounds(self):
-        s = MagicMock()
-        s.feature_minecraft_whitelist = True
-        s.minecraft_rcon_targets = None
-        s.minecraft_rcon_host = "localhost"
-        s.minecraft_rcon_port = 25575
-        s.minecraft_rcon_password = "secret"
-        s.minecraft_rcon_connect_timeout_seconds = 500
-        assert MinecraftRCONClient(s)._connect_timeout == 120.0
-        s.minecraft_rcon_connect_timeout_seconds = 0.2
-        assert MinecraftRCONClient(s)._connect_timeout == 1.0
 
     @pytest.mark.asyncio
     async def test_whitelist_list_merge_one_unreachable(self, caplog):

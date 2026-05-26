@@ -22,7 +22,7 @@ from bot.utils.interaction import send_ephemeral
 from bot.utils.metrics import BotMetrics
 from bot.utils.notifier import AdminNotifier
 from bot.utils.rate_limiter import RateLimiter
-from bot.utils.telemetry import shutdown_tracing
+from bot.utils.telemetry import command_feature_name, shutdown_tracing, trace_span
 from config.settings import Settings
 from database.connection import DatabasePool
 
@@ -133,6 +133,9 @@ class _FFOBotMixin(commands.Bot):
             if self.settings.feature_music and self.settings.lavalink_password:
                 from mafic import NodePool
 
+                from bot.utils.discord_voice import log_voice_dependency_status
+
+                log_voice_dependency_status()
                 self.pool = NodePool(self)
             self.tree.on_error = self._on_app_command_error
 
@@ -233,21 +236,42 @@ class _FFOBotMixin(commands.Bot):
         logger.info(
             "Connected as %s (ID: %s) to %d servers", self.user, self.user.id, len(self.guilds)
         )
+        logger.debug(
+            "on_ready feature_music=%s otel_messages=%s sync_commands=%s",
+            self.settings.feature_music,
+            self.settings.otel_trace_discord_messages,
+            getattr(self.settings, "sync_commands_on_boot", True),
+        )
 
         if self.pool and not self._lavalink_node_created:
             self._lavalink_node_created = True
-            try:
-                await self.pool.create_node(
-                    host=self.settings.lavalink_host,
-                    port=self.settings.lavalink_port,
-                    password=self.settings.lavalink_password,
-                    label="main",
-                )
-            except Exception as e:
-                logger.warning("Lavalink connection failed, music disabled: %s", e)
-                self.pool = None
+            with trace_span(
+                "lavalink.connect",
+                feature="music",
+                attributes={
+                    "lavalink.host": self.settings.lavalink_host or "",
+                    "lavalink.port": int(self.settings.lavalink_port),
+                },
+            ):
+                try:
+                    await self.pool.create_node(
+                        host=self.settings.lavalink_host,
+                        port=self.settings.lavalink_port,
+                        password=self.settings.lavalink_password,
+                        label="main",
+                    )
+                except Exception as e:
+                    logger.warning("Lavalink connection failed, music disabled: %s", e)
+                    self.pool = None
+        elif self.settings.feature_music and not self.pool:
+            logger.debug("Music disabled (no Lavalink pool)")
 
-        if self.pool and self.db_pool and getattr(self.settings, "feature_music", False):
+        if (
+            self.pool
+            and self.db_pool
+            and self.settings.feature_music
+            and self.settings.music_voice_recovery_on_ready
+        ):
             try:
                 from bot.commands.music import reconnect_music_voice_after_ready
 
@@ -414,6 +438,7 @@ class MetricsCommandTree(app_commands.CommandTree):
 
         with _tracer.start_as_current_span("discord.interaction") as span:
             span.set_attribute("discord.command", command_name)
+            span.set_attribute("ffo.feature", command_feature_name(command_name))
             span.set_attribute("discord.guild_id", server_id)
             if interaction.channel_id:
                 span.set_attribute("discord.channel_id", str(interaction.channel_id))

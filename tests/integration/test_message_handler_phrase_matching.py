@@ -1,33 +1,11 @@
 import logging
-from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
 
 from bot.handlers.messages import MessageHandler
-
-
-def make_db_pool(fetchval_result=None):
-    conn = MagicMock()
-    conn.fetchval = AsyncMock(return_value=fetchval_result)
-    conn.execute = AsyncMock()
-
-    @asynccontextmanager
-    async def acquire():
-        yield conn
-
-    pool = MagicMock()
-    pool.acquire = acquire
-    return pool, conn
-
-
-def _bot_with_metrics(shutting_down=False):
-    bot = MagicMock()
-    bot.is_shutting_down.return_value = shutting_down
-    bot.metrics = MagicMock()
-    bot.metrics.messages_processed.labels.return_value.inc = MagicMock()
-    return bot
+from tests.integration.conftest import bot_with_metrics, message_db_pool
 
 
 @pytest.mark.asyncio
@@ -41,7 +19,7 @@ async def test_message_handler_processes_phrase_match():
     metrics.errors_total.labels.return_value.inc = MagicMock()
     bot.metrics = metrics
     bot.phrase_matcher.match_phrases = AsyncMock(return_value=[("id-1", "✅")])
-    db_pool, conn = make_db_pool()
+    db_pool, conn = message_db_pool()
     conn.executemany = AsyncMock()
     bot.db_pool = db_pool
 
@@ -68,7 +46,7 @@ async def test_message_handler_processes_phrase_match():
 @pytest.mark.asyncio
 async def test_message_handler_phrase_match_log_failure_still_reacts(caplog):
     caplog.set_level(logging.WARNING, logger="bot.handlers.messages")
-    db_pool, conn = make_db_pool()
+    db_pool, conn = message_db_pool()
     conn.executemany = AsyncMock(side_effect=Exception("DB down"))
     bot = MagicMock()
     bot.is_shutting_down.return_value = False
@@ -96,8 +74,8 @@ async def test_message_handler_phrase_match_log_failure_still_reacts(caplog):
 
 @pytest.mark.asyncio
 async def test_message_edit_phrase_matching_removes_stale_reaction():
-    db_pool, _ = make_db_pool(fetchval_result=None)
-    bot = _bot_with_metrics()
+    db_pool, _ = message_db_pool(fetchval_result=None)
+    bot = bot_with_metrics()
     bot.cache = None
     bot.db_pool = db_pool
     bot.phrase_matcher = MagicMock(match_phrases=AsyncMock(return_value=[]))
@@ -137,8 +115,8 @@ async def test_message_edit_phrase_matching_removes_stale_reaction():
 
 @pytest.mark.asyncio
 async def test_message_edit_phrase_matching_adds_new_reaction():
-    db_pool, _ = make_db_pool(fetchval_result=None)
-    bot = _bot_with_metrics()
+    db_pool, _ = message_db_pool(fetchval_result=None)
+    bot = bot_with_metrics()
     bot.cache = None
     bot.metrics.phrase_matches = MagicMock()
     bot.metrics.phrase_matches.labels.return_value.inc = MagicMock()
@@ -175,8 +153,8 @@ async def test_message_edit_phrase_matching_adds_new_reaction():
 
 @pytest.mark.asyncio
 async def test_message_edit_phrase_matching_skips_when_content_unchanged():
-    db_pool, _ = make_db_pool(fetchval_result=None)
-    bot = _bot_with_metrics()
+    db_pool, _ = message_db_pool(fetchval_result=None)
+    bot = bot_with_metrics()
     bot.db_pool = db_pool
     bot.phrase_matcher = MagicMock(match_phrases=AsyncMock(return_value=[]))
     handler = MessageHandler(bot)
@@ -190,8 +168,8 @@ async def test_message_edit_phrase_matching_skips_when_content_unchanged():
 
 @pytest.mark.asyncio
 async def test_message_edit_phrase_matching_fetch_not_found_returns_early():
-    db_pool, _ = make_db_pool(fetchval_result=None)
-    bot = _bot_with_metrics()
+    db_pool, _ = message_db_pool(fetchval_result=None)
+    bot = bot_with_metrics()
     bot.cache = None
     bot.db_pool = db_pool
     bot.user = MagicMock()
@@ -218,8 +196,8 @@ async def test_message_edit_phrase_matching_fetch_not_found_returns_early():
 
 @pytest.mark.asyncio
 async def test_message_edit_phrase_matching_skips_bot_message():
-    db_pool, _ = make_db_pool(fetchval_result=None)
-    bot = _bot_with_metrics()
+    db_pool, _ = message_db_pool(fetchval_result=None)
+    bot = bot_with_metrics()
     bot.db_pool = db_pool
     bot.phrase_matcher = MagicMock(match_phrases=AsyncMock(return_value=[]))
     handler = MessageHandler(bot)
@@ -242,7 +220,7 @@ async def test_message_handler_phrase_match_http_exception_logged(caplog):
     bot.metrics = MagicMock()
     bot.metrics.messages_processed.labels.return_value.inc = MagicMock()
     bot.phrase_matcher.match_phrases = AsyncMock(return_value=[("id-1", "✅")])
-    db_pool, _ = make_db_pool()
+    db_pool, _ = message_db_pool()
     bot.db_pool = db_pool
     bot.voice_transcriber = None
     handler = MessageHandler(bot)
@@ -256,4 +234,4 @@ async def test_message_handler_phrase_match_http_exception_logged(caplog):
     msg.attachments = []
     msg.add_reaction = AsyncMock(side_effect=discord.HTTPException(MagicMock(), ""))
     await handler.on_message(msg)
-    assert "Failed to add reaction" in caplog.text or "HTTPException" in caplog.text
+    assert "Failed to add reaction" in caplog.text

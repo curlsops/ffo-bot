@@ -16,7 +16,11 @@ from bot.utils.whitelist_channel import get_whitelist_channel_id
 from config.constants import Constants
 
 logger = logging.getLogger(__name__)
-_message_tracer = trace.get_tracer(__name__)
+
+
+def _message_tracer():
+    return trace.get_tracer(__name__)
+
 
 MOJANG_CACHE_TTL = 300
 MOJANG_CACHE_KEY = "mojang:profile:{username}"
@@ -39,7 +43,7 @@ class MessageHandler(commands.Cog):
             self.bot._message_handler_tasks.add(task)
         try:
             if getattr(self.bot.settings, "otel_trace_discord_messages", False):
-                with _message_tracer.start_as_current_span("discord.message") as span:
+                with _message_tracer().start_as_current_span("discord.message") as span:
                     span.set_attribute("discord.guild_id", str(message.guild.id))
                     span.set_attribute("discord.channel_id", str(message.channel.id))
                     await self._handle_message(message)
@@ -87,7 +91,7 @@ class MessageHandler(commands.Cog):
             self.bot.metrics.messages_processed.labels(server_id=str(after.guild.id)).inc()
 
         if getattr(self.bot.settings, "otel_trace_discord_messages", False):
-            with _message_tracer.start_as_current_span("discord.message_edit") as span:
+            with _message_tracer().start_as_current_span("discord.message_edit") as span:
                 span.set_attribute("discord.guild_id", str(after.guild.id))
                 span.set_attribute("discord.channel_id", str(after.channel.id))
                 await self._process_phrase_matching_edit(after)

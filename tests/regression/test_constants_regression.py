@@ -19,3 +19,10 @@ class TestConstantsRegression:
 
     def test_regex_timeout_positive(self):
         assert Constants.REGEX_TIMEOUT_SECONDS > 0
+
+    def test_role_hierarchy_ordering(self):
+        assert Role.SUPER_ADMIN.hierarchy > Role.ADMIN.hierarchy > Role.MODERATOR.hierarchy
+
+    @pytest.mark.parametrize("attr", ["MAX_PHRASE_LENGTH", "MAX_COMMAND_NAME_LENGTH"])
+    def test_length_limits_positive(self, attr):
+        assert getattr(Constants, attr) > 0

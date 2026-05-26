@@ -38,7 +38,7 @@ def test_rows_to_choices_filters_and_truncates():
         {"id": UUID(int=5), "quote_text": "hello world", "approved": False},
     ]
     out = _rows_to_choices_with_approved(rows, "")
-    assert out
+    assert len(out) == 1
 
 
 @pytest.mark.asyncio
@@ -290,7 +290,8 @@ def test_rows_to_choices_plain_truncates():
     long_id = "12345678-1234-5678-1234-567812345678"
     rows = [{"id": long_id, "quote_text": "z" * 60}]
     out = _rows_to_choices(rows, "")
-    assert out and len(out[0].name) <= 100
+    assert len(out) == 1
+    assert len(out[0].name) <= 100
 
 
 @pytest.mark.asyncio
