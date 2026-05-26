@@ -1,4 +1,9 @@
+import importlib.util
 from pathlib import Path
+from types import ModuleType
+from unittest.mock import MagicMock
+
+import pytest
 
 from bot.services import tls_client_alpine
 
@@ -63,6 +68,57 @@ class TestPatchTlsClientCffi:
         monkeypatch.setattr(builtins, "__import__", fake_import)
         assert tls_client_alpine.ensure_tls_client_alpine_patch() is False
 
+    def test_ensure_noop_when_cffi_has_no_file(self, monkeypatch):
+        import sys
+        import types
+
+        monkeypatch.setattr(tls_client_alpine, "linux_musl", lambda: True)
+        cffi_mod = types.ModuleType("tls_client.cffi")
+        pkg = types.ModuleType("tls_client")
+        monkeypatch.setitem(sys.modules, "tls_client", pkg)
+        monkeypatch.setitem(sys.modules, "tls_client.cffi", cffi_mod)
+        assert tls_client_alpine.ensure_tls_client_alpine_patch() is False
+
+    def test_tls_client_cffi_path_from_file(self, tmp_path: Path):
+        import types
+
+        cffi = tmp_path / "cffi.py"
+        cffi.write_text("# stub")
+        mod = types.ModuleType("tls_client.cffi")
+        mod.__file__ = str(cffi)
+        assert tls_client_alpine._tls_client_cffi_path(mod) == cffi
+
+    def test_tls_client_cffi_path_rejects_non_module(self):
+        assert tls_client_alpine._tls_client_cffi_path(MagicMock()) is None
+
+    def test_tls_client_cffi_path_from_find_spec(self, tmp_path: Path, monkeypatch):
+        cffi = tmp_path / "cffi.py"
+        cffi.write_text("# stub")
+        mod = ModuleType("tls_client.cffi")
+        spec = importlib.util.spec_from_file_location("tls_client.cffi", cffi)
+        monkeypatch.setattr(importlib.util, "find_spec", lambda _name: spec)
+        assert tls_client_alpine._tls_client_cffi_path(mod) == cffi
+
+    @pytest.mark.parametrize(
+        ("spec", "find_spec_side_effect"),
+        [
+            (None, None),
+            (MagicMock(origin="namespace"), None),
+            (MagicMock(origin=""), None),
+            (None, ValueError("bad")),
+        ],
+    )
+    def test_tls_client_cffi_path_find_spec_miss(self, spec, find_spec_side_effect, monkeypatch):
+        mod = ModuleType("tls_client.cffi")
+
+        def _find_spec(_name: str):
+            if find_spec_side_effect is not None:
+                raise find_spec_side_effect
+            return spec
+
+        monkeypatch.setattr(importlib.util, "find_spec", _find_spec)
+        assert tls_client_alpine._tls_client_cffi_path(mod) is None
+
     def test_ensure_patch_applies_when_needed(self, monkeypatch, tmp_path: Path):
         import sys
         import types
@@ -76,6 +132,20 @@ class TestPatchTlsClientCffi:
         monkeypatch.setitem(sys.modules, "tls_client", pkg)
         monkeypatch.setitem(sys.modules, "tls_client.cffi", cffi_mod)
         assert tls_client_alpine.ensure_tls_client_alpine_patch() is True
+
+
+class TestLinuxMusl:
+    def test_linux_musl_when_loader_present(self, monkeypatch):
+        import os
+        import sys
+
+        monkeypatch.setattr(sys, "platform", "linux")
+        monkeypatch.setattr(
+            os.path,
+            "isfile",
+            lambda path: path == "/lib/ld-musl-x86_64.so.1",
+        )
+        assert tls_client_alpine.linux_musl() is True
 
 
 class TestSpotapiNativeSupported:
