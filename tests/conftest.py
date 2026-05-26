@@ -1,8 +1,55 @@
 import os
 import subprocess
 import sys
+import types
 from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock
+
+
+def _linux_musl() -> bool:
+    return sys.platform.startswith("linux") and os.path.isfile("/lib/ld-musl-x86_64.so.1")
+
+
+def _install_tls_client_test_stub() -> None:
+    if sys.modules.get("tls_client") is not None or not _linux_musl():
+        return
+
+    settings = types.ModuleType("tls_client.settings")
+    settings.ClientIdentifiers = MagicMock()
+
+    exceptions = types.ModuleType("tls_client.exceptions")
+    exceptions.TLSClientExeption = type("TLSClientExeption", (Exception,), {})
+
+    response_mod = types.ModuleType("tls_client.response")
+    response_mod.Response = MagicMock()
+
+    cffi = types.ModuleType("tls_client.cffi")
+    cffi.request = MagicMock(return_value=b"{}")
+    cffi.freeMemory = MagicMock()
+    cffi.destroySession = MagicMock()
+
+    class _SessionStub:
+        def __init__(self, *args: object, **kwargs: object) -> None:
+            self.proxies: dict[str, str] = {}
+
+        def close(self) -> None:
+            return None
+
+    sessions = types.ModuleType("tls_client.sessions")
+    sessions.Session = _SessionStub
+
+    pkg = types.ModuleType("tls_client")
+    pkg.Session = _SessionStub
+
+    sys.modules["tls_client.settings"] = settings
+    sys.modules["tls_client.exceptions"] = exceptions
+    sys.modules["tls_client.response"] = response_mod
+    sys.modules["tls_client.cffi"] = cffi
+    sys.modules["tls_client.sessions"] = sessions
+    sys.modules["tls_client"] = pkg
+
+
+_install_tls_client_test_stub()
 
 import pytest
 

@@ -7,11 +7,6 @@ from typing import Any, TypeVar
 from urllib.parse import quote
 
 import aiohttp
-from spotapi.album import PublicAlbum
-from spotapi.artist import Artist
-from spotapi.exceptions import AlbumError, ArtistError, PlaylistError, SongError
-from spotapi.playlist import PublicPlaylist
-from spotapi.song import Song
 
 from bot.utils.http_session import get_session, session_scope
 
@@ -114,6 +109,8 @@ async def _run_spotapi(func: Callable[..., T], /, *args: Any, **kwargs: Any) -> 
 
 
 def _sync_playlist_catalog(playlist_id: str) -> list[str] | None:
+    from spotapi.playlist import PublicPlaylist
+
     playlist = PublicPlaylist(playlist_id)
     first = playlist.get_playlist_info(limit=SPOTAPI_PAGE_SIZE, offset=0)
     content = first["data"]["playlistV2"]["content"]
@@ -138,6 +135,8 @@ def _sync_playlist_catalog(playlist_id: str) -> list[str] | None:
 
 
 def _sync_album_catalog(album_id: str) -> list[str] | None:
+    from spotapi.album import PublicAlbum
+
     album = PublicAlbum(album_id)
     first = album.get_album_info(limit=SPOTAPI_PAGE_SIZE, offset=0)
     tracks_v2 = first["data"]["albumUnion"]["tracksV2"]
@@ -162,6 +161,9 @@ def _sync_album_catalog(album_id: str) -> list[str] | None:
 
 
 def _sync_artist_catalog(artist_id: str) -> list[str] | None:
+    from spotapi.artist import Artist
+    from spotapi.song import Song
+
     artist = Artist()
     overview = artist.get_artist(artist_id)
     artist_union = overview.get("data", {}).get("artistUnion") or {}
@@ -210,6 +212,8 @@ def _sync_artist_catalog(artist_id: str) -> list[str] | None:
 
 
 def _sync_track_query(track_id: str) -> str | None:
+    from spotapi.song import Song
+
     info = Song().get_track_info(track_id)
     track_union = info.get("data", {}).get("trackUnion")
     return _track_body_to_query(track_union)
@@ -226,6 +230,8 @@ async def _spotify_catalog_from_url(
     if not match:
         return None
     entity_id = match.group(1)
+    from spotapi.exceptions import AlbumError, ArtistError, PlaylistError, SongError
+
     try:
         return await _run_spotapi(sync_fetch, entity_id)
     except (PlaylistError, AlbumError, ArtistError, SongError) as e:

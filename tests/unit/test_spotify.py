@@ -201,14 +201,14 @@ class TestSyncPlaylistCatalog:
     def test_consume_skips_non_list_items(self):
         pp = MagicMock()
         pp.get_playlist_info.return_value = _playlist_page(None, 0)
-        with patch.object(spotify_module, "PublicPlaylist", return_value=pp):
+        with patch("spotapi.playlist.PublicPlaylist", return_value=pp):
             assert _sync_playlist_catalog("abc") is None
 
     def test_skips_unparseable_playlist_items(self):
         pp = MagicMock()
         items = [_playlist_item("Ok", "A"), {"itemV2": {"data": {"name": ""}}}]
         pp.get_playlist_info.return_value = _playlist_page(items, len(items))
-        with patch.object(spotify_module, "PublicPlaylist", return_value=pp):
+        with patch("spotapi.playlist.PublicPlaylist", return_value=pp):
             result = _sync_playlist_catalog("abc")
         assert result == ["A - Ok"]
 
@@ -218,7 +218,7 @@ class TestSyncPlaylistCatalog:
             _playlist_page([_playlist_item(f"T{i}", "A") for i in range(SPOTAPI_PAGE_SIZE)], 150),
             _playlist_page([_playlist_item("T100", "A")], 150, offset=SPOTAPI_PAGE_SIZE),
         ]
-        with patch.object(spotify_module, "PublicPlaylist", return_value=pp):
+        with patch("spotapi.playlist.PublicPlaylist", return_value=pp):
             result = _sync_playlist_catalog("abc")
         assert len(result) == SPOTAPI_PAGE_SIZE + 1
         assert pp.get_playlist_info.call_count == 2
@@ -226,7 +226,7 @@ class TestSyncPlaylistCatalog:
     def test_empty_returns_none(self):
         pp = MagicMock()
         pp.get_playlist_info.return_value = _playlist_page([], 0)
-        with patch.object(spotify_module, "PublicPlaylist", return_value=pp):
+        with patch("spotapi.playlist.PublicPlaylist", return_value=pp):
             assert _sync_playlist_catalog("abc") is None
 
 
@@ -236,14 +236,14 @@ class TestSyncAlbumCatalog:
         al.get_album_info.return_value = {
             "data": {"albumUnion": {"tracksV2": {"totalCount": 0, "items": None}}}
         }
-        with patch.object(spotify_module, "PublicAlbum", return_value=al):
+        with patch("spotapi.album.PublicAlbum", return_value=al):
             assert _sync_album_catalog("album1") is None
 
     def test_skips_unparseable_album_items(self):
         al = MagicMock()
         items = [_album_item("Ok", "B"), {"track": {"name": ""}}]
         al.get_album_info.return_value = _album_page(items, len(items))
-        with patch.object(spotify_module, "PublicAlbum", return_value=al):
+        with patch("spotapi.album.PublicAlbum", return_value=al):
             result = _sync_album_catalog("album1")
         assert result == ["B - Ok"]
 
@@ -253,7 +253,7 @@ class TestSyncAlbumCatalog:
             _album_page([_album_item(f"T{i}", "B") for i in range(SPOTAPI_PAGE_SIZE)], 120),
             _album_page([_album_item("T100", "B")], 120),
         ]
-        with patch.object(spotify_module, "PublicAlbum", return_value=al):
+        with patch("spotapi.album.PublicAlbum", return_value=al):
             result = _sync_album_catalog("album1")
         assert len(result) == SPOTAPI_PAGE_SIZE + 1
 
@@ -277,7 +277,7 @@ class TestSyncArtistCatalog:
             }
         }
         with (
-            patch.object(spotify_module, "Artist", return_value=artist),
+            patch("spotapi.artist.Artist", return_value=artist),
             patch.object(spotify_module.random, "sample", side_effect=lambda pool, k: pool[:k]),
         ):
             result = _sync_artist_catalog("artist1")
@@ -296,8 +296,8 @@ class TestSyncArtistCatalog:
         song = MagicMock()
         song.query_songs.return_value = {"data": {"searchV2": {"tracksV2": {"items": []}}}}
         with (
-            patch.object(spotify_module, "Artist", return_value=artist),
-            patch.object(spotify_module, "Song", return_value=song),
+            patch("spotapi.artist.Artist", return_value=artist),
+            patch("spotapi.song.Song", return_value=song),
             patch.object(spotify_module.random, "sample", side_effect=lambda pool, k: pool[:k]),
         ):
             result = _sync_artist_catalog("artist1")
@@ -331,8 +331,8 @@ class TestSyncArtistCatalog:
             }
         }
         with (
-            patch.object(spotify_module, "Artist", return_value=artist),
-            patch.object(spotify_module, "Song", return_value=song),
+            patch("spotapi.artist.Artist", return_value=artist),
+            patch("spotapi.song.Song", return_value=song),
             patch.object(spotify_module.random, "sample", side_effect=lambda pool, k: pool[:k]),
         ):
             result = _sync_artist_catalog("artist1")
@@ -371,8 +371,8 @@ class TestSyncArtistCatalog:
             return pool[:k]
 
         with (
-            patch.object(spotify_module, "Artist", return_value=artist),
-            patch.object(spotify_module, "Song", return_value=song),
+            patch("spotapi.artist.Artist", return_value=artist),
+            patch("spotapi.song.Song", return_value=song),
             patch.object(spotify_module.random, "sample", side_effect=sample_side_effect),
         ):
             result = _sync_artist_catalog("artist1")
@@ -405,8 +405,8 @@ class TestSyncArtistCatalog:
             },
         ]
         with (
-            patch.object(spotify_module, "Artist", return_value=artist),
-            patch.object(spotify_module, "Song", return_value=song),
+            patch("spotapi.artist.Artist", return_value=artist),
+            patch("spotapi.song.Song", return_value=song),
             patch.object(spotify_module.random, "sample", side_effect=lambda pool, k: pool[:k]),
         ):
             result = _sync_artist_catalog("artist1")
@@ -421,8 +421,8 @@ class TestSyncArtistCatalog:
         song = MagicMock()
         song.query_songs.return_value = {"data": {"searchV2": {"tracksV2": {"items": []}}}}
         with (
-            patch.object(spotify_module, "Artist", return_value=artist),
-            patch.object(spotify_module, "Song", return_value=song),
+            patch("spotapi.artist.Artist", return_value=artist),
+            patch("spotapi.song.Song", return_value=song),
             patch.object(spotify_module.random, "sample", side_effect=lambda pool, k: pool[:k]),
         ):
             assert _sync_artist_catalog("artist1") is None
@@ -439,7 +439,7 @@ class TestSyncTrackQuery:
                 }
             }
         }
-        with patch.object(spotify_module, "Song", return_value=song):
+        with patch("spotapi.song.Song", return_value=song):
             assert _sync_track_query("tid") == "Michael Jackson - Billie Jean"
 
 

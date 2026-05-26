@@ -1,17 +1,18 @@
-FROM python:3.14-slim-bookworm AS builder
+FROM python:3.14-alpine3.22 AS builder
 
 WORKDIR /build
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    build-essential \
-    libpq-dev \
-    git \
-    && rm -rf /var/lib/apt/lists/*
+RUN apk add --no-cache \
+    build-base \
+    postgresql-dev \
+    libffi-dev \
+    git
 
-COPY requirements.txt .
-RUN pip install --user --no-cache-dir --no-warn-script-location -r requirements.txt
+COPY requirements.txt scripts/patch_tls_client_alpine.py ./
+RUN pip install --user --no-cache-dir --no-warn-script-location -r requirements.txt && \
+    python patch_tls_client_alpine.py /root/.local/lib/python3.14/site-packages
 
-FROM python:3.14-slim-bookworm
+FROM python:3.14-alpine3.22
 
 ARG FFO_BOT_VERSION=unknown
 ARG IMAGE_SOURCE="https://github.com/MrCurlsTTV/ffo-bot"
@@ -22,17 +23,18 @@ LABEL org.opencontainers.image.description="FFO Discord Bot"
 LABEL org.opencontainers.image.licenses="CC-BY-NC-SA-4.0"
 
 # UID/GID 1000 must match Kubernetes securityContext (runAsUser/fsGroup) or site-packages are unreadable.
-RUN groupadd -g 1000 discord && \
-    useradd -u 1000 -g discord -m -d /home/discord discord && \
+RUN addgroup -g 1000 discord && \
+    adduser -D -u 1000 -G discord discord && \
     mkdir -p /app /tmp/bot && \
     chown -R discord:discord /app /tmp/bot
 
 WORKDIR /app
 
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    libpq5 \
+# gcompat: SpotAPI/tls_client wheels expect glibc (e.g. libresolv.so.2) on musl Alpine.
+RUN apk add --no-cache \
+    postgresql-libs \
     ca-certificates \
-    && rm -rf /var/lib/apt/lists/*
+    gcompat
 
 COPY --from=builder --chown=discord:discord /root/.local /home/discord/.local
 
