@@ -1,10 +1,13 @@
 import json
 import sys
 
-from bot.services.spotapi_sync import run_spotapi_operation_sync
+from bot.services.tls_client_alpine import ensure_tls_client_alpine_patch
 
 
 def main() -> int:
+    ensure_tls_client_alpine_patch()
+    from bot.services.spotapi_sync import run_spotapi_operation_sync
+
     try:
         request = json.load(sys.stdin)
     except json.JSONDecodeError:

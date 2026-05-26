@@ -225,6 +225,52 @@ class TestRunSpotapi:
         assert result == ["A - B"]
         sub_mock.assert_awaited_once_with("playlist", "pid", timeout_sec=90.0)
 
+    @pytest.mark.asyncio
+    async def test_run_spotapi_operation_subprocess_failure_sets_span(self):
+        mock_span = MagicMock()
+        mock_span.is_recording.return_value = True
+
+        @contextmanager
+        def fake_trace_span(*args: object, **kwargs: object):
+            with patch.object(spotify_module.trace, "get_current_span", return_value=mock_span):
+                yield
+
+        spotify_module.reset_spotapi_runtime_config()
+        with patch.object(spotify_module, "_spotapi_config", return_value=(True, 90.0)):
+            with (
+                patch(
+                    "bot.services.spotify.run_spotapi_subprocess",
+                    AsyncMock(return_value=None),
+                ),
+                patch("bot.services.spotify.trace_span", fake_trace_span),
+            ):
+                result = await spotify_module._run_spotapi_operation("track", "tid")
+        assert result is None
+        mock_span.set_attribute.assert_called_once_with("spotapi.failed", True)
+
+    @pytest.mark.asyncio
+    async def test_run_spotapi_operation_subprocess_failure_span_not_recording(self):
+        mock_span = MagicMock()
+        mock_span.is_recording.return_value = False
+
+        @contextmanager
+        def fake_trace_span(*args: object, **kwargs: object):
+            with patch.object(spotify_module.trace, "get_current_span", return_value=mock_span):
+                yield
+
+        spotify_module.reset_spotapi_runtime_config()
+        with patch.object(spotify_module, "_spotapi_config", return_value=(True, 90.0)):
+            with (
+                patch(
+                    "bot.services.spotify.run_spotapi_subprocess",
+                    AsyncMock(return_value=None),
+                ),
+                patch("bot.services.spotify.trace_span", fake_trace_span),
+            ):
+                result = await spotify_module._run_spotapi_operation("track", "tid")
+        assert result is None
+        mock_span.set_attribute.assert_not_called()
+
 
 class TestSyncPlaylistCatalog:
     def test_consume_skips_non_list_items(self):

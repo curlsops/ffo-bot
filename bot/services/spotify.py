@@ -5,6 +5,7 @@ from typing import Any
 from urllib.parse import quote
 
 import aiohttp
+from opentelemetry import trace
 from pydantic import Field
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -75,7 +76,12 @@ async def _run_spotapi_operation(operation: str, entity_id: str) -> list[str] | 
         attributes={"spotify.operation": operation},
     ):
         if use_subprocess:
-            return await run_spotapi_subprocess(operation, entity_id, timeout_sec=timeout_sec)
+            result = await run_spotapi_subprocess(operation, entity_id, timeout_sec=timeout_sec)
+            if result is None:
+                span = trace.get_current_span()
+                if span.is_recording():
+                    span.set_attribute("spotapi.failed", True)
+            return result
         loop = asyncio.get_running_loop()
         return await loop.run_in_executor(
             None, lambda: run_spotapi_operation_sync(operation, entity_id)

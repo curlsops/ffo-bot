@@ -182,6 +182,14 @@ def sync_track_query(track_id: str) -> str | None:
 
 
 def run_spotapi_operation_sync(operation: str, entity_id: str) -> list[str] | str | None:
+    from bot.services.tls_client_alpine import (
+        ensure_tls_client_alpine_patch,
+        spotapi_native_supported,
+    )
+
+    if not spotapi_native_supported():
+        return None
+    ensure_tls_client_alpine_patch()
     if operation not in SPOTAPI_OPERATIONS:
         raise ValueError(f"unknown SpotAPI operation: {operation}")
     if operation == "track":

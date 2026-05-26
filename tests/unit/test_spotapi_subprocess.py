@@ -1,5 +1,6 @@
 import asyncio
 import json
+import signal
 import sys
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -7,6 +8,11 @@ import pytest
 
 from bot.services import spotapi_subprocess as subprocess_module
 from bot.services.spotapi_sync import run_spotapi_operation_sync
+
+
+class TestSignalName:
+    def test_invalid_signal_returns_string(self):
+        assert subprocess_module._signal_name(99999) == "99999"
 
 
 class TestDecodeWorkerResponse:
@@ -35,7 +41,19 @@ class TestDecodeWorkerResponse:
 
 class TestRunSpotapiSubprocess:
     @pytest.mark.asyncio
-    async def test_spawns_worker_as_module(self):
+    async def test_musl_unsupported_skips_worker(self, monkeypatch, caplog):
+        monkeypatch.setattr(subprocess_module, "spotapi_native_supported", lambda: False)
+        with patch("asyncio.create_subprocess_exec", AsyncMock()) as spawn:
+            result = await subprocess_module.run_spotapi_subprocess(
+                "playlist", "pid", timeout_sec=30.0
+            )
+        spawn.assert_not_awaited()
+        assert result is None
+        assert "musl" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_spawns_worker_as_module(self, monkeypatch):
+        monkeypatch.setattr(subprocess_module, "spotapi_native_supported", lambda: True)
         stdout = json.dumps({"ok": True, "result": "x"}).encode()
         proc = MagicMock(returncode=0, communicate=AsyncMock(return_value=(stdout, b"")))
         with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)) as spawn:
@@ -44,7 +62,8 @@ class TestRunSpotapiSubprocess:
         assert spawn.await_args.args[:3] == (sys.executable, "-m", subprocess_module.WORKER_MODULE)
 
     @pytest.mark.asyncio
-    async def test_success(self):
+    async def test_success(self, monkeypatch):
+        monkeypatch.setattr(subprocess_module, "spotapi_native_supported", lambda: True)
         stdout = json.dumps({"ok": True, "result": "Artist - Title"}).encode()
         proc = MagicMock(returncode=0, communicate=AsyncMock(return_value=(stdout, b"")))
         with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)):
@@ -54,8 +73,24 @@ class TestRunSpotapiSubprocess:
         assert result == "Artist - Title"
 
     @pytest.mark.asyncio
-    async def test_signal_exit_returns_none(self):
-        proc = MagicMock(returncode=-11, communicate=AsyncMock(return_value=(b"", b"")))
+    async def test_signal_exit_returns_none(self, caplog, monkeypatch):
+        monkeypatch.setattr(subprocess_module, "spotapi_native_supported", lambda: True)
+        proc = MagicMock(
+            returncode=-signal.SIGSEGV,
+            communicate=AsyncMock(return_value=(b"", b"core dumped")),
+        )
+        with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)):
+            result = await subprocess_module.run_spotapi_subprocess(
+                "playlist", "pid", timeout_sec=30.0
+            )
+        assert result is None
+        assert "SIGSEGV" in caplog.text
+        assert "stderr='core dumped'" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_unknown_signal_name(self, monkeypatch):
+        monkeypatch.setattr(subprocess_module, "spotapi_native_supported", lambda: True)
+        proc = MagicMock(returncode=-999, communicate=AsyncMock(return_value=(b"", b"")))
         with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)):
             result = await subprocess_module.run_spotapi_subprocess(
                 "track", "tid", timeout_sec=30.0
@@ -64,16 +99,32 @@ class TestRunSpotapiSubprocess:
 
     @pytest.mark.asyncio
     @pytest.mark.parametrize("returncode,stderr", [(1, b"err"), (1, b"")])
-    async def test_nonzero_exit_returns_none(self, returncode, stderr):
+    async def test_nonzero_exit_returns_none(self, returncode, stderr, caplog, monkeypatch):
+        monkeypatch.setattr(subprocess_module, "spotapi_native_supported", lambda: True)
         proc = MagicMock(returncode=returncode, communicate=AsyncMock(return_value=(b"", stderr)))
         with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)):
             result = await subprocess_module.run_spotapi_subprocess(
                 "track", "tid", timeout_sec=30.0
             )
         assert result is None
+        assert "exited" in caplog.text
 
     @pytest.mark.asyncio
-    async def test_timeout_kills_worker(self):
+    async def test_worker_executable_missing(self, caplog, monkeypatch):
+        monkeypatch.setattr(subprocess_module, "spotapi_native_supported", lambda: True)
+        with patch(
+            "asyncio.create_subprocess_exec",
+            AsyncMock(side_effect=FileNotFoundError),
+        ):
+            result = await subprocess_module.run_spotapi_subprocess(
+                "track", "tid", timeout_sec=30.0
+            )
+        assert result is None
+        assert "executable not found" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_timeout_kills_worker(self, monkeypatch):
+        monkeypatch.setattr(subprocess_module, "spotapi_native_supported", lambda: True)
         proc = MagicMock()
         proc.communicate = AsyncMock(side_effect=asyncio.TimeoutError)
         proc.kill = MagicMock()
@@ -84,7 +135,8 @@ class TestRunSpotapiSubprocess:
         proc.kill.assert_called_once()
 
     @pytest.mark.asyncio
-    async def test_invalid_json_stdout(self):
+    async def test_invalid_json_stdout(self, monkeypatch):
+        monkeypatch.setattr(subprocess_module, "spotapi_native_supported", lambda: True)
         proc = MagicMock(returncode=0, communicate=AsyncMock(return_value=(b"{bad", b"")))
         with patch("asyncio.create_subprocess_exec", AsyncMock(return_value=proc)):
             result = await subprocess_module.run_spotapi_subprocess(
@@ -99,7 +151,18 @@ class TestRunSpotapiSubprocess:
 
 
 class TestRunSpotapiOperationSync:
-    def test_unknown_operation_raises(self):
+    def test_musl_returns_none(self, monkeypatch):
+        monkeypatch.setattr(
+            "bot.services.tls_client_alpine.spotapi_native_supported",
+            lambda: False,
+        )
+        assert run_spotapi_operation_sync("track", "id") is None
+
+    def test_unknown_operation_raises(self, monkeypatch):
+        monkeypatch.setattr(
+            "bot.services.tls_client_alpine.spotapi_native_supported",
+            lambda: True,
+        )
         with pytest.raises(ValueError, match="unknown SpotAPI operation"):
             run_spotapi_operation_sync("nope", "id")
 
@@ -112,7 +175,11 @@ class TestRunSpotapiOperationSync:
             ("artist", "sync_artist_catalog", ["A - B"]),
         ],
     )
-    def test_dispatch_operations(self, operation, sync_attr, expected):
+    def test_dispatch_operations(self, operation, sync_attr, expected, monkeypatch):
+        monkeypatch.setattr(
+            "bot.services.tls_client_alpine.spotapi_native_supported",
+            lambda: True,
+        )
         with patch(f"bot.services.spotapi_sync.{sync_attr}", return_value=expected):
             assert run_spotapi_operation_sync(operation, "id") == expected
 
