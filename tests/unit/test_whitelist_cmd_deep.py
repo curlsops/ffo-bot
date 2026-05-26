@@ -47,7 +47,8 @@ async def test_username_autocomplete_syncs_when_empty_cache():
         i = MagicMock(guild_id=1, client=bot)
         out = await _whitelist_username_autocomplete(i, "")
     sync.assert_awaited()
-    assert out and out[0].value == "Steve"
+    assert len(out) == 1
+    assert out[0].value == "Steve"
 
 
 @pytest.mark.asyncio

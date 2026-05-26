@@ -11,10 +11,6 @@ if TYPE_CHECKING:
 logger = logging.getLogger(__name__)
 
 
-def _log_audit_failure(e: Exception) -> None:
-    logger.error("Failed to log permission denial: %s", e)
-
-
 @dataclass
 class PermissionContext:
     server_id: int
@@ -48,7 +44,7 @@ class PermissionChecker:
             return False
 
         has_permission = user_role.hierarchy >= required_role.hierarchy
-        if not has_permission and required_role in [Role.SUPER_ADMIN, Role.ADMIN]:
+        if not has_permission and required_role in (Role.SUPER_ADMIN, Role.ADMIN):
             await self._log_permission_denial(ctx, required_role)
 
         return has_permission
@@ -143,7 +139,7 @@ class PermissionChecker:
         except TRANSIENT_DB_ERRORS:
             pass
         except Exception as e:
-            _log_audit_failure(e)
+            logger.error("Failed to log permission denial: %s", e)
 
     def invalidate_user_cache(self, server_id: int, user_id: int):
         self.cache.delete(f"user_role:{server_id}:{user_id}")

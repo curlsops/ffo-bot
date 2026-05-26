@@ -1,7 +1,6 @@
 import logging
 from unittest.mock import MagicMock
 
-import pytest
 from opentelemetry import trace
 from opentelemetry.sdk.trace import TracerProvider
 from opentelemetry.sdk.trace.export import SimpleSpanProcessor
@@ -51,7 +50,7 @@ def test_interaction_log_fields():
     }
 
 
-def test_log_command_start_info_and_feature_debug(caplog):
+def test_log_command_start_info(caplog):
     exporter = InMemorySpanExporter()
     provider = TracerProvider()
     provider.add_span_processor(SimpleSpanProcessor(exporter))
@@ -64,8 +63,5 @@ def test_log_command_start_info_and_feature_debug(caplog):
         with caplog.at_level(logging.DEBUG):
             log_context.log_command_start(log, "faq", "faq list", interaction)
         assert any("faq list start" in r.message for r in caplog.records)
-        assert any(
-            r.levelno == logging.DEBUG and "deferred" in r.getMessage() for r in caplog.records
-        )
     finally:
         trace.set_tracer_provider(previous)

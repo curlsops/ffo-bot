@@ -401,7 +401,7 @@ class TestCreatePrizeThread:
             message=None,
             invitable=False,
         )
-        assert thread.add_user.await_count == 3  # host + 2 winners
+        assert thread.add_user.await_count == 3
         thread.send.assert_awaited_once()
         call_kw = thread.send.call_args[1]
         assert "<@789>" in call_kw["content"]

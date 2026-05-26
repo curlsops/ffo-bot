@@ -42,19 +42,17 @@ async def test_tracing_exports_spans_and_reconfigure_warnings(caplog):
                 span_exporter=exporter,
             )
         assert any(
-            "Tracing enabled" in r.message and "endpoint=http://collector:4318" in r.message
-            for r in caplog.records
+            "Tracing enabled" in r.message and "unit-test" in r.message for r in caplog.records
         )
-        assert any("SimpleSpanProcessor" in r.message for r in caplog.records)
 
         try:
             tracer = trace.get_tracer("test")
             with tracer.start_as_current_span("hello"):
-                pass
+                ...
             with telemetry_mod.trace_span("wrapped", feature="messages"):
-                pass
+                ...
             with telemetry_mod.trace_span("bare"):
-                pass
+                ...
 
             bot = MagicMock()
             bot.metrics = None
@@ -99,26 +97,20 @@ async def test_tracing_exports_spans_and_reconfigure_warnings(caplog):
             handler._handle_message.assert_awaited_once()
         finally:
             caplog.clear()
-            with caplog.at_level(logging.DEBUG):
-                telemetry_mod.shutdown_tracing()
-            assert any("Shutting down OpenTelemetry" in r.message for r in caplog.records)
-            assert any("shutdown complete" in r.message.lower() for r in caplog.records)
+            telemetry_mod.shutdown_tracing()
 
     assert telemetry_mod._provider_configured is False
 
 
-def test_configure_disabled_does_not_set_tracer_provider(caplog):
+def test_configure_disabled_does_not_set_tracer_provider():
     with patch("bot.utils.telemetry.trace.set_tracer_provider") as mock_set:
-        with caplog.at_level(logging.DEBUG):
-            telemetry_mod.configure_tracing(enabled=False, service_name=None, environment="test")
+        telemetry_mod.configure_tracing(enabled=False, service_name=None, environment="test")
         mock_set.assert_not_called()
-    assert any("tracing disabled" in r.message.lower() for r in caplog.records)
 
 
-def test_shutdown_without_prior_configure_is_safe(caplog):
-    with caplog.at_level(logging.DEBUG):
-        telemetry_mod.shutdown_tracing()
-    assert any("shutdown skipped" in r.message.lower() for r in caplog.records)
+def test_shutdown_without_prior_configure_is_safe():
+    telemetry_mod.shutdown_tracing()
+    assert telemetry_mod._provider_configured is False
 
 
 def test_shutdown_when_global_provider_is_not_sdk():
@@ -141,14 +133,12 @@ def test_install_asyncpg_warns_on_instrument_error(caplog):
     assert any("asyncpg trace instrumentation" in r.message for r in caplog.records)
 
 
-def test_install_asyncpg_skips_when_already_instrumented(caplog):
+def test_install_asyncpg_skips_when_already_instrumented():
     mock_cls = MagicMock()
     mock_cls.return_value.is_instrumented_by_opentelemetry = True
     with patch("opentelemetry.instrumentation.asyncpg.AsyncPGInstrumentor", mock_cls):
-        with caplog.at_level(logging.DEBUG):
-            telemetry_mod._install_asyncpg_instrumentation()
+        telemetry_mod._install_asyncpg_instrumentation()
     mock_cls.return_value.instrument.assert_not_called()
-    assert any("already instrumented" in r.message.lower() for r in caplog.records)
 
 
 def test_install_asyncpg_calls_instrument_when_needed(caplog):
@@ -216,7 +206,7 @@ def test_trace_span_without_feature():
     )
     try:
         with telemetry_mod.trace_span("plain"):
-            pass
+            ...
         trace.get_tracer_provider().force_flush()
         assert any(s.name == "plain" for s in exporter.get_finished_spans())
     finally:
@@ -270,8 +260,7 @@ def test_configure_otlp_batch_processor(caplog):
                     environment="prod",
                 )
     assert telemetry_mod._provider_configured
-    assert any("BatchSpanProcessor" in r.message for r in caplog.records)
-    assert any("Tracing exporter=" in r.message for r in caplog.records)
+    assert any("Tracing enabled" in r.message and "svc" in r.message for r in caplog.records)
     telemetry_mod.shutdown_tracing()
 
 

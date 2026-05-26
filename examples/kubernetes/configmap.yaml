@@ -65,6 +65,9 @@ data:
   # Used when FEATURE_MUSIC=true (Lavalink Deployment/Service in-cluster)
   LAVALINK_HOST: "lavalink"
   LAVALINK_PORT: "2333"
+  # SpotAPI runs in a child process by default so native crashes (e.g. Alpine/musl) do not kill the bot
+  SPOTAPI_USE_SUBPROCESS: "true"
+  SPOTAPI_SUBPROCESS_TIMEOUT_SEC: "90"
 
   # Used when FEATURE_MINECRAFT_WHITELIST=true
   MINECRAFT_RCON_PORT: "25575"

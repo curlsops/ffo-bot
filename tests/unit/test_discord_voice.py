@@ -1,3 +1,5 @@
+import importlib.metadata
+import logging
 from unittest.mock import MagicMock, patch
 
 from bot.utils.discord_voice import (
@@ -22,8 +24,6 @@ def test_voice_deps_missing_message_non_empty():
 
 
 def test_log_voice_dependency_status_missing(caplog):
-    import logging
-
     caplog.set_level(logging.WARNING)
     with patch(
         "bot.utils.discord_voice.discord_voice_dependencies_available",
@@ -34,8 +34,6 @@ def test_log_voice_dependency_status_missing(caplog):
 
 
 def test_log_voice_dependency_status_ok(caplog):
-    import logging
-
     caplog.set_level(logging.INFO)
     with patch(
         "bot.utils.discord_voice.discord_voice_dependencies_available",
@@ -45,34 +43,7 @@ def test_log_voice_dependency_status_ok(caplog):
     assert "voice deps ok" in caplog.text.lower()
 
 
-def test_log_voice_dependency_status_ok_debug(caplog):
-    import logging
-
-    caplog.set_level(logging.DEBUG)
-    with patch(
-        "bot.utils.discord_voice.discord_voice_dependencies_available",
-        return_value=True,
-    ):
-        log_voice_dependency_status()
-    assert "dependency check passed" in caplog.text.lower()
-
-
-def test_log_voice_dependency_status_missing_debug(caplog):
-    import logging
-
-    caplog.set_level(logging.DEBUG)
-    with patch(
-        "bot.utils.discord_voice.discord_voice_dependencies_available",
-        return_value=False,
-    ):
-        log_voice_dependency_status()
-    assert "not importable" in caplog.text.lower()
-
-
 def test_log_voice_dependency_status_ok_unknown_version(caplog):
-    import importlib.metadata
-    import logging
-
     caplog.set_level(logging.INFO)
     with (
         patch(

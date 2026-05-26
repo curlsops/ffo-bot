@@ -20,7 +20,5 @@ def log_voice_dependency_status() -> None:
         except importlib.metadata.PackageNotFoundError:
             version = "unknown"
         logger.info("Voice deps OK (davey %s)", version)
-        logger.debug("Voice dependency check passed (davey %s)", version)
     else:
         logger.warning("Voice deps missing (davey not installed); voice commands will fail")
-        logger.debug("Voice dependency check failed: davey package not importable")

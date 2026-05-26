@@ -84,23 +84,13 @@ def trace_span(
         yield span
 
 
-def _otlp_traces_endpoint() -> str:
-    return os.environ.get(
-        "OTEL_EXPORTER_OTLP_TRACES_ENDPOINT",
-        os.environ.get("OTEL_EXPORTER_OTLP_ENDPOINT", "http://localhost:4318"),
-    )
-
-
 def _install_asyncpg_instrumentation() -> None:
     try:
         from opentelemetry.instrumentation.asyncpg import AsyncPGInstrumentor
 
         instr = AsyncPGInstrumentor()
         if not instr.is_instrumented_by_opentelemetry:
-            logger.debug("Installing asyncpg OpenTelemetry instrumentation")
             instr.instrument()
-        else:
-            logger.debug("asyncpg already instrumented for OpenTelemetry")
     except Exception as e:
         logger.warning("asyncpg trace instrumentation failed: %s", e)
 
@@ -114,15 +104,12 @@ def configure_tracing(
 ) -> None:
     global _provider_configured
     if not enabled:
-        logger.debug("OpenTelemetry tracing disabled (OTEL_TRACING_ENABLED=false)")
         return
     if _provider_configured:
         logger.warning("Tracing already configured; skipping duplicate init")
         return
 
     name = service_name or os.environ.get("OTEL_SERVICE_NAME", "ffo-bot")
-    endpoint = _otlp_traces_endpoint()
-    processor_name = "SimpleSpanProcessor" if span_exporter is not None else "BatchSpanProcessor"
     resource = Resource.create(
         {
             ResourceAttributes.SERVICE_NAME: name,
@@ -144,24 +131,14 @@ def configure_tracing(
 
     _install_asyncpg_instrumentation()
 
-    logger.info(
-        "Tracing enabled service=%s environment=%s endpoint=%s processor=%s",
-        name,
-        environment,
-        endpoint,
-        processor_name,
-    )
-    logger.debug("Tracing exporter=%s", type(exporter).__name__)
+    logger.info("Tracing enabled (service=%s)", name)
 
 
 def shutdown_tracing() -> None:
     global _provider_configured
     if not _provider_configured:
-        logger.debug("Tracing shutdown skipped (not configured)")
         return
     current = trace.get_tracer_provider()
     if isinstance(current, SDKTracerProvider):
-        logger.debug("Shutting down OpenTelemetry tracer provider")
         current.shutdown()
     _provider_configured = False
-    logger.info("Tracing shutdown complete")

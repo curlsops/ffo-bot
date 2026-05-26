@@ -1,4 +1,3 @@
-import logging
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -150,27 +149,3 @@ class TestMetricsCommandTree:
 
         bot.notifier.notify_rate_limit_hit.assert_awaited_once_with(1, 2, "Slow down", "cmd")
         i.followup.send.assert_awaited_once_with("Slow down", ephemeral=True)
-
-    @pytest.mark.asyncio
-    async def test_call_logs_interaction_debug_lifecycle(self, bot, caplog):
-        bot.metrics = MagicMock()
-        bot.rate_limiter = None
-        tree = bot.tree
-        mock_cmd = MagicMock(qualified_name="debug_cmd")
-
-        i = MagicMock()
-        i.data = {"type": 1, "name": "debug_cmd", "options": []}
-        i.guild_id = 42
-        i.channel_id = 99
-        i.user = MagicMock(id=7)
-        i.id = 123456789
-        i.command_failed = False
-
-        with caplog.at_level(logging.DEBUG, logger="bot.client"):
-            with patch.object(tree, "_get_app_command_options", return_value=(mock_cmd, [])):
-                with patch("bot.client.app_commands.CommandTree._call", new_callable=AsyncMock):
-                    await tree._call(i)
-
-        messages = [r.message for r in caplog.records if r.name == "bot.client"]
-        assert any("discord.interaction start" in m for m in messages)
-        assert any("discord.interaction done" in m for m in messages)

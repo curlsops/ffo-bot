@@ -1,6 +1,5 @@
 FROM python:3.14-alpine3.22
 
-# gcompat + libstdc++: glibc shims for SpotAPI/tls_client and davey on musl Alpine.
 RUN apk add --no-cache \
     bash \
     git \

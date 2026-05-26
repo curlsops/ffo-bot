@@ -1,24 +1,10 @@
-from contextlib import asynccontextmanager
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
 import pytest
 
 from bot.handlers.reactions import ReactionHandler
-
-
-def make_db_pool(fetchval_result=None):
-    conn = MagicMock()
-    conn.fetchval = AsyncMock(return_value=fetchval_result)
-    conn.execute = AsyncMock()
-
-    @asynccontextmanager
-    async def acquire():
-        yield conn
-
-    pool = MagicMock()
-    pool.acquire = acquire
-    return pool, conn
+from tests.integration.conftest import message_db_pool
 
 
 @pytest.mark.asyncio
@@ -31,7 +17,7 @@ async def test_reaction_handler_add_assigns_role():
     metrics = MagicMock()
     metrics.errors_total.labels.return_value.inc = MagicMock()
     bot.metrics = metrics
-    db_pool, conn = make_db_pool(fetchval_result=1234)
+    db_pool, conn = message_db_pool(fetchval_result=1234)
     bot.db_pool = db_pool
 
     role = MagicMock()
@@ -60,7 +46,7 @@ async def test_reaction_handler_add_assigns_role():
 
 @pytest.mark.asyncio
 async def test_reaction_handler_self_reaction_ignored():
-    db_pool, conn = make_db_pool(fetchval_result=1234)
+    db_pool, conn = message_db_pool(fetchval_result=1234)
     bot = MagicMock()
     bot.cache = None
     bot.user.id = 10
@@ -73,7 +59,7 @@ async def test_reaction_handler_self_reaction_ignored():
 
 @pytest.mark.asyncio
 async def test_reaction_handler_get_reaction_role_none_returns_early():
-    db_pool, _ = make_db_pool(fetchval_result=None)
+    db_pool, _ = message_db_pool(fetchval_result=None)
     bot = MagicMock()
     bot.cache = None
     bot.settings = MagicMock(feature_minecraft_whitelist=False)
@@ -90,7 +76,7 @@ async def test_reaction_handler_get_reaction_role_none_returns_early():
 
 @pytest.mark.asyncio
 async def test_reaction_handler_guild_none_returns_early():
-    db_pool, conn = make_db_pool(fetchval_result=1234)
+    db_pool, conn = message_db_pool(fetchval_result=1234)
     bot = MagicMock()
     bot.cache = None
     bot.settings = MagicMock(feature_minecraft_whitelist=False)
@@ -107,7 +93,7 @@ async def test_reaction_handler_guild_none_returns_early():
 
 @pytest.mark.asyncio
 async def test_reaction_handler_add_roles_http_exception_logged():
-    db_pool, _ = make_db_pool(fetchval_result=1234)
+    db_pool, _ = message_db_pool(fetchval_result=1234)
     bot = MagicMock()
     bot.cache = None
     bot.settings = MagicMock(feature_minecraft_whitelist=False)
@@ -132,7 +118,7 @@ async def test_reaction_handler_add_roles_http_exception_logged():
 
 @pytest.mark.asyncio
 async def test_reaction_handler_remove_roles_http_exception_logged():
-    db_pool, _ = make_db_pool(fetchval_result=1234)
+    db_pool, _ = message_db_pool(fetchval_result=1234)
     bot = MagicMock()
     bot.cache = None
     bot.user.id = 999
@@ -154,7 +140,7 @@ async def test_reaction_handler_remove_roles_http_exception_logged():
 
 @pytest.mark.asyncio
 async def test_reaction_handler_remove_assigns_role():
-    db_pool, _ = make_db_pool(fetchval_result=1234)
+    db_pool, _ = message_db_pool(fetchval_result=1234)
     bot = MagicMock()
     bot.cache = None
     bot.user.id = 999

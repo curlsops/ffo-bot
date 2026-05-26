@@ -30,10 +30,7 @@ if TYPE_CHECKING:
     from mafic import NodePool
 
 logger = logging.getLogger(__name__)
-
-
-def _tracer():
-    return trace.get_tracer(__name__)
+_tracer = trace.get_tracer(__name__)
 
 
 def _parse_discord_shard_ids(raw: str | None) -> list[int] | None:
@@ -84,7 +81,7 @@ class _FFOBotMixin(commands.Bot):
         self._message_handler_tasks = set()
 
     async def setup_hook(self):
-        with _tracer().start_as_current_span("bot.setup_hook"):
+        with _tracer.start_as_current_span("bot.setup_hook"):
             logger.info("Initializing...")
             db_url = self.settings.database_url
             if not db_url:
@@ -178,9 +175,9 @@ class _FFOBotMixin(commands.Bot):
             if enabled:
                 extensions.append(ext)
 
-        with _tracer().start_as_current_span("bot.load_extensions"):
+        with _tracer.start_as_current_span("bot.load_extensions"):
             for extension in extensions:
-                with _tracer().start_as_current_span(
+                with _tracer.start_as_current_span(
                     "bot.load_extension",
                     attributes={"extension.module": extension},
                 ) as ext_span:
@@ -257,18 +254,12 @@ class _FFOBotMixin(commands.Bot):
                 },
             ):
                 try:
-                    logger.info(
-                        "Lavalink connect host=%s port=%s",
-                        self.settings.lavalink_host,
-                        self.settings.lavalink_port,
-                    )
                     await self.pool.create_node(
                         host=self.settings.lavalink_host,
                         port=self.settings.lavalink_port,
                         password=self.settings.lavalink_password,
                         label="main",
                     )
-                    logger.info("Lavalink node created (label=main)")
                 except Exception as e:
                     logger.warning("Lavalink connection failed, music disabled: %s", e)
                     self.pool = None
@@ -281,22 +272,15 @@ class _FFOBotMixin(commands.Bot):
             and self.settings.feature_music
             and self.settings.music_voice_recovery_on_ready
         ):
-            logger.info("Music voice recovery on ready starting")
             try:
                 from bot.commands.music import reconnect_music_voice_after_ready
 
                 await reconnect_music_voice_after_ready(self)
             except Exception as e:
                 logger.warning("Music voice recovery failed: %s", e, exc_info=True)
-        elif self.settings.feature_music and self.pool:
-            logger.debug(
-                "Music voice recovery skipped (db=%s flag=%s)",
-                bool(self.db_pool),
-                self.settings.music_voice_recovery_on_ready,
-            )
 
         if getattr(self.settings, "sync_commands_on_boot", True):
-            with _tracer().start_as_current_span("discord.sync_commands") as sync_span:
+            with _tracer.start_as_current_span("discord.sync_commands") as sync_span:
                 sync_span.set_attribute("discord.guild_count", len(self.guilds))
                 clear_commands_on_boot = getattr(self.settings, "clear_commands_on_boot", True)
                 if clear_commands_on_boot:
@@ -427,12 +411,7 @@ class _FFOBotMixin(commands.Bot):
         self, interaction: discord.Interaction, error: discord.app_commands.AppCommandError
     ):
         cmd_name = interaction.command.name if interaction.command else "unknown"
-        logger.exception(
-            "App command error: %s guild=%s interaction=%s",
-            cmd_name,
-            interaction.guild_id,
-            interaction.id,
-        )
+        logger.exception("App command error: %s", cmd_name)
         if self.notifier and interaction.guild_id:
             ctx = f"Command: /{cmd_name}" if interaction.command else "Unknown command"
             await self.notifier.notify_error(
@@ -457,20 +436,13 @@ class MetricsCommandTree(app_commands.CommandTree):
         else:
             command_name = data.get("name", "unknown")
 
-        with _tracer().start_as_current_span("discord.interaction") as span:
+        with _tracer.start_as_current_span("discord.interaction") as span:
             span.set_attribute("discord.command", command_name)
             span.set_attribute("ffo.feature", command_feature_name(command_name))
             span.set_attribute("discord.guild_id", server_id)
             if interaction.channel_id:
                 span.set_attribute("discord.channel_id", str(interaction.channel_id))
             span.set_attribute("discord.user_id", str(interaction.user.id))
-            logger.debug(
-                "discord.interaction start command=%s guild=%s user=%s interaction=%s",
-                command_name,
-                server_id,
-                interaction.user.id,
-                interaction.id,
-            )
             try:
                 if bot.rate_limiter and interaction.guild_id:
                     allowed, reason = await bot.rate_limiter.check_rate_limit(
@@ -491,16 +463,8 @@ class MetricsCommandTree(app_commands.CommandTree):
 
                 await super()._call(interaction)
             finally:
-                duration_ms = (time.perf_counter() - start) * 1000
                 if getattr(interaction, "command_failed", False):
                     span.set_status(Status(StatusCode.ERROR))
-                logger.debug(
-                    "discord.interaction done command=%s guild=%s failed=%s duration_ms=%.1f",
-                    command_name,
-                    server_id,
-                    getattr(interaction, "command_failed", False),
-                    duration_ms,
-                )
                 if bot.metrics:
                     status = "error" if getattr(interaction, "command_failed", False) else "success"
                     bot.metrics.commands_executed.labels(

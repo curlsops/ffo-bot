@@ -5,34 +5,16 @@ import pytest
 from discord import app_commands
 
 from bot.commands.giveaway import GiveawayCommands
-from tests.helpers import assert_followup_contains
+from tests.helpers import assert_followup_contains, db_pool_with_conn, mock_interaction
 
 _OP_REROLL = app_commands.Choice(name="Reroll", value="reroll")
 _OP_START = app_commands.Choice(name="Start", value="start")
-
-
-def make_interaction():
-    i = MagicMock()
-    i.guild_id = 111
-    i.user.id = 222
-    i.response.defer = AsyncMock()
-    i.followup.send = AsyncMock()
-    return i
 
 
 def make_bot(admin=True):
     bot = MagicMock()
     bot.permission_checker.check_role = AsyncMock(return_value=admin)
     return bot
-
-
-def _db_ctx(conn):
-    ctx = MagicMock()
-    ctx.__aenter__ = AsyncMock(return_value=conn)
-    ctx.__aexit__ = AsyncMock(return_value=None)
-    pool = MagicMock()
-    pool.acquire.return_value = ctx
-    return pool
 
 
 @pytest.mark.asyncio
@@ -58,11 +40,11 @@ async def test_reroll_success():
         executemany=AsyncMock(),
     )
     bot = make_bot()
-    bot.db_pool = _db_ctx(conn)
+    bot.db_pool = db_pool_with_conn(conn)
     bot.get_channel = MagicMock(return_value=None)
 
     cog = GiveawayCommands(bot)
-    i = make_interaction()
+    i = mock_interaction(guild_id=111, user_id=222)
     await cog.giveaway_cmd.callback(i, operation=_OP_REROLL, message_id="123456789012345678")
 
     conn.execute.assert_awaited()
@@ -74,10 +56,10 @@ async def test_reroll_success():
 async def test_reroll_not_found():
     conn = AsyncMock(fetchrow=AsyncMock(return_value=None))
     bot = make_bot()
-    bot.db_pool = _db_ctx(conn)
+    bot.db_pool = db_pool_with_conn(conn)
 
     cog = GiveawayCommands(bot)
-    i = make_interaction()
+    i = mock_interaction(guild_id=111, user_id=222)
     await cog.giveaway_cmd.callback(i, operation=_OP_REROLL, message_id="123456789012345678")
 
     assert_followup_contains(i, "not found")
@@ -92,10 +74,10 @@ async def test_reroll_still_active():
     }
     conn = AsyncMock(fetchrow=AsyncMock(return_value=giveaway))
     bot = make_bot()
-    bot.db_pool = _db_ctx(conn)
+    bot.db_pool = db_pool_with_conn(conn)
 
     cog = GiveawayCommands(bot)
-    i = make_interaction()
+    i = mock_interaction(guild_id=111, user_id=222)
     await cog.giveaway_cmd.callback(i, operation=_OP_REROLL, message_id="123456789012345678")
 
     assert_followup_contains(i, "still active")
@@ -105,10 +87,10 @@ async def test_reroll_still_active():
 async def test_reroll_invalid_message_id():
     conn = AsyncMock()
     bot = make_bot()
-    bot.db_pool = _db_ctx(conn)
+    bot.db_pool = db_pool_with_conn(conn)
 
     cog = GiveawayCommands(bot)
-    i = make_interaction()
+    i = mock_interaction(guild_id=111, user_id=222)
     await cog.giveaway_cmd.callback(i, operation=_OP_REROLL, message_id="not-a-valid-id")
 
     assert_followup_contains(i, "Invalid message ID")
@@ -121,15 +103,13 @@ async def test_gstart_with_role_constraints():
     conn.execute = AsyncMock()
     conn.fetchrow = AsyncMock(return_value=None)
     bot = make_bot()
-    bot.db_pool = _db_ctx(conn)
+    bot.db_pool = db_pool_with_conn(conn)
     bot.metrics = MagicMock()
     bot.metrics.commands_executed.labels.return_value.inc = MagicMock()
     bot.notifier = None
     cog = GiveawayCommands(bot)
-    i = make_interaction()
-    i.guild_id = 111
+    i = mock_interaction(guild_id=111, user_id=222)
     i.channel_id = 222
-    i.user.id = 333
     i.followup.send = AsyncMock(return_value=MagicMock(id=999))
     await cog.giveaway_cmd.callback(
         i,

@@ -1,4 +1,3 @@
-import asyncio
 import json
 import logging
 from collections import OrderedDict
@@ -41,7 +40,6 @@ class InMemoryCache:
         self.default_ttl = default_ttl
         self.max_memory_bytes = max_memory_bytes
         self._total_bytes = 0
-        self._lock = asyncio.Lock()
 
     def get(self, key: str) -> Any | None:
         if key not in self._store:

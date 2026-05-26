@@ -73,17 +73,11 @@ class Settings(BaseSettings):
     rate_limit_user_capacity: int = Field(default=10, description="User rate limit capacity")
     rate_limit_server_capacity: int = Field(default=100, description="Server rate limit capacity")
 
-    log_level: str = Field(
-        default="INFO",
-        description="Log level (DEBUG enables bot.* at DEBUG; third-party verbose when LOG_VERBOSE_THIRD_PARTY unset)",
-    )
+    log_level: str = Field(default="INFO", description="Log level")
     log_format: str = Field(default="json", description="Log format (json or text)")
     log_verbose_third_party: bool | None = Field(
         default=None,
-        description=(
-            "Verbose discord.py, mafic, and aiohttp logs. "
-            "Default True when LOG_LEVEL=DEBUG. asyncpg stays INFO at DEBUG (query noise)."
-        ),
+        description="Verbose discord.py, mafic, and aiohttp logs (default when LOG_LEVEL=DEBUG)",
     )
 
     otel_tracing_enabled: bool = Field(
@@ -166,6 +160,16 @@ class Settings(BaseSettings):
     spotify_client_secret: Optional[str] = Field(
         default=None,
         description="Spotify app client secret for playlist support (SPOTIFY_CLIENT_SECRET env)",
+    )
+    spotapi_use_subprocess: bool = Field(
+        default=True,
+        description="Run SpotAPI in an isolated subprocess",
+    )
+    spotapi_subprocess_timeout_sec: float = Field(
+        default=90.0,
+        ge=5.0,
+        le=300.0,
+        description="Timeout for SpotAPI subprocess calls in seconds",
     )
     minecraft_rcon_host: Optional[str] = Field(
         default=None, description="Minecraft server host for RCON"

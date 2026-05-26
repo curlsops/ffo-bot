@@ -84,6 +84,8 @@ class TestSettingsDefaults:
             ("whitelist_cache_reconcile_interval_hours", 24.0),
             ("feature_music", False),
             ("music_voice_recovery_on_ready", True),
+            ("spotapi_use_subprocess", True),
+            ("spotapi_subprocess_timeout_sec", 90.0),
             ("discord_sharding_enabled", False),
         ],
     )

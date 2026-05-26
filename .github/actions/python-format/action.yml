@@ -1,5 +1,5 @@
 name: Python Format
-description: Run black and isort (check or write).
+description: Run black and isort in check or fix mode.
 inputs:
   targets:
     description: Space-separated paths to format or check.

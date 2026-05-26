@@ -23,6 +23,24 @@ from bot.commands.help_cmd import (
     _visible_top_level_names,
 )
 
+_ADMIN_PERM = discord.Permissions(administrator=True)
+
+
+def _member_no_admin() -> MagicMock:
+    member = MagicMock(spec=discord.Member)
+    member.guild_permissions = discord.Permissions()
+    return member
+
+
+def _admin_only_command(name: str, description: str = "x"):
+    @app_commands.command(name=name, description=description)
+    @app_commands.default_permissions(administrator=True)
+    async def cb(interaction: discord.Interaction):
+        pass
+
+    cb.default_member_permissions = _ADMIN_PERM
+    return cb
+
 
 def test_normalize_help_query():
     assert _normalize_help_query(None) is None
@@ -63,8 +81,6 @@ def test_parameters_in_order_accepts_dict_mapping():
 
 
 def test_operation_expand_requires_visibility():
-    admin_perm = discord.Permissions(administrator=True)
-
     @app_commands.command(name="locked", description="x")
     @app_commands.describe(operation="Pick")
     @app_commands.default_permissions(administrator=True)
@@ -80,10 +96,8 @@ def test_operation_expand_requires_visibility():
     ):
         pass
 
-    locked_cb.default_member_permissions = admin_perm
-    member = MagicMock()
-    member.guild_permissions = discord.Permissions()
-    assert _operation_expand_entries(locked_cb, member) is None
+    locked_cb.default_member_permissions = _ADMIN_PERM
+    assert _operation_expand_entries(locked_cb, _member_no_admin()) is None
 
 
 def test_operation_expand_requires_two_or_more_choices():
@@ -244,14 +258,7 @@ def test_group_help_entries_skips_nested_group_children():
 
 
 def test_group_help_entries_skips_leaf_when_member_cannot_see():
-    admin_perm = discord.Permissions(administrator=True)
-
-    @app_commands.command(name="secret_leaf", description="hidden leaf")
-    @app_commands.default_permissions(administrator=True)
-    async def leaf_cb(interaction: discord.Interaction):
-        pass
-
-    leaf_cb.default_member_permissions = admin_perm
+    leaf_cb = _admin_only_command("secret_leaf", "hidden leaf")
 
     class Outer(app_commands.Group):
         def __init__(self):
@@ -259,44 +266,21 @@ def test_group_help_entries_skips_leaf_when_member_cannot_see():
 
     outer = Outer()
     outer.add_command(leaf_cb)
-    member = MagicMock(spec=discord.Member)
-    member.guild_permissions = discord.Permissions()
-    assert _group_help_entries(outer, member) == []
+    assert _group_help_entries(outer, _member_no_admin()) == []
 
 
-def test_build_help_embed_skips_plain_command_when_member_lacks_permission(
-    mock_bot, mock_interaction
-):
-    admin_perm = discord.Permissions(administrator=True)
-
-    @app_commands.command(name="modonly", description="mod")
-    @app_commands.default_permissions(administrator=True)
-    async def mod_cb(interaction: discord.Interaction):
-        pass
-
-    mod_cb.default_member_permissions = admin_perm
-    mock_bot.tree.get_commands.return_value = [mod_cb]
-    member = MagicMock(spec=discord.Member)
-    member.guild_permissions = discord.Permissions()
-    mock_interaction.user = member
-    embed = _build_help_embed(mock_bot, mock_interaction)
-    assert all(f.name != "/modonly" for f in embed.fields)
-
-
-def test_visible_top_level_names_skips_plain_command_when_member_lacks_permission():
-    admin_perm = discord.Permissions(administrator=True)
-
-    @app_commands.command(name="modonly", description="m")
-    @app_commands.default_permissions(administrator=True)
-    async def mod_cb(interaction: discord.Interaction):
-        pass
-
-    mod_cb.default_member_permissions = admin_perm
+@pytest.mark.parametrize(
+    "check",
+    [
+        lambda bot, member: _visible_top_level_names(bot, member),
+        lambda bot, member: [f.name for f in _build_help_embed(bot, MagicMock(user=member)).fields],
+    ],
+)
+def test_skips_admin_command_when_member_lacks_permission(check):
     bot = MagicMock()
-    bot.tree.get_commands.return_value = [mod_cb]
-    member = MagicMock(spec=discord.Member)
-    member.guild_permissions = discord.Permissions()
-    assert _visible_top_level_names(bot, member) == []
+    bot.tree.get_commands.return_value = [_admin_only_command("modonly", "mod")]
+    result = check(bot, _member_no_admin())
+    assert result == [] or all(name != "/modonly" for name in result)
 
 
 def test_visible_top_level_skips_group_when_member_lacks_permission():
@@ -308,9 +292,7 @@ def test_visible_top_level_skips_group_when_member_lacks_permission():
     grp.default_member_permissions = discord.Permissions(administrator=True)
     bot = MagicMock()
     bot.tree.get_commands.return_value = [grp]
-    member = MagicMock(spec=discord.Member)
-    member.guild_permissions = discord.Permissions()
-    assert _visible_top_level_names(bot, member) == []
+    assert _visible_top_level_names(bot, _member_no_admin()) == []
 
 
 def test_build_help_embed_skips_hidden_top_level_command(mock_bot, mock_interaction):
@@ -323,6 +305,8 @@ def test_build_help_embed_skips_hidden_top_level_command(mock_bot, mock_interact
     embed = _build_help_embed(mock_bot, mock_interaction)
     assert all(f.name != "/ghost" for f in embed.fields)
 
+
+def test_build_help_embed_includes_visible_top_level_command(mock_bot, mock_interaction):
     @app_commands.command(name="plain", description="Plain command")
     async def plain_cb(interaction: discord.Interaction):
         pass
@@ -411,7 +395,7 @@ def test_format_parameters_with_choices():
     assert " …" in s
 
 
-def test_find_top_level_with_real_command():
+def test_find_top_level_returns_matching_command():
     @app_commands.command(name="ping", description="pong")
     async def ping_cb(interaction: discord.Interaction):
         pass
@@ -419,6 +403,15 @@ def test_find_top_level_with_real_command():
     bot = MagicMock()
     bot.tree.get_commands.return_value = [ping_cb]
     assert _find_top_level_command(bot, None, "ping") is ping_cb
+
+
+def test_find_top_level_missing_returns_none():
+    @app_commands.command(name="ping", description="pong")
+    async def ping_cb(interaction: discord.Interaction):
+        pass
+
+    bot = MagicMock()
+    bot.tree.get_commands.return_value = [ping_cb]
     assert _find_top_level_command(bot, None, "missing") is None
 
 

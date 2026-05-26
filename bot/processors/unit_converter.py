@@ -68,7 +68,7 @@ PATTERNS = [
         None,
         None,
         None,
-    ),  # 5'10"
+    ),
     (
         re.compile(r"\b(\d+\.?\d*)\s*(in|inch|inches)\b", re.I),
         "length_imperial",
@@ -88,43 +88,30 @@ PATTERNS = [
 ]
 
 
+def _match_to_si(kind: str, m: re.Match, units: dict[str, float] | None) -> str:
+    if kind == "ft_in":
+        ft, inch = float(m.group(1)), float(m.group(2))
+        meters = ft * LENGTH_IMPERIAL["ft"] + inch * LENGTH_IMPERIAL["in"]
+        return _to_si_length(meters)
+    if kind == "temp_f":
+        return _to_si_temp(float(m.group(1)))
+    assert units is not None
+    u = m.group(2).lower()
+    amount = float(m.group(1))
+    if kind == "weight_imperial":
+        return _to_si_weight(amount * units[u])
+    return _to_si_length(amount * units[u])
+
+
 def detect_and_convert(text: str) -> str | None:
-    result = convert_in_text(text)
-    if result and result != text:
-        return result
-    return None
+    return convert_in_text(text)
 
 
 def convert_in_text(text: str) -> str | None:
-    result = text
-    converted = False
-
-    for pat, kind, units, conv, _ in PATTERNS:
-        for m in pat.finditer(result):
-            si_val = None
-            if kind == "ft_in":
-                ft, inch = float(m.group(1)), float(m.group(2))
-                meters = ft * LENGTH_IMPERIAL["ft"] + inch * LENGTH_IMPERIAL["in"]
-                si_val = _to_si_length(meters)
-            elif kind == "temp_f":
-                f = float(m.group(1))
-                si_val = _to_si_temp(f)
-            elif kind in ("weight_imperial", "length_imperial") and units:  # pragma: no branch
-                amount = float(m.group(1))
-                u = m.group(2).lower()
-                if u in units:  # pragma: no branch
-                    if kind == "weight_imperial":
-                        kg = amount * units[u]
-                        si_val = _to_si_weight(kg)
-                    else:
-                        meters = amount * units[u]
-                        si_val = _to_si_length(meters)
-
-            if si_val:  # pragma: no branch
-                result = result[: m.start()] + si_val + result[m.end() :]
-                converted = True
-                break
-        if converted:
-            break
-
-    return result if converted else None
+    for pat, kind, units, _conv, _ in PATTERNS:
+        m = pat.search(text)
+        if not m:
+            continue
+        si_val = _match_to_si(kind, m, units)
+        return text[: m.start()] + si_val + text[m.end() :]
+    return None

@@ -5,7 +5,7 @@ from typing import Any
 
 import discord
 
-from bot.utils.telemetry import feature_debug, logging_extra, span_context_fields
+from bot.utils.telemetry import logging_extra, span_context_fields
 
 
 def trace_fields_for_log() -> dict[str, str]:
@@ -43,4 +43,3 @@ def log_command_start(
         fields.get("interaction_id"),
         extra=logging_extra(feature=feature, command=command, **fields),
     )
-    feature_debug(logger, feature, "%s deferred", command, command=command, **fields)

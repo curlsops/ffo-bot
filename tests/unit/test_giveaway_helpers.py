@@ -162,7 +162,7 @@ class TestGiveawayDurations:
 
     def test_durations_all_parseable(self):
         for d in GIVEAWAY_DURATIONS:
-            assert parse_duration(d) is not None, f"{d} should parse"
+            assert parse_duration(d) is not None
 
     def test_durations_fit_autocomplete(self):
         assert len(GIVEAWAY_DURATIONS) <= 25

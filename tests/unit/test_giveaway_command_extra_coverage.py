@@ -64,7 +64,7 @@ class TestMessageIdChoices:
             }
         ]
         choices = _giveaway_message_ids_to_choices(rows, "")
-        assert choices
+        assert len(choices) == 1
         assert "ended" in choices[0].name
         assert len(choices[0].name) <= 100
 
@@ -76,7 +76,7 @@ class TestMessageIdChoices:
     def test_filter_by_prize_substring(self):
         rows = [{"message_id": 1, "prize": "UniquePrizeX", "ended_at": None}]
         out = _giveaway_message_ids_to_choices(rows, "unique")
-        assert out
+        assert len(out) == 1
 
     def test_filter_excludes_non_matching_current(self):
         rows = [{"message_id": 111, "prize": "Alpha", "ended_at": None}]
@@ -102,7 +102,8 @@ async def test_message_id_autocomplete_wraps_cached(monkeypatch):
     monkeypatch.setattr(giveaway_mod, "cached_autocomplete", fake_cached)
     i = MagicMock()
     out = await _giveaway_message_id_autocomplete(i, "")
-    assert out and calls and CACHE_GIVEAWAY_MESSAGE_ID in calls[0][0]
+    assert len(out) == 1
+    assert CACHE_GIVEAWAY_MESSAGE_ID in calls[0][0]
 
 
 @pytest.mark.asyncio

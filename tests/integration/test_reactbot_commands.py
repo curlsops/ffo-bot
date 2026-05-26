@@ -37,19 +37,6 @@ async def test_reactbot_add_success():
 
 
 @pytest.mark.asyncio
-async def test_reactbot_add_rate_limited():
-    bot = _make_bot()
-    bot.rate_limiter.check_rate_limit = AsyncMock(return_value=(True, ""))
-    db_pool, conn = mock_db_pool()
-    bot.db_pool = db_pool
-    cog = ReactBotCommands(bot)
-    i = mock_interaction(guild_id=123456789, user_id=987654321)
-    await invoke(cog, "reactbot_cmd", None, i, operation=_OP_ADD, phrase=r"hello", emoji="👋")
-    conn.execute.assert_awaited()
-    i.followup.send.assert_awaited()
-
-
-@pytest.mark.asyncio
 async def test_reactbot_list_no_rows():
     bot = _make_bot()
     db_pool, conn = mock_db_pool(fetch=[])

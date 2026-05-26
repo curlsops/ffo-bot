@@ -19,7 +19,6 @@ _THIRD_PARTY_VERBOSE = (
     "mafic.player",
 )
 
-# asyncpg at INFO when root is DEBUG: query/parameter DEBUG is very noisy for troubleshooting.
 _ASYNCPG_LOGGER = "asyncpg"
 
 _OTEL_SDK_LOGGERS = (
@@ -31,7 +30,7 @@ _OTEL_SDK_LOGGERS = (
 
 
 class _StructuredLogDefaultsFilter(logging.Filter):
-    _OPTIONAL_FIELDS = ("feature", "command", "guild_id", "user_id", "interaction_id", "channel_id")
+    _OPTIONAL_FIELDS = ("feature", "command", "guild_id", "user_id", "interaction_id")
 
     def filter(self, record: logging.LogRecord) -> bool:
         for key in self._OPTIONAL_FIELDS:
@@ -76,8 +75,7 @@ def setup_logging(
     otel_tracing_enabled: bool = False,
 ) -> logging.Logger:
     root = logging.getLogger()
-    level_name = log_level.upper()
-    root.setLevel(level_name)
+    root.setLevel(log_level.upper())
     root.handlers.clear()
 
     verbose_third = (

@@ -56,7 +56,8 @@ class TestAdminPing:
         bot = MagicMock(latency=0)
         i = _i()
         i.response.send_message = AsyncMock()
-        await AdminCommands(bot).ping.callback(AdminCommands(bot), i)
+        cog = AdminCommands(bot)
+        await cog.ping.callback(cog, i)
         assert "0ms" in i.response.send_message.call_args[0][0]
 
 

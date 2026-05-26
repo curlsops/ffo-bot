@@ -33,7 +33,7 @@ def _install_tls_client_test_stub() -> None:
             self.proxies: dict[str, str] = {}
 
         def close(self) -> None:
-            return None
+            pass
 
     sessions = types.ModuleType("tls_client.sessions")
     sessions.Session = _SessionStub
@@ -51,7 +51,7 @@ def _install_tls_client_test_stub() -> None:
 
 _install_tls_client_test_stub()
 
-import pytest
+import pytest  # noqa: E402
 
 
 def _run_alembic(url: str) -> None:

@@ -101,7 +101,10 @@ async def test_add_missing_phrase_or_emoji():
     i = MagicMock()
     i.followup.send = AsyncMock()
     await _add_reactbot_phrase(cog, i, None, "👍")
-    assert i.followup.send.called
+    i.followup.send.assert_awaited_once_with(
+        "❌ Phrase and emoji required for Add.",
+        ephemeral=True,
+    )
 
 
 @pytest.mark.asyncio
@@ -122,7 +125,7 @@ async def test_add_unique_violation():
                 cog, "_validate_emoji_accessible", AsyncMock(return_value=(True, ""))
             ):
                 await _add_reactbot_phrase(cog, i, r"hello", "👍")
-    assert i.followup.send.called
+    assert "already exists" in i.followup.send.call_args[0][0]
 
 
 @pytest.mark.asyncio
@@ -357,7 +360,7 @@ async def test_add_success_without_metrics():
                 cog, "_validate_emoji_accessible", AsyncMock(return_value=(True, ""))
             ):
                 await _add_reactbot_phrase(cog, i, r"a", "👍")
-    assert i.followup.send.called
+    i.followup.send.assert_awaited_once_with("✅ Added: `a` → 👍", ephemeral=True)
 
 
 @pytest.mark.asyncio

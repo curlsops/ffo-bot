@@ -1,4 +1,5 @@
 import logging
+import os
 from contextlib import contextmanager
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -6,42 +7,40 @@ import aiohttp
 import pytest
 from spotapi.exceptions import AlbumError, ArtistError, PlaylistError, SongError
 
+from bot.services import spotapi_sync as spotapi_sync_module
 from bot.services import spotify as spotify_module
-from bot.services.spotify import (
+from bot.services.spotapi_sync import (
     ARTIST_PLAY_COUNT,
     ARTIST_TRACK_POOL_TARGET,
     SPOTAPI_PAGE_SIZE,
-    SPOTIFY_ALBUM_PATTERN,
-    SPOTIFY_ARTIST_PATTERN,
-    SPOTIFY_PLAYLIST_PATTERN,
-    SPOTIFY_TRACK_PATTERN,
     _artist_names_from_block,
     _entry_to_search_query,
     _playlist_item_to_query,
     _search_track_item_to_query,
-    _sync_album_catalog,
-    _sync_artist_catalog,
-    _sync_playlist_catalog,
-    _sync_track_query,
     _track_body_to_query,
     _wrapped_track_item_to_query,
+)
+from bot.services.spotapi_sync import sync_album_catalog as _sync_album_catalog
+from bot.services.spotapi_sync import sync_artist_catalog as _sync_artist_catalog
+from bot.services.spotapi_sync import sync_playlist_catalog as _sync_playlist_catalog
+from bot.services.spotapi_sync import sync_track_query as _sync_track_query
+from bot.services.spotify import (
+    SPOTIFY_ALBUM_PATTERN,
+    SPOTIFY_ARTIST_PATTERN,
+    SPOTIFY_PLAYLIST_PATTERN,
+    SPOTIFY_TRACK_PATTERN,
     spotify_album_catalog_queries,
-    spotify_album_to_search_queries,
     spotify_artist_catalog_queries,
     spotify_playlist_catalog_queries,
-    spotify_playlist_to_search_queries,
     spotify_url_to_search_query,
 )
+from tests.unit.test_settings import make_env
 
 SPOTIFY_TRACK_URL = "https://open.spotify.com/track/4iV5W9uYEdYUVa79Axb7Rh"
 SPOTIFY_ALBUM_URL = "https://open.spotify.com/album/1abcdefghijklmnop"
 SPOTIFY_PLAYLIST_URL = "https://open.spotify.com/playlist/abc"
 SPOTIFY_ARTIST_URL = "https://open.spotify.com/artist/06HL4z0CvFAxyc27GXpf02"
 SPOTIFY_TRACK_TITLE = "Michael Jackson - Billie Jean"
-
-
-async def _run_sync(func, /, *args, **kwargs):
-    return func(*args, **kwargs)
 
 
 def _playlist_page(items: list, total: int, offset: int = 0) -> dict:
@@ -88,12 +87,6 @@ def _search_item(title: str, artist: str) -> dict:
 
 
 @contextmanager
-def _patch_run_spotapi():
-    with patch.object(spotify_module, "_run_spotapi", side_effect=_run_sync):
-        yield
-
-
-@contextmanager
 def _patch_client_session(session=None, raise_on_enter=None):
     if raise_on_enter is not None:
         session = MagicMock()
@@ -108,22 +101,21 @@ def _patch_client_session(session=None, raise_on_enter=None):
 
 
 class TestSpotifyPatterns:
-    def test_track_pattern(self):
-        assert SPOTIFY_TRACK_PATTERN.search(SPOTIFY_TRACK_URL).group(1) == "4iV5W9uYEdYUVa79Axb7Rh"
-
-    def test_playlist_pattern(self):
-        m = SPOTIFY_PLAYLIST_PATTERN.search(
-            "https://open.spotify.com/playlist/5bCeKZhm0Vrk4cOydmil2N?si=x"
-        )
-        assert m.group(1) == "5bCeKZhm0Vrk4cOydmil2N"
-
-    def test_album_pattern(self):
-        assert SPOTIFY_ALBUM_PATTERN.search(SPOTIFY_ALBUM_URL).group(1) == "1abcdefghijklmnop"
-
-    def test_artist_pattern(self):
-        assert (
-            SPOTIFY_ARTIST_PATTERN.search(SPOTIFY_ARTIST_URL).group(1) == "06HL4z0CvFAxyc27GXpf02"
-        )
+    @pytest.mark.parametrize(
+        ("pattern", "url", "expected"),
+        [
+            (SPOTIFY_TRACK_PATTERN, SPOTIFY_TRACK_URL, "4iV5W9uYEdYUVa79Axb7Rh"),
+            (
+                SPOTIFY_PLAYLIST_PATTERN,
+                "https://open.spotify.com/playlist/5bCeKZhm0Vrk4cOydmil2N?si=x",
+                "5bCeKZhm0Vrk4cOydmil2N",
+            ),
+            (SPOTIFY_ALBUM_PATTERN, SPOTIFY_ALBUM_URL, "1abcdefghijklmnop"),
+            (SPOTIFY_ARTIST_PATTERN, SPOTIFY_ARTIST_URL, "06HL4z0CvFAxyc27GXpf02"),
+        ],
+    )
+    def test_patterns(self, pattern, url, expected):
+        assert pattern.search(url).group(1) == expected
 
 
 class TestSpotifyQueryHelpers:
@@ -191,11 +183,47 @@ class TestSpotifyQueryHelpers:
         assert _search_track_item_to_query({"item": "x"}) is None
 
 
+class TestSpotapiRuntimeConfig:
+    def test_spotapi_config_reads_env_once(self):
+        spotify_module.reset_spotapi_runtime_config()
+        env = make_env(SPOTAPI_USE_SUBPROCESS="false", SPOTAPI_SUBPROCESS_TIMEOUT_SEC="42")
+        with patch.dict(os.environ, env, clear=True):
+            assert spotify_module._spotapi_config() == (False, 42.0)
+            assert spotify_module._spotapi_config() == (False, 42.0)
+
+    def test_spotapi_config_invalid_timeout_raises(self):
+        from pydantic import ValidationError
+
+        spotify_module.reset_spotapi_runtime_config()
+        env = make_env(SPOTAPI_SUBPROCESS_TIMEOUT_SEC="not-a-number")
+        with patch.dict(os.environ, env, clear=True):
+            with pytest.raises(ValidationError):
+                spotify_module._spotapi_config()
+
+
 class TestRunSpotapi:
     @pytest.mark.asyncio
-    async def test_run_spotapi_executes_in_executor(self):
-        result = await spotify_module._run_spotapi(lambda x: x + 1, 1)
-        assert result == 2
+    async def test_run_spotapi_operation_in_process(self):
+        spotify_module.reset_spotapi_runtime_config()
+        with patch.object(spotify_module, "_spotapi_config", return_value=(False, 90.0)):
+            with patch(
+                "bot.services.spotify.run_spotapi_operation_sync",
+                return_value="Michael Jackson - Billie Jean",
+            ):
+                result = await spotify_module._run_spotapi_operation("track", "tid")
+        assert result == "Michael Jackson - Billie Jean"
+
+    @pytest.mark.asyncio
+    async def test_run_spotapi_operation_subprocess(self):
+        spotify_module.reset_spotapi_runtime_config()
+        with patch.object(spotify_module, "_spotapi_config", return_value=(True, 90.0)):
+            with patch(
+                "bot.services.spotify.run_spotapi_subprocess",
+                AsyncMock(return_value=["A - B"]),
+            ) as sub_mock:
+                result = await spotify_module._run_spotapi_operation("playlist", "pid")
+        assert result == ["A - B"]
+        sub_mock.assert_awaited_once_with("playlist", "pid", timeout_sec=90.0)
 
 
 class TestSyncPlaylistCatalog:
@@ -279,7 +307,9 @@ class TestSyncArtistCatalog:
         }
         with (
             patch("spotapi.artist.Artist", return_value=artist),
-            patch.object(spotify_module.random, "sample", side_effect=lambda pool, k: pool[:k]),
+            patch.object(
+                spotapi_sync_module.random, "sample", side_effect=lambda pool, k: pool[:k]
+            ),
         ):
             result = _sync_artist_catalog("artist1")
         assert len(result) == ARTIST_PLAY_COUNT
@@ -299,7 +329,9 @@ class TestSyncArtistCatalog:
         with (
             patch("spotapi.artist.Artist", return_value=artist),
             patch("spotapi.song.Song", return_value=song),
-            patch.object(spotify_module.random, "sample", side_effect=lambda pool, k: pool[:k]),
+            patch.object(
+                spotapi_sync_module.random, "sample", side_effect=lambda pool, k: pool[:k]
+            ),
         ):
             result = _sync_artist_catalog("artist1")
         assert result == ["Band - One"]
@@ -334,7 +366,9 @@ class TestSyncArtistCatalog:
         with (
             patch("spotapi.artist.Artist", return_value=artist),
             patch("spotapi.song.Song", return_value=song),
-            patch.object(spotify_module.random, "sample", side_effect=lambda pool, k: pool[:k]),
+            patch.object(
+                spotapi_sync_module.random, "sample", side_effect=lambda pool, k: pool[:k]
+            ),
         ):
             result = _sync_artist_catalog("artist1")
         assert len(result) == ARTIST_PLAY_COUNT
@@ -374,7 +408,7 @@ class TestSyncArtistCatalog:
         with (
             patch("spotapi.artist.Artist", return_value=artist),
             patch("spotapi.song.Song", return_value=song),
-            patch.object(spotify_module.random, "sample", side_effect=sample_side_effect),
+            patch.object(spotapi_sync_module.random, "sample", side_effect=sample_side_effect),
         ):
             result = _sync_artist_catalog("artist1")
         assert pool_before_sample.count("Band - Dup") == 1
@@ -408,7 +442,9 @@ class TestSyncArtistCatalog:
         with (
             patch("spotapi.artist.Artist", return_value=artist),
             patch("spotapi.song.Song", return_value=song),
-            patch.object(spotify_module.random, "sample", side_effect=lambda pool, k: pool[:k]),
+            patch.object(
+                spotapi_sync_module.random, "sample", side_effect=lambda pool, k: pool[:k]
+            ),
         ):
             result = _sync_artist_catalog("artist1")
         assert len(result) == ARTIST_PLAY_COUNT
@@ -424,7 +460,9 @@ class TestSyncArtistCatalog:
         with (
             patch("spotapi.artist.Artist", return_value=artist),
             patch("spotapi.song.Song", return_value=song),
-            patch.object(spotify_module.random, "sample", side_effect=lambda pool, k: pool[:k]),
+            patch.object(
+                spotapi_sync_module.random, "sample", side_effect=lambda pool, k: pool[:k]
+            ),
         ):
             assert _sync_artist_catalog("artist1") is None
 
@@ -447,11 +485,12 @@ class TestSyncTrackQuery:
 class TestSpotifyUrlToSearchQuery:
     @pytest.mark.asyncio
     async def test_track_via_spotapi(self):
-        with _patch_run_spotapi():
-            with patch.object(
-                spotify_module, "_sync_track_query", return_value="Michael Jackson - Billie Jean"
-            ):
-                result = await spotify_url_to_search_query(SPOTIFY_TRACK_URL)
+        with patch.object(
+            spotify_module,
+            "_run_spotapi_operation",
+            AsyncMock(return_value="Michael Jackson - Billie Jean"),
+        ):
+            result = await spotify_url_to_search_query(SPOTIFY_TRACK_URL)
         assert result == "Michael Jackson - Billie Jean"
 
     @pytest.mark.asyncio
@@ -477,12 +516,11 @@ class TestSpotifyUrlToSearchQuery:
                 __aexit__=AsyncMock(return_value=None),
             )
         )
-        with _patch_run_spotapi():
-            with patch.object(
-                spotify_module, "_sync_track_query", side_effect=RuntimeError("boom")
-            ):
-                with _patch_client_session(session):
-                    result = await spotify_url_to_search_query(SPOTIFY_TRACK_URL)
+        with patch.object(
+            spotify_module, "_run_spotapi_operation", AsyncMock(side_effect=RuntimeError("boom"))
+        ):
+            with _patch_client_session(session):
+                result = await spotify_url_to_search_query(SPOTIFY_TRACK_URL)
         assert result == "Fallback Title"
 
     @pytest.mark.asyncio
@@ -532,10 +570,9 @@ class TestSpotifyUrlToSearchQuery:
                 __aexit__=AsyncMock(return_value=None),
             )
         )
-        with _patch_run_spotapi():
-            with patch.object(spotify_module, "_sync_track_query", return_value=None):
-                with _patch_client_session(session):
-                    assert await spotify_url_to_search_query(SPOTIFY_TRACK_URL) is None
+        with patch.object(spotify_module, "_run_spotapi_operation", AsyncMock(return_value=None)):
+            with _patch_client_session(session):
+                assert await spotify_url_to_search_query(SPOTIFY_TRACK_URL) is None
 
     @pytest.mark.asyncio
     async def test_oembed_empty_title_returns_none(self):
@@ -547,10 +584,9 @@ class TestSpotifyUrlToSearchQuery:
                 __aexit__=AsyncMock(return_value=None),
             )
         )
-        with _patch_run_spotapi():
-            with patch.object(spotify_module, "_sync_track_query", return_value=None):
-                with _patch_client_session(session):
-                    assert await spotify_url_to_search_query(SPOTIFY_TRACK_URL) is None
+        with patch.object(spotify_module, "_run_spotapi_operation", AsyncMock(return_value=None)):
+            with _patch_client_session(session):
+                assert await spotify_url_to_search_query(SPOTIFY_TRACK_URL) is None
 
     @pytest.mark.asyncio
     async def test_oembed_fallback_when_spotapi_fails(self):
@@ -562,61 +598,35 @@ class TestSpotifyUrlToSearchQuery:
                 __aexit__=AsyncMock(return_value=None),
             )
         )
-        with _patch_run_spotapi():
-            with patch.object(spotify_module, "_sync_track_query", side_effect=SongError("x")):
-                with _patch_client_session(session):
-                    result = await spotify_url_to_search_query(SPOTIFY_TRACK_URL)
+        with patch.object(
+            spotify_module, "_run_spotapi_operation", AsyncMock(side_effect=SongError("x"))
+        ):
+            with _patch_client_session(session):
+                result = await spotify_url_to_search_query(SPOTIFY_TRACK_URL)
         assert result == SPOTIFY_TRACK_TITLE
 
     @pytest.mark.asyncio
     async def test_oembed_client_error_returns_none(self):
-        with _patch_run_spotapi():
-            with patch.object(spotify_module, "_sync_track_query", return_value=None):
-                with _patch_client_session(raise_on_enter=aiohttp.ClientError("timeout")):
-                    assert await spotify_url_to_search_query(SPOTIFY_TRACK_URL) is None
+        with patch.object(spotify_module, "_run_spotapi_operation", AsyncMock(return_value=None)):
+            with _patch_client_session(raise_on_enter=aiohttp.ClientError("timeout")):
+                assert await spotify_url_to_search_query(SPOTIFY_TRACK_URL) is None
 
     @pytest.mark.asyncio
     async def test_oembed_session_scope_client_error(self):
-        with _patch_run_spotapi():
-            with patch.object(spotify_module, "_sync_track_query", return_value=None):
-                with patch(
-                    "bot.services.spotify.session_scope",
-                    side_effect=aiohttp.ClientError("network"),
-                ):
-                    assert await spotify_url_to_search_query(SPOTIFY_TRACK_URL) is None
-
-    @pytest.mark.asyncio
-    async def test_fetch_oembed_json_non_200(self):
-        resp = MagicMock(status=500)
-        session = MagicMock()
-        session.get = MagicMock(
-            return_value=MagicMock(
-                __aenter__=AsyncMock(return_value=resp),
-                __aexit__=AsyncMock(return_value=None),
-            )
-        )
-        assert await spotify_module._fetch_oembed_json(session, "http://x") is None
-
-    @pytest.mark.asyncio
-    async def test_fetch_oembed_json_success(self):
-        resp = MagicMock(status=200, json=AsyncMock(return_value={"title": "T"}))
-        session = MagicMock()
-        session.get = MagicMock(
-            return_value=MagicMock(
-                __aenter__=AsyncMock(return_value=resp),
-                __aexit__=AsyncMock(return_value=None),
-            )
-        )
-        assert await spotify_module._fetch_oembed_json(session, "http://x") == {"title": "T"}
+        with patch.object(spotify_module, "_run_spotapi_operation", AsyncMock(return_value=None)):
+            with patch(
+                "bot.services.spotify.session_scope",
+                side_effect=aiohttp.ClientError("network"),
+            ):
+                assert await spotify_url_to_search_query(SPOTIFY_TRACK_URL) is None
 
     @pytest.mark.asyncio
     async def test_oembed_get_raises_client_error(self):
         session = MagicMock()
         session.get = MagicMock(side_effect=aiohttp.ClientError("get failed"))
-        with _patch_run_spotapi():
-            with patch.object(spotify_module, "_sync_track_query", return_value=None):
-                with _patch_client_session(session):
-                    assert await spotify_url_to_search_query(SPOTIFY_TRACK_URL) is None
+        with patch.object(spotify_module, "_run_spotapi_operation", AsyncMock(return_value=None)):
+            with _patch_client_session(session):
+                assert await spotify_url_to_search_query(SPOTIFY_TRACK_URL) is None
 
     @pytest.mark.asyncio
     async def test_oembed_logs_debug_before_fetch(self, caplog):
@@ -628,92 +638,73 @@ class TestSpotifyUrlToSearchQuery:
                 __aexit__=AsyncMock(return_value=None),
             )
         )
-        with _patch_run_spotapi():
-            with patch.object(spotify_module, "_sync_track_query", return_value=None):
-                with _patch_client_session(session):
-                    with caplog.at_level(logging.DEBUG, logger="bot.services.spotify"):
-                        await spotify_url_to_search_query(SPOTIFY_TRACK_URL)
+        with patch.object(spotify_module, "_run_spotapi_operation", AsyncMock(return_value=None)):
+            with _patch_client_session(session):
+                with caplog.at_level(logging.DEBUG, logger="bot.services.spotify"):
+                    await spotify_url_to_search_query(SPOTIFY_TRACK_URL)
         assert any("oembed fetch" in r.message for r in caplog.records)
 
 
 class TestSpotifyCatalogQueries:
     @pytest.mark.asyncio
+    @pytest.mark.parametrize(
+        "catalog_fn",
+        [
+            spotify_playlist_catalog_queries,
+            spotify_album_catalog_queries,
+            spotify_artist_catalog_queries,
+        ],
+    )
+    async def test_catalog_non_url_returns_none(self, catalog_fn):
+        assert await catalog_fn("https://youtube.com/x") is None
+
+    @pytest.mark.asyncio
     async def test_playlist_catalog_queries(self):
-        with _patch_run_spotapi():
-            with patch.object(
-                spotify_module, "_sync_playlist_catalog", return_value=["Z - A", "Z - B"]
-            ):
-                result = await spotify_playlist_catalog_queries(SPOTIFY_PLAYLIST_URL)
+        with patch.object(
+            spotify_module, "_run_spotapi_operation", AsyncMock(return_value=["Z - A", "Z - B"])
+        ):
+            result = await spotify_playlist_catalog_queries(SPOTIFY_PLAYLIST_URL)
         assert result == ["Z - A", "Z - B"]
 
     @pytest.mark.asyncio
-    async def test_playlist_catalog_playlist_error(self):
-        with _patch_run_spotapi():
-            with patch.object(
-                spotify_module, "_sync_playlist_catalog", side_effect=PlaylistError("private")
-            ):
-                assert await spotify_playlist_catalog_queries(SPOTIFY_PLAYLIST_URL) is None
+    @pytest.mark.parametrize(
+        ("catalog_fn", "url", "exc"),
+        [
+            (spotify_playlist_catalog_queries, SPOTIFY_PLAYLIST_URL, PlaylistError("private")),
+            (spotify_album_catalog_queries, SPOTIFY_ALBUM_URL, AlbumError("missing")),
+            (spotify_artist_catalog_queries, SPOTIFY_ARTIST_URL, ArtistError("gone")),
+        ],
+    )
+    async def test_catalog_typed_errors_return_none(self, catalog_fn, url, exc):
+        with patch.object(spotify_module, "_run_spotapi_operation", AsyncMock(side_effect=exc)):
+            assert await catalog_fn(url) is None
 
     @pytest.mark.asyncio
     async def test_playlist_catalog_generic_error(self):
-        with _patch_run_spotapi():
-            with patch.object(
-                spotify_module, "_sync_playlist_catalog", side_effect=RuntimeError("boom")
-            ):
-                assert await spotify_playlist_catalog_queries(SPOTIFY_PLAYLIST_URL) is None
-
-    @pytest.mark.asyncio
-    async def test_playlist_non_url_returns_none(self):
-        assert await spotify_playlist_catalog_queries("https://youtube.com/x") is None
+        with patch.object(
+            spotify_module, "_run_spotapi_operation", AsyncMock(side_effect=RuntimeError("boom"))
+        ):
+            assert await spotify_playlist_catalog_queries(SPOTIFY_PLAYLIST_URL) is None
 
     @pytest.mark.asyncio
     async def test_album_catalog_queries(self):
-        with _patch_run_spotapi():
-            with patch.object(spotify_module, "_sync_album_catalog", return_value=["Band - One"]):
-                result = await spotify_album_catalog_queries(SPOTIFY_ALBUM_URL)
+        with patch.object(
+            spotify_module, "_run_spotapi_operation", AsyncMock(return_value=["Band - One"])
+        ):
+            result = await spotify_album_catalog_queries(SPOTIFY_ALBUM_URL)
         assert result == ["Band - One"]
 
     @pytest.mark.asyncio
-    async def test_album_non_url_returns_none(self):
-        assert await spotify_album_catalog_queries("https://youtube.com/x") is None
-
-    @pytest.mark.asyncio
-    async def test_album_catalog_album_error(self):
-        with _patch_run_spotapi():
-            with patch.object(
-                spotify_module, "_sync_album_catalog", side_effect=AlbumError("missing")
-            ):
-                assert await spotify_album_catalog_queries(SPOTIFY_ALBUM_URL) is None
-
-    @pytest.mark.asyncio
     async def test_artist_catalog_queries(self):
-        with _patch_run_spotapi():
-            with patch.object(
-                spotify_module, "_sync_artist_catalog", return_value=["A - 1", "A - 2"]
-            ):
-                result = await spotify_artist_catalog_queries(SPOTIFY_ARTIST_URL)
+        with patch.object(
+            spotify_module, "_run_spotapi_operation", AsyncMock(return_value=["A - 1", "A - 2"])
+        ):
+            result = await spotify_artist_catalog_queries(SPOTIFY_ARTIST_URL)
         assert result == ["A - 1", "A - 2"]
 
     @pytest.mark.asyncio
-    async def test_artist_non_url_returns_none(self):
-        assert await spotify_artist_catalog_queries("https://youtube.com/x") is None
-
-    @pytest.mark.asyncio
-    async def test_artist_catalog_artist_error(self):
-        with _patch_run_spotapi():
-            with patch.object(
-                spotify_module, "_sync_artist_catalog", side_effect=ArtistError("gone")
-            ):
-                assert await spotify_artist_catalog_queries(SPOTIFY_ARTIST_URL) is None
-
-    @pytest.mark.asyncio
-    async def test_aliases_delegate(self):
-        with _patch_run_spotapi():
-            with patch.object(
-                spotify_module, "_sync_playlist_catalog", return_value=["x"]
-            ) as pl_mock:
-                assert await spotify_playlist_to_search_queries(SPOTIFY_PLAYLIST_URL) == ["x"]
-                pl_mock.assert_called_once()
-            with patch.object(spotify_module, "_sync_album_catalog", return_value=["y"]) as al_mock:
-                assert await spotify_album_to_search_queries(SPOTIFY_ALBUM_URL) == ["y"]
-                al_mock.assert_called_once()
+    async def test_catalog_non_list_result_returns_none(self):
+        with patch.object(
+            spotify_module, "_run_spotapi_operation", AsyncMock(return_value="not-a-list")
+        ):
+            assert await spotify_playlist_catalog_queries(SPOTIFY_PLAYLIST_URL) is None

@@ -312,29 +312,3 @@ class TestFFOBotOnReady:
 
         assert bot.pool is None
         assert "Lavalink connection failed" in caplog.text
-
-    @pytest.mark.asyncio
-    async def test_on_ready_music_feature_without_pool(self, mock_settings, caplog):
-        from bot.client import FFOBot
-
-        mock_settings.feature_music = True
-        bot = FFOBot(mock_settings)
-        bot.pool = None
-        bot._lavalink_node_created = False
-        caplog.set_level(logging.DEBUG, logger="bot.client")
-
-        mock_http = MagicMock()
-        mock_http.bulk_upsert_global_commands = AsyncMock()
-        mock_http.bulk_upsert_guild_commands = AsyncMock()
-        mock_conn = MagicMock(http=mock_http)
-        with (
-            patch.object(discord.Client, "user", PropertyMock(return_value=MagicMock(id=123))),
-            patch.object(discord.Client, "guilds", PropertyMock(return_value=[])),
-            patch.object(bot, "_register_server", new_callable=AsyncMock),
-            patch.object(bot, "_connection", mock_conn),
-            patch.object(bot.tree, "copy_global_to"),
-            patch.object(bot.tree, "sync", new_callable=AsyncMock),
-        ):
-            await bot.on_ready()
-
-        assert "Music disabled (no Lavalink pool)" in caplog.text
