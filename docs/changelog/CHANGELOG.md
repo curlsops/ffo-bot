@@ -1,5 +1,22 @@
 # Changelog
 
+## [6.1.0](https://github.com/curlsops/ffo-bot/compare/v6.0.0...v6.1.0) (2026-05-30)
+
+
+### Features
+
+* **python:** update dependency pymongo ( 4.16.0 ➔ 4.17.0 ) ([#253](https://github.com/curlsops/ffo-bot/issues/253)) ([338ab99](https://github.com/curlsops/ffo-bot/commit/338ab99b7ee6361f808fb9be117f4f97a94c3546))
+* **python:** update dependency pynacl ( 1.5.0 ➔ 1.6.2 ) ([#254](https://github.com/curlsops/ffo-bot/issues/254)) ([ab4f6ae](https://github.com/curlsops/ffo-bot/commit/ab4f6aea5e538ce75c6f233d1f5fa8b2ab00e33e))
+* **python:** update dependency pytest-asyncio ( 1.3.0 ➔ 1.4.0 ) ([#255](https://github.com/curlsops/ffo-bot/issues/255)) ([fcb0dd7](https://github.com/curlsops/ffo-bot/commit/fcb0dd79353fbbec57fff03469bb891b933bfa90))
+* **python:** update dependency redis ( 7.2.1 ➔ 7.4.0 ) ([#256](https://github.com/curlsops/ffo-bot/issues/256)) ([bffda74](https://github.com/curlsops/ffo-bot/commit/bffda741062bff0f14d8d9855fceda568a90e11a))
+* **python:** update dependency safety ( 3.7.0 ➔ 3.8.0 ) ([#257](https://github.com/curlsops/ffo-bot/issues/257)) ([475d3d5](https://github.com/curlsops/ffo-bot/commit/475d3d5c7d96f787214ec68d7c4765735924c886))
+
+
+### Bug Fixes
+
+* **python:** update dependency mkdocs-material ( 9.7.1 ➔ 9.7.6 ) ([#251](https://github.com/curlsops/ffo-bot/issues/251)) ([db1f527](https://github.com/curlsops/ffo-bot/commit/db1f527afc107a7c3fd2fb34b65f4f749b1d2d75))
+* **python:** update dependency sqlalchemy ( 2.0.49 ➔ 2.0.50 ) ([#252](https://github.com/curlsops/ffo-bot/issues/252)) ([936aa58](https://github.com/curlsops/ffo-bot/commit/936aa5842da6fff877751f5cf6fa1d83fe4ccd7c))
+
 ## [6.0.0](https://github.com/curlsops/ffo-bot/compare/v5.0.0...v6.0.0) (2026-05-26)
 
 
