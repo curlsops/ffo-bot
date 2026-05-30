@@ -37,7 +37,7 @@ mafic @ git+https://github.com/ArtiArtem8/mafic.git@b1079d54597240e3e7984914df58
 spotapi==1.2.7
 pymongo==4.17.0
 redis==7.4.0
-websockets==15.0.1
+websockets==16.0
 
 # Transitive pins
 authlib==1.7.2
