@@ -11,7 +11,7 @@ sqlalchemy==2.0.51
 
 # Security
 pynacl==1.6.2
-davey==0.1.5
+davey==0.1.6
 
 # Monitoring
 prometheus-client==0.25.0
