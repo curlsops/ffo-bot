@@ -5,7 +5,7 @@ asyncpg==0.31.0
 aiofiles==25.1.0
 
 # Database
-alembic==1.18.4
+alembic==1.18.5
 psycopg2-binary==2.9.12
 sqlalchemy==2.0.51
 
