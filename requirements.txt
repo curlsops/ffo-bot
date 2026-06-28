@@ -15,9 +15,9 @@ davey==0.1.6
 
 # Monitoring
 prometheus-client==0.25.0
-opentelemetry-api==1.42.1
-opentelemetry-sdk==1.42.1
-opentelemetry-exporter-otlp-proto-http==1.42.1
+opentelemetry-api==1.43.0
+opentelemetry-sdk==1.43.0
+opentelemetry-exporter-otlp-proto-http==1.43.0
 opentelemetry-instrumentation-asyncpg==0.63b1
 
 # Logging
