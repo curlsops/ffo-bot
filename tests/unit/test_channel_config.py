@@ -3,10 +3,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import pytest
 
 from bot.utils.channel_config import (
+    _coerce_config_bool,
     fetch_music_voice_channel_targets,
     get_music_voice_channel_id,
+    get_music_voice_stay,
     set_channel_config,
     set_music_voice_channel,
+    set_music_voice_stay,
 )
 
 
@@ -103,3 +106,57 @@ async def test_fetch_music_voice_channel_targets_db_error():
     pool = MagicMock()
     pool.acquire.return_value = ctx
     assert await fetch_music_voice_channel_targets(pool) == []
+
+
+@pytest.mark.parametrize(
+    "val,expected",
+    [
+        (True, True),
+        (False, False),
+        (None, False),
+        ("true", True),
+        ("yes", True),
+        ("false", False),
+        (1, True),
+        (0, False),
+    ],
+)
+def test_coerce_config_bool(val, expected):
+    assert _coerce_config_bool(val) is expected
+
+
+@pytest.mark.asyncio
+async def test_get_music_voice_stay():
+    with patch(
+        "bot.utils.channel_config.get_servers_config",
+        AsyncMock(return_value={"music_voice_stay": True}),
+    ):
+        assert await get_music_voice_stay(MagicMock(), 5) is True
+
+
+@pytest.mark.asyncio
+async def test_set_music_voice_stay_enable():
+    conn = MagicMock()
+    conn.execute = AsyncMock()
+    pool = make_pool(conn)
+    assert await set_music_voice_stay(pool, 9, True) is True
+    conn.execute.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_set_music_voice_stay_disable():
+    conn = MagicMock()
+    conn.execute = AsyncMock()
+    pool = make_pool(conn)
+    assert await set_music_voice_stay(pool, 9, False) is True
+    conn.execute.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_set_music_voice_stay_db_error():
+    ctx = MagicMock()
+    ctx.__aenter__ = AsyncMock(side_effect=RuntimeError("db down"))
+    ctx.__aexit__ = AsyncMock(return_value=None)
+    pool = MagicMock()
+    pool.acquire.return_value = ctx
+    assert await set_music_voice_stay(pool, 1, True) is False

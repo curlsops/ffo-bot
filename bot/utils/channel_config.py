@@ -2,7 +2,11 @@ import logging
 from typing import TYPE_CHECKING
 
 from bot.utils.config_repair import repair_servers_config
-from bot.utils.server_config import get_server_config_channel, invalidate_servers_config
+from bot.utils.server_config import (
+    get_server_config_channel,
+    get_servers_config,
+    invalidate_servers_config,
+)
 
 if TYPE_CHECKING:
     from bot.cache.memory import InMemoryCache
@@ -101,6 +105,60 @@ async def set_music_voice_channel(
     cache: "InMemoryCache | None" = None,
 ) -> bool:
     return await set_channel_config(db_pool, server_id, "music_voice_channel_id", channel_id, cache)
+
+
+MUSIC_VOICE_STAY_KEY = "music_voice_stay"
+
+
+def _coerce_config_bool(val: object) -> bool:
+    if val is True:
+        return True
+    if val is False or val is None:
+        return False
+    if isinstance(val, str):
+        return val.lower() in ("true", "1", "yes")
+    return bool(val)
+
+
+async def get_music_voice_stay(
+    db_pool, server_id: int, cache: "InMemoryCache | None" = None
+) -> bool:
+    cfg = await get_servers_config(db_pool, server_id, cache)
+    return _coerce_config_bool(cfg.get(MUSIC_VOICE_STAY_KEY))
+
+
+async def set_music_voice_stay(
+    db_pool,
+    server_id: int,
+    enabled: bool,
+    cache: "InMemoryCache | None" = None,
+) -> bool:
+    try:
+        async with db_pool.acquire() as conn:
+            if enabled:
+                await conn.execute(
+                    """
+                    INSERT INTO servers (server_id, server_name, config)
+                    VALUES ($1, $2, $3::jsonb)
+                    ON CONFLICT (server_id) DO UPDATE
+                    SET config = COALESCE(servers.config, '{}'::jsonb) || EXCLUDED.config,
+                        updated_at = NOW()
+                    """,
+                    server_id,
+                    "Unknown",
+                    {MUSIC_VOICE_STAY_KEY: True},
+                )
+            else:
+                await conn.execute(
+                    "UPDATE servers SET config = config - $1, updated_at = NOW() WHERE server_id = $2",
+                    MUSIC_VOICE_STAY_KEY,
+                    server_id,
+                )
+        invalidate_servers_config(cache, server_id)
+        return True
+    except Exception:
+        logger.exception("Failed to set %s", MUSIC_VOICE_STAY_KEY)
+        return False
 
 
 async def fetch_music_voice_channel_targets(db_pool) -> list[tuple[int, int]]:

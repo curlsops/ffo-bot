@@ -29,7 +29,9 @@ from bot.services.tidal import (
 from bot.utils.channel_config import (
     fetch_music_voice_channel_targets,
     get_music_voice_channel_id,
+    get_music_voice_stay,
     set_music_voice_channel,
+    set_music_voice_stay,
 )
 from bot.utils.discord_voice import (
     VOICE_DEPS_MISSING_USER_MSG,
@@ -720,6 +722,9 @@ class MusicGroup(app_commands.Group):
                     await set_music_voice_channel(
                         bot.db_pool, i.guild_id or 0, None, getattr(bot, "cache", None)
                     )
+                    await set_music_voice_stay(
+                        bot.db_pool, i.guild_id or 0, False, getattr(bot, "cache", None)
+                    )
                     await i.followup.send(
                         "No active voice session (for example after a restart). "
                         "Cleared stored voice channel for this server.",
@@ -732,6 +737,11 @@ class MusicGroup(app_commands.Group):
         await _cancel_music_lazy_prefetch(i.client, vc.guild.id)
         _clear_queue(i.client, i.guild_id)
         await _cancel_leave_task(_get_leave_tasks(i.client), i.guild_id)
+        client = i.client
+        if client.db_pool:
+            await set_music_voice_stay(
+                client.db_pool, i.guild_id or 0, False, getattr(client, "cache", None)
+            )
         await vc.disconnect()
         await i.followup.send(embed=_music_embed("👋 Left", f"Disconnected from {name}."))
 
@@ -812,6 +822,51 @@ class MusicGroup(app_commands.Group):
                     "⏭️ Skipped", f"Skipped **{skipped}**." if skipped else "Skipped."
                 )
             )
+
+    @app_commands.command(
+        name="stay",
+        description="[Admin] Prevent idle auto-leave when alone in voice",
+    )
+    @app_commands.describe(enabled="Keep the bot in voice when no one else is present")
+    @app_commands.default_permissions(administrator=True)
+    async def stay(self, i: discord.Interaction, enabled: bool):
+        await i.response.defer(ephemeral=True)
+        if not await require_admin(i, "music stay", self.cog.bot):
+            return
+        bot = self.cog.bot
+        if not bot.db_pool:
+            await i.followup.send("Database not available.", ephemeral=True)
+            return
+        guild_id = i.guild_id or 0
+        if not await set_music_voice_stay(bot.db_pool, guild_id, enabled, bot.cache):
+            await i.followup.send("Could not update voice stay setting.", ephemeral=True)
+            return
+        tasks = _get_leave_tasks(bot)
+        if enabled:
+            await _cancel_leave_task(tasks, guild_id)
+            await i.followup.send(
+                embed=_music_embed(
+                    "🔒 Voice stay enabled",
+                    "The bot will stay in voice when alone until `/music leave` or a manual disconnect.",
+                ),
+                ephemeral=True,
+            )
+            return
+        vc = _get_voice_client(i.guild, bot)
+        if (
+            vc
+            and vc.channel
+            and bot.user
+            and _other_members_in_channel(vc.channel, bot.user.id) == 0
+        ):
+            await _schedule_idle_voice_leave(bot, guild_id, vc.channel)
+        await i.followup.send(
+            embed=_music_embed(
+                "🔓 Voice stay disabled",
+                "Idle auto-leave is active again when the bot is alone in voice.",
+            ),
+            ephemeral=True,
+        )
 
     @app_commands.command(name="clear-queue", description="[Admin] Clear the queue")
     @app_commands.default_permissions(administrator=True)
@@ -894,6 +949,28 @@ async def _cancel_leave_task(tasks: dict[int, asyncio.Task], guild_id: int) -> N
         del tasks[guild_id]
 
 
+async def _schedule_idle_voice_leave(
+    bot: "FFOBot", guild_id: int, bot_channel: discord.VoiceChannel
+) -> None:
+    tasks = _get_leave_tasks(bot)
+
+    async def _leave_after_idle() -> None:
+        await asyncio.sleep(IDLE_LEAVE_SECONDS)
+        vc = _get_voice_client(bot_channel.guild, bot)
+        if vc and vc.channel and vc.channel.id == bot_channel.id:
+            if _other_members_in_channel(vc.channel, bot.user.id) == 0:
+                if bot.db_pool and await get_music_voice_stay(bot.db_pool, guild_id, bot.cache):
+                    return
+                await _cancel_music_lazy_prefetch(bot, guild_id)
+                _clear_queue(bot, guild_id)
+                await vc.disconnect()
+                logger.info("Left voice channel %s (idle)", vc.channel.name)
+        tasks.pop(guild_id, None)
+
+    await _cancel_leave_task(tasks, guild_id)
+    tasks[guild_id] = asyncio.create_task(_leave_after_idle())
+
+
 class MusicCommands(commands.Cog):
     def __init__(self, bot: FFOBot):
         self.bot = bot
@@ -918,6 +995,7 @@ class MusicCommands(commands.Cog):
                 await set_music_voice_channel(
                     self.bot.db_pool, member.guild.id, None, self.bot.cache
                 )
+                await set_music_voice_stay(self.bot.db_pool, member.guild.id, False, self.bot.cache)
 
         if not self.bot.pool or not self.bot.user:
             return
@@ -935,21 +1013,12 @@ class MusicCommands(commands.Cog):
             others = _other_members_in_channel(bot_channel, self.bot.user.id)
             if others > 0:
                 await _cancel_leave_task(tasks, guild_id)
-            else:
-
-                async def _leave_after_idle() -> None:
-                    await asyncio.sleep(IDLE_LEAVE_SECONDS)
-                    vc = _get_voice_client(bot_channel.guild, self.bot)
-                    if vc and vc.channel and vc.channel.id == bot_channel.id:
-                        if _other_members_in_channel(vc.channel, self.bot.user.id) == 0:
-                            await _cancel_music_lazy_prefetch(self.bot, guild_id)
-                            _clear_queue(self.bot, guild_id)
-                            await vc.disconnect()
-                            logger.info("Left voice channel %s (idle)", vc.channel.name)
-                    tasks.pop(guild_id, None)
-
+            elif self.bot.db_pool and await get_music_voice_stay(
+                self.bot.db_pool, guild_id, self.bot.cache
+            ):
                 await _cancel_leave_task(tasks, guild_id)
-                tasks[guild_id] = asyncio.create_task(_leave_after_idle())
+            else:
+                await _schedule_idle_voice_leave(self.bot, guild_id, bot_channel)
 
     @commands.Cog.listener("on_track_end")
     async def _on_track_end(self, event: TrackEndEvent) -> None:
