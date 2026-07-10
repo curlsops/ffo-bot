@@ -36,7 +36,7 @@ mafic @ git+https://github.com/ArtiArtem8/mafic.git@b1079d54597240e3e7984914df58
 # Spotify
 spotapi==1.2.8
 pymongo==4.17.0
-redis==7.4.1
+redis==8.0.1
 websockets==16.1
 
 # Transitive pins
