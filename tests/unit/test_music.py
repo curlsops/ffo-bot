@@ -2209,6 +2209,22 @@ async def test_leave_disconnects_when_connected(mock_bot, cog):
 
 
 @pytest.mark.asyncio
+async def test_leave_without_db_pool_skips_stay_clear(mock_bot, cog):
+    mock_bot.pool = MagicMock()
+    mock_bot.db_pool = None
+    ch = _channel()
+    vc = MagicMock(channel=ch, disconnect=AsyncMock())
+    i = _interaction(mock_bot)
+    i.guild.voice_client = vc
+    with patch("bot.commands.music._get_voice_client", return_value=vc):
+        with patch("bot.commands.music.set_music_voice_stay", AsyncMock()) as stay:
+            with patch("bot.commands.music._cancel_leave_task", new_callable=AsyncMock):
+                await cog.music_group.leave.callback(cog.music_group, i)
+    stay.assert_not_called()
+    vc.disconnect.assert_awaited()
+
+
+@pytest.mark.asyncio
 async def test_pause_when_already_paused(mock_bot, cog):
     mock_bot.pool = MagicMock()
     p = MagicMock()
@@ -2311,8 +2327,10 @@ async def test_voice_state_bot_disconnect_clears_binding(mock_bot, cog):
     before = MagicMock(channel=MagicMock())
     after = MagicMock(channel=None)
     with patch("bot.commands.music.set_music_voice_channel", AsyncMock()) as sm:
-        await cog._on_voice_state_update(member, before, after)
+        with patch("bot.commands.music.set_music_voice_stay", AsyncMock()) as stay:
+            await cog._on_voice_state_update(member, before, after)
     sm.assert_awaited_with(mock_bot.db_pool, GUILD_ID, None, mock_bot.cache)
+    stay.assert_awaited_with(mock_bot.db_pool, GUILD_ID, False, mock_bot.cache)
 
 
 @pytest.mark.asyncio
@@ -2656,3 +2674,127 @@ async def test_voice_state_bot_moves_non_voice_channel_skips_music_binding(mock_
         with patch("bot.commands.music._is_voice_or_stage", return_value=False):
             await cog._on_voice_state_update(member, before, after)
     sm.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_voice_idle_skips_leave_when_stay_enabled(mock_bot, cog):
+    _prime_music_bot(cog.bot)
+    cog.bot.db_pool = MagicMock()
+    channel = _channel(id_=5, members=[MagicMock(id=999)])
+    vc = MagicMock(channel=channel, guild=channel.guild)
+    cog.bot.voice_clients = [vc]
+    member = MagicMock(id=7)
+    before = MagicMock(channel=channel)
+    after = MagicMock(channel=None)
+    with patch("bot.commands.music.get_music_voice_stay", AsyncMock(return_value=True)):
+        with patch("bot.commands.music._schedule_idle_voice_leave", AsyncMock()) as sched:
+            with patch("bot.commands.music._cancel_leave_task", new_callable=AsyncMock) as cancel:
+                await cog._on_voice_state_update(member, before, after)
+    sched.assert_not_called()
+    cancel.assert_awaited()
+
+
+@pytest.mark.asyncio
+async def test_stay_requires_admin(mock_bot, cog):
+    with patch("bot.commands.music.require_admin", AsyncMock(return_value=False)):
+        i = _interaction(cog.bot)
+        await cog.music_group.stay.callback(cog.music_group, i, True)
+    i.followup.send.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_stay_enable(mock_bot, cog):
+    cog.bot.db_pool = MagicMock()
+    with patch("bot.commands.music.require_admin", AsyncMock(return_value=True)):
+        with patch("bot.commands.music.set_music_voice_stay", AsyncMock(return_value=True)):
+            with patch("bot.commands.music._cancel_leave_task", new_callable=AsyncMock):
+                i = _interaction(cog.bot)
+                await cog.music_group.stay.callback(cog.music_group, i, True)
+    emb = i.followup.send.call_args.kwargs["embed"]
+    assert "enabled" in (emb.title or "").lower()
+
+
+@pytest.mark.asyncio
+async def test_stay_disable_schedules_leave_when_alone(mock_bot, cog):
+    cog.bot.db_pool = MagicMock()
+    ch = _channel(id_=5, members=[MagicMock(id=999)])
+    vc = MagicMock(channel=ch, guild=ch.guild)
+    with patch("bot.commands.music.require_admin", AsyncMock(return_value=True)):
+        with patch("bot.commands.music.set_music_voice_stay", AsyncMock(return_value=True)):
+            with patch("bot.commands.music._get_voice_client", return_value=vc):
+                with patch("bot.commands.music._schedule_idle_voice_leave", AsyncMock()) as sched:
+                    i = _interaction(cog.bot)
+                    i.guild = MagicMock(id=GUILD_ID, voice_client=vc)
+                    await cog.music_group.stay.callback(cog.music_group, i, False)
+    sched.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_stay_db_unavailable(mock_bot, cog):
+    cog.bot.db_pool = None
+    with patch("bot.commands.music.require_admin", AsyncMock(return_value=True)):
+        i = _interaction(cog.bot)
+        await cog.music_group.stay.callback(cog.music_group, i, True)
+    assert "Database" in i.followup.send.call_args[0][0]
+
+
+@pytest.mark.asyncio
+async def test_stay_set_failure(mock_bot, cog):
+    cog.bot.db_pool = MagicMock()
+    with patch("bot.commands.music.require_admin", AsyncMock(return_value=True)):
+        with patch("bot.commands.music.set_music_voice_stay", AsyncMock(return_value=False)):
+            i = _interaction(cog.bot)
+            await cog.music_group.stay.callback(cog.music_group, i, True)
+    assert "Could not update" in i.followup.send.call_args[0][0]
+
+
+@pytest.mark.asyncio
+async def test_stay_disable_without_voice_session(mock_bot, cog):
+    cog.bot.db_pool = MagicMock()
+    with patch("bot.commands.music.require_admin", AsyncMock(return_value=True)):
+        with patch("bot.commands.music.set_music_voice_stay", AsyncMock(return_value=True)):
+            with patch("bot.commands.music._get_voice_client", return_value=None):
+                with patch("bot.commands.music._schedule_idle_voice_leave", AsyncMock()) as sched:
+                    i = _interaction(cog.bot)
+                    i.guild = MagicMock(id=GUILD_ID, voice_client=None)
+                    await cog.music_group.stay.callback(cog.music_group, i, False)
+    sched.assert_not_called()
+    emb = i.followup.send.call_args.kwargs["embed"]
+    assert "disabled" in (emb.title or "").lower()
+
+
+@pytest.mark.asyncio
+async def test_idle_leave_aborts_when_stay_enabled_at_disconnect(mock_bot, cog):
+    _prime_music_bot(cog.bot)
+    cog.bot.db_pool = MagicMock()
+    cog.bot._music_leave_tasks = {}
+    ch = _channel(id_=5, members=[MagicMock(id=999)])
+    vc = MagicMock(channel=ch, guild=ch.guild, disconnect=AsyncMock())
+    cog.bot.voice_clients = [vc]
+    with patch("bot.commands.music.asyncio.sleep", AsyncMock(return_value=None)):
+        with patch("bot.commands.music.IDLE_LEAVE_SECONDS", 0):
+            with patch("bot.commands.music._get_voice_client", return_value=vc):
+                with patch("bot.commands.music._other_members_in_channel", return_value=0):
+                    with patch(
+                        "bot.commands.music.get_music_voice_stay", AsyncMock(return_value=True)
+                    ):
+                        with patch("bot.commands.music._clear_queue") as cq:
+                            from bot.commands.music import _schedule_idle_voice_leave
+
+                            await _schedule_idle_voice_leave(cog.bot, GUILD_ID, ch)
+                            await cog.bot._music_leave_tasks[GUILD_ID]
+    vc.disconnect.assert_not_called()
+    cq.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_leave_clears_voice_stay(mock_bot, cog):
+    cog.bot.db_pool = MagicMock()
+    ch = _channel(id_=5)
+    vc = MagicMock(channel=ch, guild=ch.guild, disconnect=AsyncMock())
+    with patch("bot.commands.music._get_voice_client", return_value=vc):
+        with patch("bot.commands.music.set_music_voice_stay", AsyncMock()) as stay:
+            i = _interaction(cog.bot)
+            i.guild = MagicMock(id=GUILD_ID, voice_client=vc)
+            await cog.music_group.leave.callback(cog.music_group, i)
+    stay.assert_awaited_with(cog.bot.db_pool, GUILD_ID, False, None)
