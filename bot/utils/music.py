@@ -45,6 +45,8 @@ def _youtube_search_track_score(track: Track) -> int:
         if hint in blob:
             score += 55
             break
+    if author.endswith(" - topic") or author.endswith("- topic"):
+        score += 40
     if "vevo" in title or "vevo" in author:
         score += 28
     for bad in _YT_SEARCH_NEGATIVE:

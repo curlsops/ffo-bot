@@ -67,59 +67,115 @@ def _track_to_search_query(item: dict) -> str | None:
     return str(html.unescape(str(title).strip())[:200])
 
 
-async def _fetch_catalog_from_api(session: aiohttp.ClientSession, path: str) -> list[str] | None:
-    queries: list[str] = []
-    offset = 0
+async def _fetch_catalog_page(
+    session: aiohttp.ClientSession,
+    path: str,
+    offset: int,
+    *,
+    max_tracks: int | None = None,
+) -> tuple[list[str], int | None] | None:
+    cap = TIDAL_PLAYLIST_CATALOG_MAX if max_tracks is None else max_tracks
     try:
-        while len(queries) < TIDAL_PLAYLIST_CATALOG_MAX:
-            api_url = (
-                f"{TIDAL_API_BASE}/{path}"
-                f"?countryCode=US&limit={TIDAL_PLAYLIST_PAGE_SIZE}&offset={offset}"
-            )
-            async with session.get(api_url, headers=TIDAL_API_HEADERS) as resp:
-                if resp.status != 200:
-                    return None
-                data = await resp.json()
-            items = data.get("items") or []
-            if not items:
+        api_url = (
+            f"{TIDAL_API_BASE}/{path}"
+            f"?countryCode=US&limit={TIDAL_PLAYLIST_PAGE_SIZE}&offset={offset}"
+        )
+        async with session.get(api_url, headers=TIDAL_API_HEADERS) as resp:
+            if resp.status != 200:
+                return None
+            data = await resp.json()
+        items = data.get("items") or []
+        if not items:
+            return [], None
+        queries: list[str] = []
+        for item in items:
+            q = _track_to_search_query(item)
+            if q:
+                queries.append(q)
+            if len(queries) >= cap:
                 break
-            for item in items:
-                q = _track_to_search_query(item)
-                if q:
-                    queries.append(q)
-                if len(queries) >= TIDAL_PLAYLIST_CATALOG_MAX:
-                    break
-            if len(items) < TIDAL_PLAYLIST_PAGE_SIZE:
-                break
-            offset += TIDAL_PLAYLIST_PAGE_SIZE
+        if len(queries) >= cap:
+            return queries, None
+        if len(items) < TIDAL_PLAYLIST_PAGE_SIZE:
+            return queries, None
+        return queries, offset + TIDAL_PLAYLIST_PAGE_SIZE
     except aiohttp.ClientError as e:
         logger.debug("Tidal fetch failed for %s: %s", path, e)
         return None
+
+
+async def _fetch_catalog_from_api(
+    session: aiohttp.ClientSession,
+    path: str,
+    *,
+    max_tracks: int | None = None,
+) -> list[str] | None:
+    cap = TIDAL_PLAYLIST_CATALOG_MAX if max_tracks is None else max_tracks
+    queries: list[str] = []
+    offset = 0
+    while len(queries) < cap:
+        page = await _fetch_catalog_page(session, path, offset, max_tracks=cap - len(queries))
+        if page is None:
+            return None
+        batch, next_offset = page
+        if not batch and next_offset is None:
+            break
+        queries.extend(batch)
+        if len(queries) >= cap or next_offset is None:
+            break
+        offset = next_offset
     return queries or None
+
+
+async def _tidal_catalog_start(
+    pattern: re.Pattern[str],
+    path_fmt: str,
+    url: str,
+) -> tuple[list[str], str | None, int] | None:
+    m = pattern.search(url)
+    if not m:
+        return None
+    path = path_fmt.format(uuid=m.group(1))
+    async with session_scope(timeout=TIMEOUT, session=get_session()) as session:
+        page = await _fetch_catalog_page(session, path, 0)
+    if page is None:
+        return None
+    queries, next_offset = page
+    if not queries:
+        return None
+    cont_path = path if next_offset is not None else None
+    return queries, cont_path, next_offset or 0
+
+
+async def tidal_playlist_catalog_start(url: str) -> tuple[list[str], str | None, int] | None:
+    return await _tidal_catalog_start(TIDAL_PLAYLIST_PATTERN, "playlists/{uuid}/tracks", url)
+
+
+async def tidal_mix_catalog_start(url: str) -> tuple[list[str], str | None, int] | None:
+    return await _tidal_catalog_start(TIDAL_MIX_PATTERN, "mixes/{uuid}/tracks", url)
+
+
+async def tidal_fetch_catalog_page(path: str, offset: int) -> tuple[list[str], int | None] | None:
+    async with session_scope(timeout=TIMEOUT, session=get_session()) as session:
+        return await _fetch_catalog_page(session, path, offset)
 
 
 async def tidal_playlist_to_search_queries(url: str) -> list[str] | None:
     m = TIDAL_PLAYLIST_PATTERN.search(url)
     if not m:
         return None
-    uuid = m.group(1)
     async with session_scope(timeout=TIMEOUT, session=get_session()) as session:
-        catalog = await _fetch_catalog_from_api(session, f"playlists/{uuid}/tracks")
-    if not catalog:
-        return None
-    return _sample_catalog_queries(catalog)
+        catalog = await _fetch_catalog_from_api(session, f"playlists/{m.group(1)}/tracks")
+    return catalog
 
 
 async def tidal_mix_to_search_queries(url: str) -> list[str] | None:
     m = TIDAL_MIX_PATTERN.search(url)
     if not m:
         return None
-    uuid = m.group(1)
     async with session_scope(timeout=TIMEOUT, session=get_session()) as session:
-        catalog = await _fetch_catalog_from_api(session, f"mixes/{uuid}/tracks")
-    if not catalog:
-        return None
-    return _sample_catalog_queries(catalog)
+        catalog = await _fetch_catalog_from_api(session, f"mixes/{m.group(1)}/tracks")
+    return catalog
 
 
 async def tidal_album_to_search_queries(url: str) -> list[str] | None:
