@@ -42,7 +42,7 @@ websockets==16.1
 # Transitive pins
 authlib==1.7.2
 cryptography==49.0.0
-filelock==3.29.7
+filelock==3.31.0
 marshmallow==4.3.0
 mpmath==1.4.1
 requests==2.34.2
