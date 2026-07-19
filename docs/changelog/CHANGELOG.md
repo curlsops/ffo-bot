@@ -1,5 +1,23 @@
 # Changelog
 
+## [7.1.0](https://github.com/curlsops/ffo-bot/compare/v7.0.0...v7.1.0) (2026-07-19)
+
+
+### Features
+
+* **github-action:** update action actions/labeler ( v6.1.0 ➔ v6.2.0 ) ([#301](https://github.com/curlsops/ffo-bot/issues/301)) ([895552f](https://github.com/curlsops/ffo-bot/commit/895552f57cc0a29e84a438bb7b386bf26ece449b))
+* **github-action:** update action useblacksmith/setup-docker-builder ( v1.10.0 ➔ v1.11.0 ) ([#308](https://github.com/curlsops/ffo-bot/issues/308)) ([3b75ea9](https://github.com/curlsops/ffo-bot/commit/3b75ea92bafe3291c56e5a4cc0669b6324fa8c1c))
+* **github-action:** update action useblacksmith/setup-docker-builder ( v1.9.0 ➔ v1.10.0 ) ([#302](https://github.com/curlsops/ffo-bot/issues/302)) ([baab5eb](https://github.com/curlsops/ffo-bot/commit/baab5ebe621f17cf7cd319cb53c725d732fc2d69))
+* **python:** update dependency filelock ( 3.29.7 ➔ 3.30.3 ) ([#303](https://github.com/curlsops/ffo-bot/issues/303)) ([1e5ca05](https://github.com/curlsops/ffo-bot/commit/1e5ca057f6224a667406765a82dd9a754945271b))
+* **python:** update dependency mypy ( 2.1.0 ➔ 2.2.0 ) ([#299](https://github.com/curlsops/ffo-bot/issues/299)) ([ef6befa](https://github.com/curlsops/ffo-bot/commit/ef6befa51853ae38d4382f3fabc74d61f948128e))
+* **python:** update dependency mypy ( 2.2.0 ➔ 2.3.0 ) ([#306](https://github.com/curlsops/ffo-bot/issues/306)) ([1001692](https://github.com/curlsops/ffo-bot/commit/10016925c13c6d7258f91c864aeab9812aa819c3))
+
+
+### Bug Fixes
+
+* **python:** update dependency filelock ( 3.29.5 ➔ 3.29.7 ) ([#296](https://github.com/curlsops/ffo-bot/issues/296)) ([13c175e](https://github.com/curlsops/ffo-bot/commit/13c175e7f9318bc985fdcea939ed1cb271fb9d0d))
+* **python:** update dependency types-python-dateutil ( 2.9.0.20260518 ➔ 2.9.0.20260716 ) ([#307](https://github.com/curlsops/ffo-bot/issues/307)) ([1979140](https://github.com/curlsops/ffo-bot/commit/1979140b102338835c027f7a4c9f8c50c5985587))
+
 ## [7.0.0](https://github.com/curlsops/ffo-bot/compare/v6.0.0...v7.0.0) (2026-07-10)
 
 
