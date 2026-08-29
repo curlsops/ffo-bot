@@ -7,6 +7,8 @@ import asyncpg
 import discord
 import pytest
 
+from bot.services.giveaway_service import select_winners
+
 
 def _giveaway(**overrides):
     return {
@@ -148,60 +150,36 @@ class TestSelectWinners:
             ([{"user_id": 1, "entries": 100}], 1, 1, {1}),
         ],
     )
-    def test_cases(self, manager, entries, winners_count, expected_len, expected_set):
-        winners = manager._select_winners(entries, winners_count)
+    def test_cases(self, entries, winners_count, expected_len, expected_set):
+        winners = select_winners(entries, winners_count)
         assert len(winners) == expected_len
         if expected_set:
             assert set(winners) == expected_set
 
-    def test_multiple(self, manager):
+    def test_multiple(self):
         entries = [{"user_id": i, "entries": 1} for i in range(3)]
-        winners = manager._select_winners(entries, 2)
+        winners = select_winners(entries, 2)
         assert len(winners) == 2 and len(set(winners)) == 2
 
-    def test_deduplicates(self, manager):
+    def test_deduplicates(self):
         entries = [{"user_id": 1, "entries": 3}, {"user_id": 2, "entries": 1}]
         with patch("random.shuffle"):
-            assert set(manager._select_winners(entries, 2)) == {1, 2}
+            assert set(select_winners(entries, 2)) == {1, 2}
 
-    def test_zero_entries_user_never_wins(self, manager):
+    def test_zero_entries_user_never_wins(self):
         entries = [{"user_id": 1, "entries": 0}, {"user_id": 2, "entries": 1}]
         for _ in range(10):
-            assert manager._select_winners(entries, 1) == [2]
+            assert select_winners(entries, 1) == [2]
 
-    def test_entries_equals_winners_count(self, manager):
+    def test_entries_equals_winners_count(self):
         entries = [{"user_id": i, "entries": 1} for i in range(3)]
-        winners = manager._select_winners(entries, 3)
+        winners = select_winners(entries, 3)
         assert len(winners) == 3 and set(winners) == {0, 1, 2}
 
-    def test_max_winners_50(self, manager):
+    def test_max_winners_50(self):
         entries = [{"user_id": i, "entries": 1} for i in range(100)]
-        winners = manager._select_winners(entries, 50)
+        winners = select_winners(entries, 50)
         assert len(winners) == 50 and len(set(winners)) == 50
-
-
-class TestBuildEndedEmbed:
-    @pytest.mark.parametrize(
-        "winners,entries,expected_text",
-        [
-            ([100, 200], 10, None),
-            ([], 0, "No valid entries"),
-        ],
-    )
-    def test_cases(self, manager, winners, entries, expected_text):
-        embed = manager._build_ended_embed(_giveaway(prize="Test", donor_id=2), winners, entries)
-        assert embed.title == "🎉 GIVEAWAY ENDED 🎉"
-        if expected_text:
-            assert any(expected_text in field.value for field in embed.fields)
-
-    def test_includes_donor(self, manager):
-        embed = manager._build_ended_embed(_giveaway(donor_id=555), [100], 5)
-        assert "Donated by" in embed.description and "<@555>" in embed.description
-
-    def test_winners_field(self, manager):
-        embed = manager._build_ended_embed(_giveaway(), [10, 20], 3)
-        assert "<@10>" in embed.fields[0].value and "<@20>" in embed.fields[0].value
-        assert "2 winners" in embed.footer.text
 
 
 class TestEndGiveaway:

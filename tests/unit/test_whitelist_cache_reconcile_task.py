@@ -37,6 +37,15 @@ async def test_reconcile_all_cached_servers_no_pool():
 
 
 @pytest.mark.asyncio
+async def test_reconcile_all_cached_servers_no_whitelist_service():
+    bot = MagicMock()
+    bot.db_pool = MagicMock()
+    bot.whitelist_service = None
+    await reconcile_all_cached_servers(bot)
+    bot.db_pool.acquire.assert_not_called()
+
+
+@pytest.mark.asyncio
 async def test_reconcile_all_cached_servers_fetch_fails(caplog):
     caplog.set_level("WARNING")
     conn = AsyncMock()
@@ -67,17 +76,14 @@ async def test_reconcile_all_cached_servers_runs_per_server(caplog):
     bot.db_pool = pool
     bot.cache = MagicMock()
 
-    async def fake_reconcile(p, sid, cache=None):
+    async def fake_reconcile(sid):
         if sid == 1:
             return {"updated": ["a → b"], "pruned": [], "uuid_filled": []}
         return {"updated": [], "pruned": [], "uuid_filled": []}
 
-    with patch(
-        "bot.tasks.whitelist_cache_reconcile.reconcile_whitelist_cache",
-        new_callable=AsyncMock,
-        side_effect=fake_reconcile,
-    ):
-        await reconcile_all_cached_servers(bot)
+    bot.whitelist_service = MagicMock()
+    bot.whitelist_service.reconcile_whitelist_cache = AsyncMock(side_effect=fake_reconcile)
+    await reconcile_all_cached_servers(bot)
     assert "server_id=1" in caplog.text
     assert "renamed=1" in caplog.text
 

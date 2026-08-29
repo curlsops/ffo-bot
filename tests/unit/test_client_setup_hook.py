@@ -113,6 +113,7 @@ class TestFFOBotSetupHook:
                 p.stop()
 
         assert bot.minecraft_rcon is not None
+        assert bot.whitelist_service is not None
 
     @pytest.mark.asyncio
     async def test_setup_hook_with_music(self, mock_settings):

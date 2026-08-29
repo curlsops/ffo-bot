@@ -7,7 +7,7 @@ import discord
 import pytest
 
 from bot.views import giveaway as giveaway_view_module
-from bot.views.giveaway import AlreadyJoinedView, GiveawayView
+from bot.views.giveaway import AlreadyJoinedView, _get_scheduler
 from tests.helpers import assert_followup_contains
 from tests.unit.giveaway_commands.conftest import active_giveaway, db_ctx, giveaway, interaction
 
@@ -168,7 +168,7 @@ class TestGiveawayView:
         )
         i = interaction()
         await view.join_button(i)
-        await GiveawayView.wait_for_scheduled_refreshes(mock_bot)
+        await _get_scheduler(mock_bot).wait_for_scheduled()
         mock_bot.cache.delete.assert_called_once()
 
     @pytest.mark.asyncio
@@ -183,7 +183,7 @@ class TestGiveawayView:
         )
         i = interaction()
         await view.join_button(i)
-        await GiveawayView.wait_for_scheduled_refreshes(mock_bot)
+        await _get_scheduler(mock_bot).wait_for_scheduled()
         assert_followup_contains(i, "joined")
 
     @pytest.mark.asyncio
@@ -238,7 +238,7 @@ class TestGiveawayView:
         )
         i = interaction()
         await view.join_button(i)
-        await GiveawayView.wait_for_scheduled_refreshes(mock_bot)
+        await _get_scheduler(mock_bot).wait_for_scheduled()
         assert_followup_contains(i, "joined")
 
     @pytest.mark.asyncio
@@ -256,7 +256,7 @@ class TestGiveawayView:
         await view._schedule_embed_update(msg, view.giveaway_id)
         await view._schedule_embed_update(msg, view.giveaway_id)
         await view._schedule_embed_update(msg, view.giveaway_id)
-        await GiveawayView.wait_for_scheduled_refreshes(mock_bot)
+        await _get_scheduler(mock_bot).wait_for_scheduled()
 
         msg.edit.assert_called_once()
         assert conn.fetchval.await_count == 1
@@ -289,7 +289,7 @@ class TestGiveawayView:
         await asyncio.wait_for(first_edit_started.wait(), timeout=1)
         await view._schedule_embed_update(msg, view.giveaway_id)
         release_first_edit.set()
-        await GiveawayView.wait_for_scheduled_refreshes(mock_bot)
+        await _get_scheduler(mock_bot).wait_for_scheduled()
 
         assert msg.edit.await_count == 2
         latest_view = msg.edit.call_args_list[-1].kwargs["view"]

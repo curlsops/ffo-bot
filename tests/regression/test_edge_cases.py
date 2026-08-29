@@ -1,6 +1,6 @@
 import pytest
 
-from bot.utils.quotebook_channel import get_quotebook_channel_id
+from bot.utils.channel_config import get_quotebook_channel_id
 from bot.utils.server_roles import get_server_role_ids
 from bot.utils.validation import InputValidator, ValidationError
 from bot.utils.whitelist_channel import get_whitelist_channel_id

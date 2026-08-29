@@ -7,9 +7,11 @@ from bot.utils.channel_config import (
     fetch_music_voice_channel_targets,
     get_music_voice_channel_id,
     get_music_voice_stay,
+    get_quotebook_channel_id,
     set_channel_config,
     set_music_voice_channel,
     set_music_voice_stay,
+    set_quotebook_channel,
 )
 
 
@@ -96,6 +98,22 @@ async def test_set_music_voice_channel():
         pool = MagicMock()
         assert await set_music_voice_channel(pool, 5, 99) is True
         m.assert_awaited_once_with(pool, 5, "music_voice_channel_id", 99, None)
+
+
+@pytest.mark.asyncio
+async def test_get_quotebook_channel_id():
+    with patch("bot.utils.channel_config.get_channel_config", AsyncMock(return_value=42)) as m:
+        pool = MagicMock()
+        assert await get_quotebook_channel_id(pool, 5) == 42
+        m.assert_awaited_once_with(pool, 5, "quotebook_channel_id", None)
+
+
+@pytest.mark.asyncio
+async def test_set_quotebook_channel():
+    with patch("bot.utils.channel_config.set_channel_config", AsyncMock(return_value=True)) as m:
+        pool = MagicMock()
+        assert await set_quotebook_channel(pool, 5, 99) is True
+        m.assert_awaited_once_with(pool, 5, "quotebook_channel_id", 99, None)
 
 
 @pytest.mark.asyncio

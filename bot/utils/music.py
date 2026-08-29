@@ -1,6 +1,8 @@
-from collections import defaultdict, deque
+import asyncio
+from collections import deque
+from dataclasses import dataclass, field
 from itertools import islice
-from typing import TYPE_CHECKING, Iterable, Sequence, cast
+from typing import TYPE_CHECKING, Iterable, Sequence
 from urllib.parse import parse_qs, urlparse
 
 import discord
@@ -79,16 +81,101 @@ def _format_duration(ms: int) -> str:
     return f"{h}:{m:02d}:{s:02d}" if h else f"{m}:{s:02d}"
 
 
+@dataclass
+class MusicGuildState:
+    """A guild's owned music session state: queue plus its two background tasks.
+
+    Replaces three previously separate per-guild dicts (`_music_queues`,
+    `_music_lazy_prefetch_tasks`, `_music_leave_tasks`) with one registry of
+    these, keyed by guild id, on `bot._music_guild_states`.
+    """
+
+    queue: deque[Track] = field(default_factory=deque)
+    lazy_prefetch_task: "asyncio.Task[None] | None" = None
+    leave_task: "asyncio.Task[None] | None" = None
+
+
+def _get_or_create_music_state(bot: "FFOBot", guild_id: int) -> MusicGuildState:
+    states = getattr(bot, "_music_guild_states", None)
+    if not isinstance(states, dict):
+        states = {}
+        bot._music_guild_states = states
+    state = states.get(guild_id)
+    if state is None:
+        state = MusicGuildState()
+        states[guild_id] = state
+    return state
+
+
+def _get_music_state(bot: "FFOBot", guild_id: int) -> MusicGuildState | None:
+    states = getattr(bot, "_music_guild_states", None)
+    if not isinstance(states, dict):
+        return None
+    return states.get(guild_id)
+
+
 def _get_queue(bot: "FFOBot", guild_id: int) -> deque[Track]:
-    if not hasattr(bot, "_music_queues"):
-        bot._music_queues = defaultdict(deque)
-    return cast(deque[Track], bot._music_queues[guild_id])
+    return _get_or_create_music_state(bot, guild_id).queue
 
 
 def _clear_queue(bot: "FFOBot", guild_id: int) -> None:
-    queues = getattr(bot, "_music_queues", None)
-    if queues is not None and guild_id in queues:
-        del queues[guild_id]
+    state = _get_music_state(bot, guild_id)
+    if state is not None:
+        state.queue = deque()
+
+
+def _active_music_queue(bot: "FFOBot", guild_id: int) -> deque[Track] | None:
+    """Non-creating queue lookup: `None` if the guild has no active session.
+
+    Used by the lazy-prefetch background worker so it doesn't resurrect a
+    queue for a guild session that has already ended.
+    """
+    state = _get_music_state(bot, guild_id)
+    return None if state is None else state.queue
+
+
+async def _cancel_task(task: "asyncio.Task[None] | None") -> None:
+    if task is None:
+        return
+    task.cancel()
+    try:
+        await task
+    except asyncio.CancelledError:
+        pass
+
+
+async def _cancel_music_lazy_prefetch(bot: "FFOBot", guild_id: int) -> None:
+    state = _get_music_state(bot, guild_id)
+    if state is None:
+        return
+    task = state.lazy_prefetch_task
+    state.lazy_prefetch_task = None
+    await _cancel_task(task)
+
+
+async def _cancel_leave_task(bot: "FFOBot", guild_id: int) -> None:
+    state = _get_music_state(bot, guild_id)
+    if state is None:
+        return
+    task = state.leave_task
+    state.leave_task = None
+    await _cancel_task(task)
+
+
+async def _teardown_music_guild_state(bot: "FFOBot", guild_id: int) -> None:
+    """Full three-way teardown for a guild's music session.
+
+    Used by the `/music leave` command, the one call site where cancelling
+    the lazy-prefetch task, clearing the queue, and cancelling the idle-leave
+    task genuinely all happen together. The idle-leave task's own self
+    -cleanup (in `_schedule_idle_voice_leave`) deliberately does NOT go
+    through this helper, nor through `_cancel_leave_task` on itself — it is
+    that running task, so it clears its own `leave_task` field directly
+    instead of trying to cancel+await itself.
+    """
+    await _cancel_music_lazy_prefetch(bot, guild_id)
+    _clear_queue(bot, guild_id)
+    await _cancel_leave_task(bot, guild_id)
 
 
 def _music_embed(title: str, description: str) -> discord.Embed:

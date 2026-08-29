@@ -199,6 +199,8 @@ async def test_reroll_skips_executemany_when_no_final_winners(cog):
         "channel_id": 2,
         "prize": "Prize",
         "winners_count": 1,
+        "host_id": 999,
+        "donor_id": None,
         "ended_at": datetime.now(timezone.utc),
     }
     conn = AsyncMock(
@@ -218,7 +220,7 @@ async def test_reroll_skips_executemany_when_no_final_winners(cog):
     channel.send = AsyncMock()
     cog.bot.get_channel = MagicMock(return_value=channel)
     i = interaction()
-    with patch.object(cog, "_select_winners", return_value=[]):
+    with patch("bot.commands.giveaway.select_winners", return_value=[]):
         with patch("bot.commands.giveaway.build_embed", return_value=discord.Embed()):
             with patch("bot.commands.giveaway.build_reroll_announcement", return_value="ann"):
                 await cog.giveaway_cmd.callback(
@@ -236,6 +238,8 @@ async def test_reroll_message_fetch_not_found_still_completes(cog):
         "channel_id": 2,
         "prize": "Prize",
         "winners_count": 1,
+        "host_id": 999,
+        "donor_id": None,
         "ended_at": datetime.now(timezone.utc),
     }
     conn = AsyncMock(
@@ -255,7 +259,7 @@ async def test_reroll_message_fetch_not_found_still_completes(cog):
     channel.send = AsyncMock()
     cog.bot.get_channel = MagicMock(return_value=channel)
     i = interaction()
-    with patch.object(cog, "_select_winners", return_value=[2]):
+    with patch("bot.commands.giveaway.select_winners", return_value=[2]):
         with patch("bot.commands.giveaway.build_embed", return_value=discord.Embed()):
             with patch("bot.commands.giveaway.build_reroll_announcement", return_value="ann"):
                 await cog.giveaway_cmd.callback(
@@ -273,6 +277,8 @@ async def test_reroll_inner_exception_triggers_send_error(cog):
         "channel_id": 2,
         "prize": "Prize",
         "winners_count": 1,
+        "host_id": 999,
+        "donor_id": None,
         "ended_at": datetime.now(timezone.utc),
     }
     conn = AsyncMock(
@@ -293,7 +299,7 @@ async def test_reroll_inner_exception_triggers_send_error(cog):
     channel.send = AsyncMock(side_effect=RuntimeError("send failed"))
     cog.bot.get_channel = MagicMock(return_value=channel)
     i = interaction()
-    with patch.object(cog, "_select_winners", return_value=[2]):
+    with patch("bot.commands.giveaway.select_winners", return_value=[2]):
         with patch("bot.commands.giveaway.build_embed", return_value=discord.Embed()):
             with patch("bot.commands.giveaway.build_reroll_announcement", return_value="ann"):
                 with patch("bot.commands.giveaway.send_error", new_callable=AsyncMock) as se:
@@ -319,6 +325,8 @@ async def test_reroll_count_zero(cog):
         "channel_id": 2,
         "prize": "Prize",
         "winners_count": 1,
+        "host_id": 999,
+        "donor_id": None,
         "ended_at": datetime.now(timezone.utc),
     }
     conn = AsyncMock(
@@ -350,6 +358,8 @@ async def test_reroll_updates_message_and_announces(cog):
         "channel_id": 2,
         "prize": "Prize",
         "winners_count": 1,
+        "host_id": 999,
+        "donor_id": None,
         "ended_at": datetime.now(timezone.utc),
     }
     conn = AsyncMock(
@@ -371,7 +381,7 @@ async def test_reroll_updates_message_and_announces(cog):
     cog.bot.get_channel = MagicMock(return_value=channel)
 
     i = interaction()
-    with patch.object(cog, "_select_winners", return_value=[2]):
+    with patch("bot.commands.giveaway.select_winners", return_value=[2]):
         with patch("bot.commands.giveaway.build_embed", return_value=discord.Embed()):
             with patch("bot.commands.giveaway.build_reroll_announcement", return_value="ann"):
                 await cog.giveaway_cmd.callback(
@@ -383,7 +393,8 @@ async def test_reroll_updates_message_and_announces(cog):
 
 @pytest.mark.asyncio
 async def test_reroll_outer_exception(cog):
-    cog.bot.db_pool = MagicMock(side_effect=RuntimeError("pool"))
+    cog.bot.db_pool = MagicMock()
+    cog.bot.db_pool.acquire = MagicMock(side_effect=RuntimeError("pool"))
     i = interaction()
     with patch("bot.commands.giveaway.send_error", new_callable=AsyncMock) as se:
         await cog.giveaway_cmd.callback(i, operation=OP_REROLL, message_id="123456789012345678")

@@ -151,9 +151,8 @@ async def test_permissions_list_fetch_error(cog, mock_bot):
         side_effect=RuntimeError("db"),
     ):
         i = mock_interaction()
-        with patch("bot.commands.permissions.send_error", new_callable=AsyncMock) as se:
-            await cog.permissions_group.list_cmd.callback(cog.permissions_group, i)
-        se.assert_awaited()
+        await cog.permissions_group.list_cmd.callback(cog.permissions_group, i)
+        assert_followup_contains(i, "Error fetching permissions", case_sensitive=False)
 
 
 @pytest.mark.asyncio
@@ -190,11 +189,8 @@ async def test_permissions_add_insert_failure(cog, mock_bot):
     conn.execute = AsyncMock(side_effect=RuntimeError("db"))
     mock_bot.db_pool = pool
     i = mock_interaction(guild_get_member=mock_user(20, "x"))
-    with patch("bot.commands.permissions.send_error", new_callable=AsyncMock) as se:
-        await cog.permissions_group.add_cmd.callback(
-            cog.permissions_group, i, user="20", role="admin"
-        )
-    se.assert_awaited()
+    await cog.permissions_group.add_cmd.callback(cog.permissions_group, i, user="20", role="admin")
+    assert_followup_contains(i, "Error granting role", case_sensitive=False)
 
 
 @pytest.mark.asyncio
@@ -214,11 +210,10 @@ async def test_permissions_remove_exception(cog, mock_bot):
     conn.execute = AsyncMock(side_effect=[RuntimeError("x")])
     mock_bot.db_pool = pool
     i = mock_interaction(guild_get_member=mock_user(20, "x"))
-    with patch("bot.commands.permissions.send_error", new_callable=AsyncMock) as se:
-        await cog.permissions_group.remove_cmd.callback(
-            cog.permissions_group, i, user="20", role="admin"
-        )
-    se.assert_awaited()
+    await cog.permissions_group.remove_cmd.callback(
+        cog.permissions_group, i, user="20", role="admin"
+    )
+    assert_followup_contains(i, "Error revoking role", case_sensitive=False)
 
 
 @pytest.mark.asyncio
@@ -566,8 +561,7 @@ async def test_permissions_remove_db_exception_before_execute_result(cog, mock_b
     conn.execute = AsyncMock(side_effect=RuntimeError("db"))
     mock_bot.db_pool = pool
     i = mock_interaction(guild_get_member=mock_user(40, "x"))
-    with patch("bot.commands.permissions.send_error", new_callable=AsyncMock) as se:
-        await cog.permissions_group.remove_cmd.callback(
-            cog.permissions_group, i, user="40", role="admin"
-        )
-    se.assert_awaited()
+    await cog.permissions_group.remove_cmd.callback(
+        cog.permissions_group, i, user="40", role="admin"
+    )
+    assert_followup_contains(i, "Error revoking role", case_sensitive=False)

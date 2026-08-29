@@ -1,4 +1,3 @@
-import asyncio
 import logging
 import uuid
 from datetime import datetime, timezone
@@ -7,8 +6,12 @@ from unittest.mock import AsyncMock, MagicMock
 import discord
 import pytest
 
-from bot.views import giveaway as giveaway_view_module
-from bot.views.giveaway import AlreadyJoinedView, EntriesPaginatedView, GiveawayView, build_embed
+from bot.views.giveaway import (
+    AlreadyJoinedView,
+    EntriesPaginatedView,
+    _get_scheduler,
+    build_embed,
+)
 from tests.helpers import assert_followup_contains
 from tests.unit.giveaway_commands.conftest import db_ctx, entries, giveaway, interaction
 
@@ -87,7 +90,7 @@ class TestAlreadyJoinedView:
         i = interaction()
         i.channel = MagicMock(fetch_message=AsyncMock(return_value=msg))
         await leave_view.leave_button.callback(i)
-        await GiveawayView.wait_for_scheduled_refreshes(mock_bot)
+        await _get_scheduler(mock_bot).wait_for_scheduled()
         msg.edit.assert_called_once()
 
     @pytest.mark.asyncio
@@ -103,7 +106,7 @@ class TestAlreadyJoinedView:
         i = interaction()
         i.channel = MagicMock(fetch_message=AsyncMock(return_value=msg))
         await leave_view.leave_button.callback(i)
-        await GiveawayView.wait_for_scheduled_refreshes(mock_bot)
+        await _get_scheduler(mock_bot).wait_for_scheduled()
         msg.edit.assert_not_called()
 
     @pytest.mark.asyncio
@@ -119,7 +122,7 @@ class TestAlreadyJoinedView:
         i = interaction()
         i.channel = MagicMock(fetch_message=AsyncMock(return_value=msg))
         await leave_view.leave_button.callback(i)
-        await GiveawayView.wait_for_scheduled_refreshes(mock_bot)
+        await _get_scheduler(mock_bot).wait_for_scheduled()
         assert "Update embed failed" in caplog.text
 
     @pytest.mark.asyncio
@@ -135,16 +138,12 @@ class TestAlreadyJoinedView:
         assert "Leave giveaway error" in caplog.text
 
     @pytest.mark.asyncio
-    async def test_update_giveaway_embed_schedule_error_logged(self, leave_view, caplog):
+    async def test_update_giveaway_embed_schedule_error_logged(self, leave_view, mock_bot, caplog):
         caplog.set_level(logging.WARNING, logger="bot.views.giveaway")
         i = interaction()
         i.channel = MagicMock()
-        original = GiveawayView.schedule_embed_refresh
-        GiveawayView.schedule_embed_refresh = AsyncMock(side_effect=Exception("boom"))
-        try:
-            await leave_view._update_giveaway_embed(i)
-        finally:
-            GiveawayView.schedule_embed_refresh = original
+        _get_scheduler(mock_bot).schedule_refresh = AsyncMock(side_effect=Exception("boom"))
+        await leave_view._update_giveaway_embed(i)
         assert "Could not update giveaway embed" in caplog.text
 
 
@@ -245,116 +244,3 @@ class TestEntriesPaginatedView:
         assert page_view.max_page == 1
         out = page_view._format_page()
         assert "Giveaway Participants" in out
-
-
-class TestScheduledRefreshBranches:
-    @pytest.mark.asyncio
-    async def test_schedule_embed_refresh_updates_existing_job_fields(self, view, mock_bot):
-        lock, jobs = GiveawayView._get_refresh_state(mock_bot)
-        giveaway_id = view.giveaway_id
-        done_task = asyncio.create_task(asyncio.sleep(0))
-        jobs[giveaway_id] = {
-            "dirty": False,
-            "message": None,
-            "channel": None,
-            "message_id": None,
-            "task": done_task,
-        }
-        channel = MagicMock()
-        message = MagicMock(id=777, channel=channel)
-
-        await GiveawayView.schedule_embed_refresh(
-            mock_bot,
-            giveaway_id,
-            message=message,
-        )
-        async with lock:
-            job = jobs[giveaway_id]
-            assert job["dirty"] is True
-            assert job["message"] is message
-            assert job["channel"] is channel
-            assert job["message_id"] == 777
-        _ = await done_task
-
-    @pytest.mark.asyncio
-    async def test_schedule_embed_refresh_existing_job_without_new_targets(self, view, mock_bot):
-        lock, jobs = GiveawayView._get_refresh_state(mock_bot)
-        giveaway_id = view.giveaway_id
-        done_task = asyncio.create_task(asyncio.sleep(0))
-        existing_message = MagicMock(id=555, channel=MagicMock())
-        existing_channel = existing_message.channel
-        jobs[giveaway_id] = {
-            "dirty": False,
-            "message": existing_message,
-            "channel": existing_channel,
-            "message_id": 555,
-            "task": done_task,
-        }
-
-        await GiveawayView.schedule_embed_refresh(mock_bot, giveaway_id)
-        async with lock:
-            job = jobs[giveaway_id]
-            assert job["dirty"] is True
-            assert job["message"] is existing_message
-            assert job["channel"] is existing_channel
-            assert job["message_id"] == 555
-        _ = await done_task
-
-    @pytest.mark.asyncio
-    async def test_run_refresh_job_returns_when_job_missing(self, view, mock_bot, monkeypatch):
-        monkeypatch.setattr(giveaway_view_module.asyncio, "sleep", AsyncMock(return_value=None))
-        lock, jobs = GiveawayView._get_refresh_state(mock_bot)
-        jobs.pop(view.giveaway_id, None)
-        await GiveawayView._run_refresh_job(mock_bot, view.giveaway_id)
-
-    @pytest.mark.asyncio
-    async def test_run_refresh_job_returns_when_job_removed_after_refresh(
-        self, view, mock_bot, monkeypatch
-    ):
-        monkeypatch.setattr(giveaway_view_module.asyncio, "sleep", AsyncMock(return_value=None))
-        lock, jobs = GiveawayView._get_refresh_state(mock_bot)
-        jobs[view.giveaway_id] = {
-            "dirty": False,
-            "message": MagicMock(id=1, channel=MagicMock()),
-            "channel": MagicMock(),
-            "message_id": 1,
-            "task": None,
-        }
-
-        async def _remove_job(*args, **kwargs):
-            async with lock:
-                jobs.pop(view.giveaway_id, None)
-
-        original = GiveawayView._refresh_embed_now_with_fallback
-        GiveawayView._refresh_embed_now_with_fallback = _remove_job
-        try:
-            await GiveawayView._run_refresh_job(mock_bot, view.giveaway_id)
-        finally:
-            GiveawayView._refresh_embed_now_with_fallback = original
-
-    @pytest.mark.asyncio
-    async def test_refresh_embed_now_with_fallback_returns_without_target(self, view, mock_bot):
-        await GiveawayView._refresh_embed_now_with_fallback(
-            mock_bot,
-            view.giveaway_id,
-            message=None,
-            channel=None,
-            message_id=None,
-        )
-
-    @pytest.mark.asyncio
-    async def test_refresh_embed_now_with_fallback_fetch_error(self, view, mock_bot, caplog):
-        caplog.set_level(logging.DEBUG, logger="bot.views.giveaway")
-        channel = MagicMock(fetch_message=AsyncMock(side_effect=Exception("fetch failed")))
-        await GiveawayView._refresh_embed_now_with_fallback(
-            mock_bot,
-            view.giveaway_id,
-            message=None,
-            channel=channel,
-            message_id=123,
-        )
-        assert "Could not fetch giveaway message for refresh" in caplog.text
-
-    @pytest.mark.asyncio
-    async def test_wait_for_scheduled_refreshes_with_no_tasks(self, mock_bot):
-        await GiveawayView.wait_for_scheduled_refreshes(mock_bot)

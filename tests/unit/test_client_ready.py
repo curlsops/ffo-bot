@@ -15,23 +15,24 @@ class TestFFOBotOnReady:
         bot._connection = MagicMock()
         bot._connection.user = MagicMock(id=123)
         bot._connection.user.__str__ = lambda s: "Bot#1234"
-        bot._connection.http.bulk_upsert_global_commands = AsyncMock()
-        bot._connection.http.bulk_upsert_guild_commands = AsyncMock()
 
         with patch.object(FFOBot, "guilds", new_callable=PropertyMock, return_value=guilds):
             with patch.object(bot, "_register_server", new_callable=AsyncMock) as mock_reg:
-                with patch.object(bot.tree, "copy_global_to") as mock_copy:
-                    with patch.object(bot.tree, "sync", new_callable=AsyncMock):
-                        await bot.on_ready()
-                        bot._connection.http.bulk_upsert_global_commands.assert_awaited_once_with(
-                            bot.application_id, []
-                        )
-                        assert mock_reg.call_count == 2
-                        assert bot._connection.http.bulk_upsert_guild_commands.call_count == 2
-                        assert mock_copy.call_count == 2
-                        assert bot.tree.sync.call_count == 2
-                        bot.metrics.set_guild_count.assert_called_with(2)
-                        bot.metrics.set_connection_status.assert_called_with(1)
+                with patch(
+                    "bot.client.sync_commands", new_callable=AsyncMock, return_value=2
+                ) as mock_sync:
+                    await bot.on_ready()
+
+        assert mock_reg.call_count == 2
+        mock_sync.assert_awaited_once_with(
+            bot.tree,
+            bot._connection.http,
+            bot.application_id,
+            guilds,
+            clear_on_boot=True,
+        )
+        bot.metrics.set_guild_count.assert_called_with(2)
+        bot.metrics.set_connection_status.assert_called_with(1)
 
     @pytest.mark.asyncio
     async def test_on_ready_without_metrics(self, bot):
@@ -41,10 +42,9 @@ class TestFFOBotOnReady:
         bot._connection = MagicMock()
         bot._connection.user = MagicMock(id=123)
         bot._connection.user.__str__ = lambda s: "Bot#1234"
-        bot._connection.http.bulk_upsert_global_commands = AsyncMock()
 
         with patch.object(FFOBot, "guilds", new_callable=PropertyMock, return_value=[]):
-            with patch.object(bot.tree, "sync", new_callable=AsyncMock):
+            with patch("bot.client.sync_commands", new_callable=AsyncMock, return_value=0):
                 await bot.on_ready()
 
     @pytest.mark.asyncio
@@ -59,9 +59,9 @@ class TestFFOBotOnReady:
 
         with patch.object(FFOBot, "guilds", new_callable=PropertyMock, return_value=guilds):
             with patch.object(bot, "_register_server", new_callable=AsyncMock):
-                await bot.on_ready()
-        bot._connection.http.bulk_upsert_global_commands.assert_not_called()
-        bot._connection.http.bulk_upsert_guild_commands.assert_not_called()
+                with patch("bot.client.sync_commands", new_callable=AsyncMock) as mock_sync:
+                    await bot.on_ready()
+        mock_sync.assert_not_called()
 
     @pytest.mark.asyncio
     async def test_on_ready_skips_clear_when_disabled(self, bot):
@@ -72,21 +72,23 @@ class TestFFOBotOnReady:
         bot.metrics = MagicMock()
         bot._connection = MagicMock()
         bot._connection.user = MagicMock(id=123)
-        bot._connection.http.bulk_upsert_global_commands = AsyncMock()
-        bot._connection.http.bulk_upsert_guild_commands = AsyncMock()
         guilds = [MagicMock(id=111, name="G1")]
 
         with patch.object(FFOBot, "guilds", new_callable=PropertyMock, return_value=guilds):
             with patch.object(bot, "_register_server", new_callable=AsyncMock) as mock_reg:
-                with patch.object(bot.tree, "copy_global_to") as mock_copy:
-                    with patch.object(bot.tree, "sync", new_callable=AsyncMock) as mock_sync:
-                        await bot.on_ready()
+                with patch(
+                    "bot.client.sync_commands", new_callable=AsyncMock, return_value=1
+                ) as mock_sync:
+                    await bot.on_ready()
 
-        bot._connection.http.bulk_upsert_global_commands.assert_not_called()
-        bot._connection.http.bulk_upsert_guild_commands.assert_not_called()
         mock_reg.assert_awaited_once_with(guilds[0])
-        mock_copy.assert_called_once_with(guild=guilds[0])
-        mock_sync.assert_awaited_once_with(guild=guilds[0])
+        mock_sync.assert_awaited_once_with(
+            bot.tree,
+            bot._connection.http,
+            bot.application_id,
+            guilds,
+            clear_on_boot=False,
+        )
 
     @pytest.mark.asyncio
     async def test_on_ready_empty_guilds(self, bot):
@@ -95,9 +97,8 @@ class TestFFOBotOnReady:
         bot.metrics = MagicMock()
         bot._connection = MagicMock()
         bot._connection.user = MagicMock(id=123)
-        bot._connection.http.bulk_upsert_global_commands = AsyncMock()
         with patch.object(FFOBot, "guilds", new_callable=PropertyMock, return_value=[]):
-            with patch.object(bot.tree, "sync", new_callable=AsyncMock):
+            with patch("bot.client.sync_commands", new_callable=AsyncMock, return_value=0):
                 await bot.on_ready()
         bot.metrics.set_guild_count.assert_called_with(0)
 

@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from bot.services.giveaway_service import select_winners
 from tests.helpers import assert_followup_contains
 from tests.unit.giveaway_commands.conftest import OP_REROLL, OP_START, db_ctx, interaction
 
@@ -232,7 +233,7 @@ class TestGreroll:
         )
         cog.bot.db_pool = db_ctx(conn)
         cog.bot.get_channel = MagicMock(return_value=None)
-        with patch.object(cog, "_select_winners", wraps=cog._select_winners) as mock_select:
+        with patch("bot.commands.giveaway.select_winners", wraps=select_winners) as mock_select:
             i = interaction()
             await cog.giveaway_cmd.callback(i, operation=OP_REROLL, message_id="123456789012345678")
             pool, _count = mock_select.call_args[0]

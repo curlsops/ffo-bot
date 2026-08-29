@@ -3,6 +3,7 @@ from datetime import datetime, timezone
 import pytest
 
 from bot.commands.giveaway import parse_duration
+from bot.services.giveaway_service import select_winners
 from bot.utils.discord_helpers import discord_timestamp
 
 
@@ -123,20 +124,20 @@ class TestParseMessageId:
 
 
 class TestSelectWinners:
-    def test_empty_entries(self, cog):
-        assert cog._select_winners([], 1) == []
+    def test_empty_entries(self):
+        assert select_winners([], 1) == []
 
-    def test_zero_count(self, cog):
-        assert cog._select_winners([{"user_id": 1, "entries": 1}], 0) == []
+    def test_zero_count(self):
+        assert select_winners([{"user_id": 1, "entries": 1}], 0) == []
 
-    def test_returns_requested_count(self, cog):
+    def test_returns_requested_count(self):
         list_entries = [{"user_id": index, "entries": 1} for index in range(10)]
-        winners = cog._select_winners(list_entries, 2)
+        winners = select_winners(list_entries, 2)
         assert len(winners) == 2
         assert len(set(winners)) == 2
 
-    def test_weighted_entries(self, cog):
+    def test_weighted_entries(self):
         list_entries = [{"user_id": 1, "entries": 5}, {"user_id": 2, "entries": 1}]
-        winners = cog._select_winners(list_entries, 1)
+        winners = select_winners(list_entries, 1)
         assert len(winners) == 1
         assert winners[0] in (1, 2)

@@ -1,8 +1,7 @@
 import pytest
 
-from bot.utils.whitelist_cache import get_cached_usernames
 from bot.utils.whitelist_channel import get_whitelist_channel_id
-from tests.helpers import db_pool_with_conn, mock_db_conn
+from tests.helpers import build_whitelist_service, db_pool_with_conn, mock_db_conn
 
 
 @pytest.mark.asyncio
@@ -25,4 +24,5 @@ async def test_get_whitelist_channel_id_with_channel():
 @pytest.mark.asyncio
 async def test_get_cached_usernames_empty_db_returns_empty():
     pool = db_pool_with_conn(mock_db_conn(fetch=[]))
-    assert await get_cached_usernames(pool, 1, None) == []
+    svc = build_whitelist_service(db_pool=pool)
+    assert await svc.get_cached_usernames(1) == []

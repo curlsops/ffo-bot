@@ -43,6 +43,7 @@ htmlcov/
 *.md
 !README.md
 !docs/**/*.md
+docs/specs/
 
 .dockerignore
 .env

@@ -101,6 +101,71 @@ def build_quotebook_bot():
     return bot
 
 
+def mock_rcon_port(*, whitelist_add="Added", whitelist_add_error=None, whitelist_list_merge=None):
+    rcon = MagicMock()
+    if whitelist_add_error is not None:
+        rcon.whitelist_add = AsyncMock(side_effect=whitelist_add_error)
+    else:
+        rcon.whitelist_add = AsyncMock(return_value=whitelist_add)
+    rcon.whitelist_list_merge = AsyncMock(return_value=whitelist_list_merge)
+    return rcon
+
+
+def mock_mojang_port(*, profiles=None, profiles_by_uuid=None, batch=None):
+    profiles = profiles or {}
+    profiles_by_uuid = profiles_by_uuid or {}
+    mojang = MagicMock()
+
+    async def get_profile(username):
+        return profiles.get(username)
+
+    async def get_profile_by_uuid(uuid_str):
+        return profiles_by_uuid.get(uuid_str)
+
+    async def get_profiles_batch(usernames):
+        return batch or {}
+
+    mojang.get_profile = AsyncMock(side_effect=get_profile)
+    mojang.get_profile_by_uuid = AsyncMock(side_effect=get_profile_by_uuid)
+    mojang.get_profiles_batch = AsyncMock(side_effect=get_profiles_batch)
+    return mojang
+
+
+def mock_notifier_port():
+    notifier = MagicMock()
+    notifier.notify_whitelist = AsyncMock(return_value=True)
+    return notifier
+
+
+def mock_permission_checker_port(*, allow=True):
+    checker = MagicMock()
+    checker.check_role = AsyncMock(return_value=allow)
+    return checker
+
+
+def build_whitelist_service(
+    *,
+    db_pool=None,
+    rcon=None,
+    mojang=None,
+    cache=None,
+    notifier=None,
+    permission_checker=None,
+):
+    from bot.services.whitelist import WhitelistService
+
+    return WhitelistService(
+        db_pool=db_pool if db_pool is not None else mock_db_pool()[0],
+        rcon=rcon if rcon is not None else mock_rcon_port(),
+        mojang=mojang if mojang is not None else mock_mojang_port(),
+        cache=cache,
+        notifier=notifier if notifier is not None else mock_notifier_port(),
+        permission_checker=(
+            permission_checker if permission_checker is not None else mock_permission_checker_port()
+        ),
+    )
+
+
 def build_whitelist_bot():
     bot = MagicMock()
     bot.cache = None
@@ -117,6 +182,22 @@ def build_whitelist_bot():
     bot.minecraft_rcon.whitelist_on = AsyncMock(return_value="Whitelist is now turned on")
     bot.minecraft_rcon.whitelist_off = AsyncMock(return_value="Whitelist is now turned off")
     bot.minecraft_rcon.push_master_whitelist = AsyncMock(return_value=[])
+
+    from bot.services.whitelist import SyncFromRconResult
+
+    bot.whitelist_service = MagicMock()
+    bot.whitelist_service.get_cached_usernames = AsyncMock(return_value=[])
+    bot.whitelist_service.add_to_cache = AsyncMock(return_value=None)
+    bot.whitelist_service.remove_from_cache = AsyncMock(return_value=None)
+    bot.whitelist_service.get_cache_entry = AsyncMock(return_value=None)
+    bot.whitelist_service.reconcile_whitelist_cache = AsyncMock(
+        return_value={"updated": [], "uuid_filled": [], "pruned": []}
+    )
+    bot.whitelist_service.sync_from_rcon = AsyncMock(
+        return_value=SyncFromRconResult(
+            ok=True, player_count=0, reachable_targets=0, unreachable_target_ids=()
+        )
+    )
     return bot
 
 

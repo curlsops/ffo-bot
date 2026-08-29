@@ -36,17 +36,10 @@ async def test_username_autocomplete_no_rcon():
 async def test_username_autocomplete_syncs_when_empty_cache():
     bot = build_whitelist_bot()
     bot.db_pool, _ = mock_db_pool()
-    with (
-        patch(
-            "bot.commands.whitelist.get_cached_usernames",
-            new_callable=AsyncMock,
-            side_effect=[[], ["Steve"]],
-        ),
-        patch("bot.commands.whitelist.sync_from_rcon", new_callable=AsyncMock) as sync,
-    ):
-        i = MagicMock(guild_id=1, client=bot)
-        out = await _whitelist_username_autocomplete(i, "")
-    sync.assert_awaited()
+    bot.whitelist_service.get_cached_usernames = AsyncMock(side_effect=[[], ["Steve"]])
+    i = MagicMock(guild_id=1, client=bot)
+    out = await _whitelist_username_autocomplete(i, "")
+    bot.whitelist_service.sync_from_rcon.assert_awaited()
     assert len(out) == 1
     assert out[0].value == "Steve"
 
@@ -55,13 +48,9 @@ async def test_username_autocomplete_syncs_when_empty_cache():
 async def test_username_autocomplete_filters_current():
     bot = build_whitelist_bot()
     bot.db_pool, _ = mock_db_pool()
-    with patch(
-        "bot.commands.whitelist.get_cached_usernames",
-        new_callable=AsyncMock,
-        return_value=["Steve", "Alex"],
-    ):
-        i = MagicMock(guild_id=1, client=bot)
-        out = await _whitelist_username_autocomplete(i, "ale")
+    bot.whitelist_service.get_cached_usernames = AsyncMock(return_value=["Steve", "Alex"])
+    i = MagicMock(guild_id=1, client=bot)
+    out = await _whitelist_username_autocomplete(i, "ale")
     assert [c.value for c in out] == ["Alex"]
 
 
@@ -166,9 +155,8 @@ async def test_add_without_notify():
     bot.db_pool, _ = mock_db_pool()
     cog = WhitelistCommands(bot)
     with patch("bot.commands.whitelist.get_profile", AsyncMock(return_value=("u", "Steve"))):
-        with patch("bot.commands.whitelist.add_to_cache", new_callable=AsyncMock):
-            i = mock_interaction(user_id=2)
-            await invoke(cog, "whitelist_cmd", None, i, operation=_op("add"), username="Steve")
+        i = mock_interaction(user_id=2)
+        await invoke(cog, "whitelist_cmd", None, i, operation=_op("add"), username="Steve")
     bot.notifier.notify_whitelist.assert_not_awaited()
 
 
@@ -201,14 +189,10 @@ async def test_push_with_target_error_line():
         return_value=[TargetPushResult(target_id="t1", added=[], removed=[], error="boom")]
     )
     bot.db_pool, _ = mock_db_pool()
+    bot.whitelist_service.get_cached_usernames = AsyncMock(return_value=["A"])
     cog = WhitelistCommands(bot)
-    with patch(
-        "bot.commands.whitelist.get_cached_usernames",
-        new_callable=AsyncMock,
-        return_value=["A"],
-    ):
-        i = mock_interaction(user_id=2)
-        await invoke(cog, "whitelist_cmd", None, i, operation=_op("push"))
+    i = mock_interaction(user_id=2)
+    await invoke(cog, "whitelist_cmd", None, i, operation=_op("push"))
     assert_followup_contains(i, "error", case_sensitive=False)
 
 
@@ -220,14 +204,10 @@ async def test_push_notify_without_feature_flag():
         return_value=[TargetPushResult(target_id="t1", added=["a"], removed=[])]
     )
     bot.db_pool, _ = mock_db_pool()
+    bot.whitelist_service.get_cached_usernames = AsyncMock(return_value=["Steve"])
     cog = WhitelistCommands(bot)
-    with patch(
-        "bot.commands.whitelist.get_cached_usernames",
-        new_callable=AsyncMock,
-        return_value=["Steve"],
-    ):
-        i = mock_interaction(user_id=2)
-        await invoke(cog, "whitelist_cmd", None, i, operation=_op("push"))
+    i = mock_interaction(user_id=2)
+    await invoke(cog, "whitelist_cmd", None, i, operation=_op("push"))
     bot.notifier.notify_whitelist.assert_not_awaited()
 
 
@@ -241,13 +221,9 @@ async def test_repair_uuid_and_prune_summaries():
         "uuid_filled": ["a"],
         "pruned": ["gone"],
     }
-    with patch(
-        "bot.commands.whitelist.reconcile_whitelist_cache",
-        new_callable=AsyncMock,
-        return_value=summary,
-    ):
-        i = mock_interaction(user_id=2)
-        await invoke(cog, "whitelist_cmd", None, i, operation=_op("repair"))
+    bot.whitelist_service.reconcile_whitelist_cache = AsyncMock(return_value=summary)
+    i = mock_interaction(user_id=2)
+    await invoke(cog, "whitelist_cmd", None, i, operation=_op("repair"))
     assert_followup_contains(i, "UUID", case_sensitive=False)
     assert_followup_contains(i, "stale", case_sensitive=False)
 
@@ -258,13 +234,11 @@ async def test_repair_many_renames_truncates():
     bot.db_pool, _ = mock_db_pool()
     cog = WhitelistCommands(bot)
     many = [f"r{i}" for i in range(50)]
-    with patch(
-        "bot.commands.whitelist.reconcile_whitelist_cache",
-        new_callable=AsyncMock,
-        return_value={"updated": many, "uuid_filled": [], "pruned": []},
-    ):
-        i = mock_interaction(user_id=2)
-        await invoke(cog, "whitelist_cmd", None, i, operation=_op("repair"))
+    bot.whitelist_service.reconcile_whitelist_cache = AsyncMock(
+        return_value={"updated": many, "uuid_filled": [], "pruned": []}
+    )
+    i = mock_interaction(user_id=2)
+    await invoke(cog, "whitelist_cmd", None, i, operation=_op("repair"))
     assert_followup_contains(i, "…", case_sensitive=False)
 
 
@@ -274,13 +248,11 @@ async def test_repair_without_notify():
     bot.settings.feature_notify_moderation = False
     bot.db_pool, _ = mock_db_pool()
     cog = WhitelistCommands(bot)
-    with patch(
-        "bot.commands.whitelist.reconcile_whitelist_cache",
-        new_callable=AsyncMock,
-        return_value={"updated": [], "uuid_filled": [], "pruned": []},
-    ):
-        i = mock_interaction(user_id=2)
-        await invoke(cog, "whitelist_cmd", None, i, operation=_op("repair"))
+    bot.whitelist_service.reconcile_whitelist_cache = AsyncMock(
+        return_value={"updated": [], "uuid_filled": [], "pruned": []}
+    )
+    i = mock_interaction(user_id=2)
+    await invoke(cog, "whitelist_cmd", None, i, operation=_op("repair"))
     bot.notifier.notify_whitelist.assert_not_awaited()
 
 
@@ -288,19 +260,14 @@ async def test_repair_without_notify():
 async def test_remove_second_try_same_name_no_retry():
     bot = build_whitelist_bot()
     bot.db_pool, _ = mock_db_pool()
+    bot.whitelist_service.get_cache_entry = AsyncMock(
+        return_value={"minecraft_uuid": "u", "username": "Old"}
+    )
     cog = WhitelistCommands(bot)
-    with (
-        patch("bot.commands.whitelist.remove_from_cache", new_callable=AsyncMock),
-        patch(
-            "bot.commands.whitelist.get_cache_entry",
-            new_callable=AsyncMock,
-            return_value={"minecraft_uuid": "u", "username": "Old"},
-        ),
-        patch(
-            "bot.commands.whitelist.get_profile_by_uuid",
-            new_callable=AsyncMock,
-            return_value=("u", "old"),
-        ),
+    with patch(
+        "bot.commands.whitelist.get_profile_by_uuid",
+        new_callable=AsyncMock,
+        return_value=("u", "old"),
     ):
         bot.minecraft_rcon.whitelist_remove = AsyncMock(
             return_value="That player is not whitelisted"
@@ -316,9 +283,8 @@ async def test_remove_success_without_notify():
     bot.settings.feature_notify_moderation = False
     bot.db_pool, _ = mock_db_pool()
     cog = WhitelistCommands(bot)
-    with patch("bot.commands.whitelist.remove_from_cache", new_callable=AsyncMock):
-        i = mock_interaction(user_id=2)
-        await invoke(cog, "whitelist_cmd", None, i, operation=_op("remove"), username="Steve")
+    i = mock_interaction(user_id=2)
+    await invoke(cog, "whitelist_cmd", None, i, operation=_op("remove"), username="Steve")
     bot.notifier.notify_whitelist.assert_not_awaited()
 
 
@@ -457,19 +423,14 @@ async def test_toggle_skips_notify_when_feature_off():
 async def test_remove_retries_then_succeeds_on_second_name():
     bot = build_whitelist_bot()
     bot.db_pool, _ = mock_db_pool()
+    bot.whitelist_service.get_cache_entry = AsyncMock(
+        return_value={"minecraft_uuid": "u", "username": "Old"}
+    )
     cog = WhitelistCommands(bot)
-    with (
-        patch("bot.commands.whitelist.remove_from_cache", new_callable=AsyncMock),
-        patch(
-            "bot.commands.whitelist.get_cache_entry",
-            new_callable=AsyncMock,
-            return_value={"minecraft_uuid": "u", "username": "Old"},
-        ),
-        patch(
-            "bot.commands.whitelist.get_profile_by_uuid",
-            new_callable=AsyncMock,
-            return_value=("u", "NewName"),
-        ),
+    with patch(
+        "bot.commands.whitelist.get_profile_by_uuid",
+        new_callable=AsyncMock,
+        return_value=("u", "NewName"),
     ):
         bot.minecraft_rcon.whitelist_remove = AsyncMock(
             side_effect=[

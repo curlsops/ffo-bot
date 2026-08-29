@@ -9,14 +9,16 @@ from discord import app_commands
 from discord.ext import commands
 
 from bot.auth.command_helpers import require_admin, send_error
+from bot.services.giveaway_repository import GiveawayRepository, get_repository
 from bot.services.giveaway_service import (
     build_embed,
     build_reroll_announcement,
+    finalize_and_announce,
     select_winners,
 )
 from bot.utils.autocomplete import cached_autocomplete
 from bot.utils.log_context import log_command_start
-from bot.views.giveaway import GIVEAWAY_COLUMNS, GiveawayView
+from bot.views.giveaway import GiveawayView
 from config.constants import Constants
 
 logger = logging.getLogger(__name__)
@@ -72,17 +74,7 @@ async def _giveaway_duration_autocomplete(
 
 
 async def _fetch_giveaway_message_ids(pool, guild_id: int):
-    async with pool.acquire() as conn:
-        return await conn.fetch(
-            """
-            SELECT message_id, prize, ended_at
-            FROM giveaways
-            WHERE server_id = $1 AND message_id IS NOT NULL
-            ORDER BY ended_at DESC NULLS FIRST
-            LIMIT 25
-            """,
-            guild_id,
-        )
+    return await GiveawayRepository(pool).fetch_recent_for_autocomplete(guild_id)
 
 
 def _giveaway_message_ids_to_choices(
@@ -239,32 +231,27 @@ async def _giveaway_start(
             "image_url": image,
         }
 
-        async with cog.bot.db_pool.acquire() as conn:
-            await conn.execute(
-                """INSERT INTO giveaways (id, server_id, channel_id, host_id, donor_id,
-                   prize, winners_count, ends_at, required_roles, blacklist_roles,
-                   bypass_roles, bonus_roles, message_req, no_donor_win, no_defaults,
-                   ping, extra_text, image_url)
-                   VALUES ($1,$2,$3,$4,$5,$6,$7,$8,$9,$10,$11,$12,$13,$14,$15,$16,$17,$18)""",
-                giveaway_id,
-                interaction.guild_id,
-                interaction.channel_id,
-                interaction.user.id,
-                donor.id if donor else None,
-                prize,
-                winners,
-                ends_at,
-                cog._parse_roles(required_roles),
-                cog._parse_roles(blacklist_roles),
-                cog._parse_roles(bypass_roles),
-                cog._parse_bonus_roles(bonus_roles),
-                cog._parse_messages(messages),
-                nodonorwin,
-                nodefaults,
-                ping,
-                extra_text,
-                image,
-            )
+        giveaway_repo = get_repository(cog.bot)
+        await giveaway_repo.insert_giveaway(
+            id=giveaway_id,
+            server_id=interaction.guild_id,
+            channel_id=interaction.channel_id,
+            host_id=interaction.user.id,
+            donor_id=donor.id if donor else None,
+            prize=prize,
+            winners_count=winners,
+            ends_at=ends_at,
+            required_roles=cog._parse_roles(required_roles),
+            blacklist_roles=cog._parse_roles(blacklist_roles),
+            bypass_roles=cog._parse_roles(bypass_roles),
+            bonus_roles=cog._parse_bonus_roles(bonus_roles),
+            message_req=cog._parse_messages(messages),
+            no_donor_win=nodonorwin,
+            no_defaults=nodefaults,
+            ping=ping,
+            extra_text=extra_text,
+            image_url=image,
+        )
 
         view = GiveawayView(giveaway_id, cog.bot, entry_count=0)
         msg = await interaction.followup.send(
@@ -273,10 +260,7 @@ async def _giveaway_start(
             view=view,
         )
 
-        async with cog.bot.db_pool.acquire() as conn:
-            await conn.execute(
-                "UPDATE giveaways SET message_id = $1 WHERE id = $2", msg.id, giveaway_id
-            )
+        await giveaway_repo.set_message_id(giveaway_id, msg.id)
 
         if cog.bot.cache:
             cog.bot.cache.delete(CACHE_GIVEAWAY_MESSAGE_ID.format(server_id=interaction.guild_id))
@@ -324,11 +308,8 @@ async def _giveaway_reroll(
             )
             return
 
-        async with cog.bot.db_pool.acquire() as conn:
-            giveaway = await conn.fetchrow(
-                "SELECT " + GIVEAWAY_COLUMNS + " FROM giveaways WHERE message_id = $1",
-                msg_id,
-            )
+        giveaway_repo = get_repository(cog.bot)
+        giveaway = await giveaway_repo.fetch_by_message_id(msg_id)
         if not giveaway:
             await send_error(interaction, "Giveaway not found.")
             return
@@ -339,21 +320,13 @@ async def _giveaway_reroll(
             )
             return
 
-        async with cog.bot.db_pool.acquire() as conn:
-            entries = await conn.fetch(
-                "SELECT user_id, entries FROM giveaway_entries WHERE giveaway_id = $1",
-                giveaway["id"],
-            )
-            old_winners = await conn.fetch(
-                "SELECT user_id FROM giveaway_entries WHERE giveaway_id = $1 AND is_winner = true",
-                giveaway["id"],
-            )
+        entries = await giveaway_repo.fetch_entries(giveaway["id"])
+        old_winner_ids = await giveaway_repo.fetch_winner_ids(giveaway["id"])
 
         if not entries:
             await send_error(interaction, "No entries to reroll from.")
             return
 
-        old_winner_ids = {r["user_id"] for r in old_winners}
         default_reroll_count = len(old_winner_ids) or giveaway["winners_count"]
         reroll_count = default_reroll_count if count is None else count
         if reroll_count < 1:
@@ -377,39 +350,18 @@ async def _giveaway_reroll(
                 "All entrants were winners. No one left to reroll.",
             )
             return
-        new_winners = cog._select_winners(non_winners, reroll_count)
+        new_winners = select_winners(non_winners, reroll_count)
         final_winners = (old_winner_ids - winners_to_remove) | set(new_winners)
 
-        async with cog.bot.db_pool.acquire() as conn:
-            await conn.execute(
-                "UPDATE giveaway_entries SET is_winner = false WHERE giveaway_id = $1",
-                giveaway["id"],
-            )
-            if final_winners:
-                await conn.executemany(
-                    "UPDATE giveaway_entries SET is_winner = true WHERE giveaway_id = $1 AND user_id = $2",
-                    [(giveaway["id"], w) for w in final_winners],
-                )
+        await giveaway_repo.set_winners(giveaway["id"], final_winners)
 
-        channel = cog.bot.get_channel(giveaway["channel_id"])
-        if channel:
-            try:
-                msg = await channel.fetch_message(giveaway["message_id"])
-                embed = build_embed(dict(giveaway), len(entries), ended=True)
-                if new_winners:
-                    embed.add_field(
-                        name="Winners (Rerolled)",
-                        value="\n".join(f"<@{w}>" for w in new_winners),
-                        inline=False,
-                    )
-                await msg.edit(embed=embed)
-            except discord.NotFound:  # message already deleted
-                pass
-
-            if new_winners:
-                await channel.send(build_reroll_announcement(giveaway["prize"], new_winners))
-            else:
-                await channel.send(build_reroll_announcement(giveaway["prize"], new_winners))
+        await finalize_and_announce(
+            cog.bot,
+            giveaway,
+            list(final_winners),
+            len(entries),
+            build_reroll_announcement(giveaway["prize"], new_winners),
+        )
 
         await interaction.followup.send(
             f"Rerolled! New winner(s): {', '.join(f'<@{w}>' for w in new_winners) if new_winners else 'None'}",
@@ -433,9 +385,6 @@ class GiveawayCommands(commands.Cog):
         if s.isdigit():
             return int(s)
         return None
-
-    def _select_winners(self, entries: list, count: int) -> list:
-        return select_winners(entries, count)
 
     def _parse_roles(self, roles_str: str | None) -> list:
         if not roles_str:

@@ -28,14 +28,14 @@ from bot.services import spotapi_subprocess, spotify, tls_client_alpine
 from bot.services.minecraft_rcon import MinecraftRCONClient, parse_whitelist_list_response
 from bot.services.mojang import username_exists
 from bot.services.tidal import (
-    tidal_album_to_search_queries,
-    tidal_mix_to_search_queries,
-    tidal_playlist_to_search_queries,
+    tidal_album_catalog_start,
+    tidal_mix_catalog_start,
+    tidal_playlist_catalog_start,
     tidal_url_to_search_query,
 )
+from bot.services.whitelist import WhitelistService
 from bot.tasks.giveaway_manager import GiveawayManager
 from bot.tasks.status_rotator import StatusRotator
-from bot.utils.collector import wait_for_message, wait_for_reaction
 from bot.utils.cooldown import CommandCooldown, with_cooldown
 from bot.utils.db import TRANSIENT_DB_ERRORS, cached_or_fallback
 from bot.utils.discord_helpers import get_or_fetch_channel
@@ -47,13 +47,6 @@ from bot.utils.notifier import AdminNotifier
 from bot.utils.rate_limiter import RateLimiter
 from bot.utils.regex_validator import RegexValidator
 from bot.utils.validation import InputValidator
-from bot.utils.whitelist_cache import (
-    add_to_cache,
-    get_cached_usernames,
-    reconcile_whitelist_cache,
-    remove_from_cache,
-    sync_from_rcon,
-)
 from config.settings import Settings
 from database.connection import DatabasePool
 
