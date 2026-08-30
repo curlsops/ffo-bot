@@ -40,7 +40,7 @@ redis==8.1.0
 websockets==16.1.1
 
 # Transitive pins
-authlib==1.7.2
+authlib==1.8.0
 cryptography==49.0.0
 filelock==3.32.4
 marshmallow==4.3.1
