@@ -6,6 +6,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from bot.auth.command_helpers import execute_command
+from bot.utils.telemetry import trace_span
 from bot.utils.user_preferences import invalidate_opt_out_cache
 
 if TYPE_CHECKING:
@@ -67,9 +68,16 @@ class PrivacyCommands(commands.Cog):
 
     async def _set_opt_out(self, guild_id: int, user_id: int) -> None:
         assert self.bot.db_pool is not None
-        async with self.bot.db_pool.acquire() as conn:
-            await conn.execute(_PRIVACY_OPT_OUT_SQL, guild_id, user_id)
-            await conn.execute(_DELETE_USER_MESSAGE_HISTORY_SQL, guild_id, user_id)
+        with trace_span(
+            "privacy.opt_out",
+            attributes={
+                "guild_id": str(guild_id),
+                "privacy.user_id": user_id,
+            },
+        ):
+            async with self.bot.db_pool.acquire() as conn:
+                await conn.execute(_PRIVACY_OPT_OUT_SQL, guild_id, user_id)
+                await conn.execute(_DELETE_USER_MESSAGE_HISTORY_SQL, guild_id, user_id)
 
     async def _set_opt_in(self, guild_id: int, user_id: int) -> None:
         assert self.bot.db_pool is not None

@@ -6,6 +6,7 @@ from typing import TYPE_CHECKING, Any, cast
 import discord
 
 from bot.auth.permissions import PermissionContext
+from bot.utils.telemetry import command_feature_name, trace_span
 from config.constants import Role
 
 if TYPE_CHECKING:
@@ -85,8 +86,20 @@ def execute_command(
             interaction = _get_interaction(args, kwargs)
             await interaction.response.defer(ephemeral=defer_ephemeral)
 
-            if permission_check and not await permission_check(*args, **kwargs):
-                return
+            if permission_check:
+                command_obj = getattr(interaction, "command", None)
+                qualified_name = (
+                    command_obj.qualified_name if command_obj is not None else func.__name__
+                )
+                with trace_span(
+                    "command.permission_check",
+                    attributes={
+                        "command.name": qualified_name,
+                        "ffo.feature": command_feature_name(qualified_name),
+                    },
+                ):
+                    if not await permission_check(*args, **kwargs):
+                        return
 
             try:
                 await func(*args, **kwargs)
@@ -94,6 +107,9 @@ def execute_command(
                 if logger:
                     prefix = log_prefix or f"{func.__name__} error"
                     logger.error("%s: %s", prefix, e, exc_info=True)
+                bot = getattr(interaction, "client", None)
+                if bot and hasattr(bot, "metrics") and bot.metrics:
+                    bot.metrics.errors_total.labels(error_type="command_exception").inc()
                 if use_send_error:
                     await send_error(interaction, error_message)
                 else:

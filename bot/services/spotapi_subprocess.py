@@ -8,7 +8,7 @@ from pathlib import Path
 
 from bot.services.spotapi_sync import SPOTAPI_OPERATIONS
 from bot.services.tls_client_alpine import spotapi_native_supported
-from bot.utils.telemetry import logging_extra
+from bot.utils.telemetry import logging_extra, trace_span
 
 logger = logging.getLogger(__name__)
 
@@ -29,6 +29,13 @@ def _signal_name(signum: int) -> str:
         return signal.Signals(signum).name
     except (ValueError, AttributeError):
         return str(signum)
+
+
+def _get_worker_failure_reason(returncode: int | None, stderr: bytes) -> str:
+    if returncode is not None and returncode < 0:
+        sig = -returncode
+        return "sigsegv" if sig == signal.SIGSEGV else "signal"
+    return "exit_error"
 
 
 def _log_worker_failure(
@@ -81,58 +88,69 @@ async def run_spotapi_subprocess(
     *,
     timeout_sec: float,
 ) -> list[str] | str | None:
-    if operation not in SPOTAPI_OPERATIONS:
-        raise ValueError(f"unknown SpotAPI operation: {operation}")
-    if not spotapi_native_supported():
-        logger.warning(
-            "SpotAPI unavailable on musl (tls_client native library); operation=%s",
-            operation,
-            extra=logging_extra(feature="spotify", spotapi_failure="musl_unsupported"),
-        )
-        return None
-    request = json.dumps({"operation": operation, "id": entity_id}).encode()
-    try:
-        proc = await asyncio.create_subprocess_exec(
-            sys.executable,
-            "-m",
-            WORKER_MODULE,
-            stdin=asyncio.subprocess.PIPE,
-            stdout=asyncio.subprocess.PIPE,
-            stderr=asyncio.subprocess.PIPE,
-            cwd=str(_APP_ROOT),
-            env=_subprocess_env(),
-        )
-    except FileNotFoundError:
-        logger.warning(
-            "SpotAPI worker executable not found: %s operation=%s",
-            sys.executable,
-            operation,
-            extra=logging_extra(feature="spotify", spotapi_failure="enoent"),
-        )
-        return None
-    try:
-        stdout, stderr = await asyncio.wait_for(proc.communicate(request), timeout=timeout_sec)
-    except asyncio.TimeoutError:
-        proc.kill()
-        await proc.wait()
-        logger.warning(
-            "SpotAPI worker timed out operation=%s",
-            operation,
-            extra=logging_extra(feature="spotify", spotapi_failure="timeout"),
-        )
-        return None
-
-    if proc.returncode == 0:
-        try:
-            return decode_worker_response(stdout)
-        except (json.JSONDecodeError, UnicodeDecodeError) as e:
+    with trace_span(
+        "spotify.spotapi_subprocess",
+        feature="spotify",
+        attributes={"spotify.operation": operation, "spotify.entity_id": entity_id},
+    ) as span:
+        if operation not in SPOTAPI_OPERATIONS:
+            raise ValueError(f"unknown SpotAPI operation: {operation}")
+        if not spotapi_native_supported():
             logger.warning(
-                "SpotAPI worker returned invalid JSON operation=%s: %s",
+                "SpotAPI unavailable on musl (tls_client native library); operation=%s",
                 operation,
-                e,
-                extra=logging_extra(feature="spotify", spotapi_failure="bad_json"),
+                extra=logging_extra(feature="spotify", spotapi_failure="musl_unsupported"),
             )
+            span.set_attribute("spotify.failure_reason", "musl_unsupported")
+            return None
+        request = json.dumps({"operation": operation, "id": entity_id}).encode()
+        try:
+            proc = await asyncio.create_subprocess_exec(
+                sys.executable,
+                "-m",
+                WORKER_MODULE,
+                stdin=asyncio.subprocess.PIPE,
+                stdout=asyncio.subprocess.PIPE,
+                stderr=asyncio.subprocess.PIPE,
+                cwd=str(_APP_ROOT),
+                env=_subprocess_env(),
+            )
+        except FileNotFoundError:
+            logger.warning(
+                "SpotAPI worker executable not found: %s operation=%s",
+                sys.executable,
+                operation,
+                extra=logging_extra(feature="spotify", spotapi_failure="enoent"),
+            )
+            span.set_attribute("spotify.failure_reason", "enoent")
+            return None
+        try:
+            stdout, stderr = await asyncio.wait_for(proc.communicate(request), timeout=timeout_sec)
+        except asyncio.TimeoutError:
+            proc.kill()
+            await proc.wait()
+            logger.warning(
+                "SpotAPI worker timed out operation=%s",
+                operation,
+                extra=logging_extra(feature="spotify", spotapi_failure="timeout"),
+            )
+            span.set_attribute("spotify.failure_reason", "timeout")
             return None
 
-    _log_worker_failure(operation, proc.returncode, stderr)
-    return None
+        if proc.returncode == 0:
+            try:
+                return decode_worker_response(stdout)
+            except (json.JSONDecodeError, UnicodeDecodeError) as e:
+                logger.warning(
+                    "SpotAPI worker returned invalid JSON operation=%s: %s",
+                    operation,
+                    e,
+                    extra=logging_extra(feature="spotify", spotapi_failure="bad_json"),
+                )
+                span.set_attribute("spotify.failure_reason", "bad_json")
+                return None
+
+        failure_reason = _get_worker_failure_reason(proc.returncode, stderr)
+        span.set_attribute("spotify.failure_reason", failure_reason)
+        _log_worker_failure(operation, proc.returncode, stderr)
+        return None

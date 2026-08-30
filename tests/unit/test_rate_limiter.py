@@ -216,3 +216,42 @@ def test_can_prune_bucket_with_non_refilling_rate(tokens, capacity, refill_rate,
         now=now,
     )
     assert can_prune is expected
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_records_user_deny_metric():
+    from unittest.mock import MagicMock
+
+    metrics = MagicMock()
+    metrics.rate_limit_decisions_total.labels.return_value.inc = MagicMock()
+    limiter = make_limiter(user_capacity=1, metrics=metrics)
+    await limiter.check_rate_limit(1, 1)
+    allowed, _ = await limiter.check_rate_limit(1, 1)
+    assert allowed is False
+    metrics.rate_limit_decisions_total.labels.assert_any_call(scope="user", result="deny")
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_records_server_deny_metric():
+    from unittest.mock import MagicMock
+
+    metrics = MagicMock()
+    metrics.rate_limit_decisions_total.labels.return_value.inc = MagicMock()
+    limiter = make_limiter(user_capacity=100, server_capacity=1, metrics=metrics)
+    await limiter.check_rate_limit(1, 1)
+    allowed, _ = await limiter.check_rate_limit(2, 1)
+    assert allowed is False
+    metrics.rate_limit_decisions_total.labels.assert_any_call(scope="server", result="deny")
+
+
+@pytest.mark.asyncio
+async def test_rate_limit_records_allow_metrics():
+    from unittest.mock import MagicMock
+
+    metrics = MagicMock()
+    metrics.rate_limit_decisions_total.labels.return_value.inc = MagicMock()
+    limiter = make_limiter(user_capacity=10, server_capacity=100, metrics=metrics)
+    allowed, _ = await limiter.check_rate_limit(1, 1)
+    assert allowed is True
+    metrics.rate_limit_decisions_total.labels.assert_any_call(scope="user", result="allow")
+    metrics.rate_limit_decisions_total.labels.assert_any_call(scope="server", result="allow")

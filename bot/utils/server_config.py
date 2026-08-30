@@ -2,6 +2,7 @@ import logging
 from typing import TYPE_CHECKING, cast
 
 from bot.utils.config_repair import repair_servers_config
+from bot.utils.telemetry import trace_span
 from config.constants import Constants
 
 if TYPE_CHECKING:
@@ -24,13 +25,23 @@ async def get_servers_config(db_pool, server_id: int, cache: "InMemoryCache | No
         if cached is not None:
             return cast(dict, cached)
     try:
-        async with db_pool.acquire() as conn:
-            row = await conn.fetchrow("SELECT config FROM servers WHERE server_id = $1", server_id)
-        cfg = repair_servers_config(row["config"]) if row and row["config"] is not None else None
-        result = cfg if isinstance(cfg, dict) else {}
-        if cache:
-            cache.set(cache_key, result, ttl=Constants.CACHE_TTL)
-        return result
+        with trace_span(
+            "config.get_servers_config",
+            attributes={
+                "discord.guild_id": str(server_id),
+            },
+        ):
+            async with db_pool.acquire() as conn:
+                row = await conn.fetchrow(
+                    "SELECT config FROM servers WHERE server_id = $1", server_id
+                )
+            cfg = (
+                repair_servers_config(row["config"]) if row and row["config"] is not None else None
+            )
+            result = cfg if isinstance(cfg, dict) else {}
+            if cache:
+                cache.set(cache_key, result, ttl=Constants.CACHE_TTL)
+            return result
     except Exception as e:
         logger.warning("Failed to get servers config: %s", e)
         return {}

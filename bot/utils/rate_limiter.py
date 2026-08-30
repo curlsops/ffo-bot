@@ -2,6 +2,10 @@ import asyncio
 import logging
 from collections import defaultdict
 from datetime import UTC, datetime, timedelta
+from typing import TYPE_CHECKING
+
+if TYPE_CHECKING:
+    from bot.utils.metrics import BotMetrics
 
 logger = logging.getLogger(__name__)
 
@@ -13,6 +17,7 @@ class RateLimiter:
         user_refill_rate: float = 10 / 60,
         server_capacity: int = 100,
         server_refill_rate: float = 100 / 60,
+        metrics: "BotMetrics | None" = None,
     ):
         self._user_buckets: dict[int, tuple[float, datetime]] = defaultdict(
             lambda: (user_capacity, datetime.now(UTC))
@@ -30,6 +35,7 @@ class RateLimiter:
         self._idle_prune_after_seconds = 300.0
         self._prune_interval_seconds = 60.0
         self._next_prune_at = datetime.now(UTC) + timedelta(seconds=self._prune_interval_seconds)
+        self.metrics = metrics
 
     async def check_rate_limit(self, user_id: int, server_id: int) -> tuple[bool, str]:
         async with self._lock:
@@ -38,15 +44,26 @@ class RateLimiter:
             if not self._check_bucket(
                 self._user_buckets, user_id, self.user_capacity, self.user_refill_rate, now
             ):
+                if self.metrics:
+                    self.metrics.rate_limit_decisions_total.labels(
+                        scope="user", result="deny"
+                    ).inc()
                 return False, "You're sending commands too quickly. Please slow down."
 
             if not self._check_bucket(
                 self._server_buckets, server_id, self.server_capacity, self.server_refill_rate, now
             ):
+                if self.metrics:
+                    self.metrics.rate_limit_decisions_total.labels(
+                        scope="server", result="deny"
+                    ).inc()
                 return False, "Server rate limit exceeded. Please try again later."
 
             self._consume_token(self._user_buckets, user_id)
             self._consume_token(self._server_buckets, server_id)
+            if self.metrics:
+                self.metrics.rate_limit_decisions_total.labels(scope="user", result="allow").inc()
+                self.metrics.rate_limit_decisions_total.labels(scope="server", result="allow").inc()
             return True, ""
 
     def _check_bucket(

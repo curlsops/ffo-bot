@@ -137,10 +137,7 @@ async def test_add_metrics_increment():
     cog.bot.db_pool = MagicMock()
     cog.bot.db_pool.acquire.return_value = mock_db_ctx(conn)
     cog.bot.phrase_matcher.validate_pattern = AsyncMock()
-    labels = MagicMock()
-    labels.inc = MagicMock()
     cog.bot.metrics = MagicMock()
-    cog.bot.metrics.commands_executed.labels.return_value = labels
     i = MagicMock(guild_id=1, user=MagicMock(id=9))
     i.followup.send = AsyncMock()
     with patch("bot.commands.reactbot.InputValidator.validate_phrase_pattern", return_value="x"):
@@ -149,7 +146,8 @@ async def test_add_metrics_increment():
                 cog, "_validate_emoji_accessible", AsyncMock(return_value=(True, ""))
             ):
                 await _add_reactbot_phrase(cog, i, r"a", "👍")
-    labels.inc.assert_called()
+    # Metrics are now counted globally via MetricsCommandTree._call, not via manual increment
+    i.followup.send.assert_called()
 
 
 @pytest.mark.asyncio

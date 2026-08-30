@@ -163,3 +163,14 @@ async def test_get_server_role_ids_db_error_returns_empty():
     conn.fetchrow = AsyncMock(side_effect=Exception("DB down"))
     result = await get_server_role_ids(pool, 123)
     assert result == {}
+
+
+@pytest.mark.asyncio
+async def test_set_server_role_db_error_with_metrics():
+    pool, conn = _make_pool()
+    conn.execute = AsyncMock(side_effect=Exception("DB down"))
+    metrics = MagicMock()
+    metrics.errors_total.labels.return_value.inc = MagicMock()
+    result = await set_server_role(pool, 123, Role.ADMIN, 999, metrics=metrics)
+    assert result is False
+    metrics.errors_total.labels.assert_called_with(error_type="server_role_update")

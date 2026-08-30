@@ -7,6 +7,8 @@ from time import monotonic
 import discord
 from discord.ext import commands
 
+from bot.utils.telemetry import trace_span
+
 logger = logging.getLogger(__name__)
 
 
@@ -50,7 +52,17 @@ class ModerationHandler(commands.Cog):
                 if cached is not None and cached[0] > now:
                     return cached[1]
             try:
-                entries = [entry async for entry in guild.audit_logs(limit=limit, action=action)]
+                with trace_span(
+                    "moderation.audit_log_lookup",
+                    attributes={
+                        "discord.guild_id": str(guild.id),
+                        "moderation.action": str(action),
+                        "moderation.cache_scope": cache_scope,
+                    },
+                ):
+                    entries = [
+                        entry async for entry in guild.audit_logs(limit=limit, action=action)
+                    ]
             except discord.Forbidden:  # no audit log permission
                 entries = []
             self._audit_logs_cache[key] = (now + self._audit_logs_ttl_seconds, entries)

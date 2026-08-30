@@ -107,3 +107,13 @@ def test_regex_validator_constants():
 
 def test_regex_validation_error_preserves_message():
     assert str(RegexValidationError("custom message")) == "custom message"
+
+
+@pytest.mark.asyncio
+async def test_validate_rejects_long_pattern_with_metrics():
+    metrics = MagicMock()
+    metrics.errors_total.labels.return_value.inc = MagicMock()
+    validator = RegexValidator(metrics=metrics)
+    with pytest.raises(RegexValidationError):
+        await validator.validate("a" * 501)
+    metrics.errors_total.labels.assert_called_with(error_type="regex_rejected")

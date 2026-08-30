@@ -303,3 +303,45 @@ class TestCacheConstants:
 
     def test_evict_target_ratio_range(self):
         assert 0 < EVICT_TARGET_RATIO <= 1
+
+
+class TestCacheMetrics:
+    def test_cache_miss_on_nonexistent_key_increments_metrics(self):
+        from unittest.mock import MagicMock
+
+        metrics = MagicMock()
+        metrics.cache_misses = MagicMock()
+        cache = InMemoryCache(max_size=10, metrics=metrics)
+        cache.get("nonexistent")
+        metrics.cache_misses.inc.assert_called_once()
+
+    def test_cache_miss_on_expired_entry_increments_metrics(self):
+        from unittest.mock import MagicMock
+
+        metrics = MagicMock()
+        metrics.cache_misses = MagicMock()
+        cache = InMemoryCache(max_size=10, metrics=metrics)
+        cache.set("key", "value", ttl=0)
+        cache.get("key")
+        metrics.cache_misses.inc.assert_called_once()
+
+    def test_cache_hit_increments_metrics(self):
+        from unittest.mock import MagicMock
+
+        metrics = MagicMock()
+        metrics.cache_hits = MagicMock()
+        cache = InMemoryCache(max_size=10, metrics=metrics)
+        cache.set("key", "value")
+        cache.get("key")
+        metrics.cache_hits.inc.assert_called_once()
+
+    def test_cache_eviction_increments_metrics(self):
+        from unittest.mock import MagicMock
+
+        metrics = MagicMock()
+        metrics.cache_evictions_total = MagicMock()
+        cache = InMemoryCache(max_size=2, metrics=metrics)
+        cache.set("a", 1)
+        cache.set("b", 2)
+        cache.set("c", 3)
+        metrics.cache_evictions_total.inc.assert_called_once()

@@ -155,19 +155,31 @@ async def spotify_url_to_search_query(url: str) -> str | None:
     if not track_match:
         return None
     track_id = track_match.group(1)
-    try:
-        result = await _run_spotapi_operation("track", track_id)
-        query = result if isinstance(result, str) else None
-    except Exception as e:
-        logger.debug("SpotAPI track fetch failed for %s: %s", url, e)
-        query = None
-    if query:
-        return query
-    data = await _fetch_spotify_oembed_json(url)
-    if data is None:
+    with trace_span(
+        "spotify.resolve_track_query",
+        feature="spotify",
+        attributes={"spotify.track_id": track_id},
+    ) as span:
+        try:
+            result = await _run_spotapi_operation("track", track_id)
+            query = result if isinstance(result, str) else None
+        except Exception as e:
+            logger.debug("SpotAPI track fetch failed for %s: %s", url, e)
+            query = None
+        if query:
+            span.set_attribute("spotify.source", "spotapi")
+            return query
+        data = await _fetch_spotify_oembed_json(url)
+        if data is None:
+            span.set_attribute("spotify.source", "none")
+            return None
+        title = data.get("title")
+        if not title or not isinstance(title, str):
+            span.set_attribute("spotify.source", "none")
+            return None
+        title = title.strip()[:QUERY_MAX_LEN]
+        if title:
+            span.set_attribute("spotify.source", "oembed")
+            return title
+        span.set_attribute("spotify.source", "none")
         return None
-    title = data.get("title")
-    if not title or not isinstance(title, str):
-        return None
-    title = title.strip()[:QUERY_MAX_LEN]
-    return title or None

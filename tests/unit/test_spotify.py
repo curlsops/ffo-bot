@@ -635,6 +635,20 @@ class TestSpotifyUrlToSearchQuery:
                 assert await spotify_url_to_search_query(SPOTIFY_TRACK_URL) is None
 
     @pytest.mark.asyncio
+    async def test_oembed_whitespace_only_title_returns_none(self):
+        resp = MagicMock(status=200, json=AsyncMock(return_value={"title": "   "}))
+        session = MagicMock()
+        session.get = MagicMock(
+            return_value=MagicMock(
+                __aenter__=AsyncMock(return_value=resp),
+                __aexit__=AsyncMock(return_value=None),
+            )
+        )
+        with patch.object(spotify_module, "_run_spotapi_operation", AsyncMock(return_value=None)):
+            with _patch_client_session(session):
+                assert await spotify_url_to_search_query(SPOTIFY_TRACK_URL) is None
+
+    @pytest.mark.asyncio
     async def test_oembed_fallback_when_spotapi_fails(self):
         resp = MagicMock(status=200, json=AsyncMock(return_value={"title": SPOTIFY_TRACK_TITLE}))
         session = MagicMock()

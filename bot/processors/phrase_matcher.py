@@ -2,10 +2,15 @@ import asyncio
 import logging
 import re
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from bot.utils.db import TRANSIENT_DB_ERRORS
 from bot.utils.regex_validator import RegexValidationError, RegexValidator
+from bot.utils.telemetry import trace_span
 from config.constants import Constants
+
+if TYPE_CHECKING:
+    from bot.utils.metrics import BotMetrics
 
 logger = logging.getLogger(__name__)
 
@@ -21,10 +26,11 @@ class PhrasePattern:
 class PhraseMatcher:
     REGEX_TIMEOUT_SECONDS = 0.5
 
-    def __init__(self, db_pool, cache):
+    def __init__(self, db_pool, cache, metrics: "BotMetrics | None" = None):
         self.db_pool = db_pool
         self.cache = cache
-        self.validator = RegexValidator()
+        self.metrics = metrics
+        self.validator = RegexValidator(metrics=metrics)
         self._patterns_by_server: dict[int, list[PhrasePattern]] = {}
 
     async def load_patterns(self, server_id: int):
@@ -34,33 +40,41 @@ class PhraseMatcher:
             self._patterns_by_server[server_id] = cached
             return
 
-        try:
-            async with self.db_pool.acquire() as conn:
-                rows = await conn.fetch(
-                    "SELECT id, phrase, emoji FROM phrase_reactions WHERE server_id = $1 AND is_active = true",
-                    server_id,
-                )
-        except TRANSIENT_DB_ERRORS as e:
-            logger.warning("Phrase patterns load skipped (DB unavailable): %s", e)
-            existing = self._patterns_by_server.get(server_id)
-            if existing is not None:
-                return
-            self._patterns_by_server[server_id] = []
-            return
-
-        patterns = []
-        for row in rows:
+        with trace_span(
+            "phrase_matcher.load_patterns",
+            attributes={
+                "discord.guild_id": str(server_id),
+            },
+        ) as span:
             try:
-                patterns.append(
-                    PhrasePattern(
-                        phrase_id=str(row["id"]),
-                        pattern=re.compile(row["phrase"], re.IGNORECASE),
-                        emoji=row["emoji"],
-                        server_id=server_id,
+                async with self.db_pool.acquire() as conn:
+                    rows = await conn.fetch(
+                        "SELECT id, phrase, emoji FROM phrase_reactions WHERE server_id = $1 AND is_active = true",
+                        server_id,
                     )
-                )
-            except re.error as e:
-                logger.error("Invalid regex %s: %s", row["phrase"], e)
+            except TRANSIENT_DB_ERRORS as e:
+                logger.warning("Phrase patterns load skipped (DB unavailable): %s", e)
+                existing = self._patterns_by_server.get(server_id)
+                if existing is not None:
+                    return
+                self._patterns_by_server[server_id] = []
+                return
+
+            patterns = []
+            for row in rows:
+                try:
+                    patterns.append(
+                        PhrasePattern(
+                            phrase_id=str(row["id"]),
+                            pattern=re.compile(row["phrase"], re.IGNORECASE),
+                            emoji=row["emoji"],
+                            server_id=server_id,
+                        )
+                    )
+                except re.error as e:
+                    logger.error("Invalid regex %s: %s", row["phrase"], e)
+
+            span.set_attribute("phrase_matcher.pattern_count", len(patterns))
 
         self._patterns_by_server[server_id] = patterns
         self.cache.set(cache_key, patterns, ttl=Constants.PHRASE_PATTERN_CACHE_TTL)
@@ -75,16 +89,24 @@ class PhraseMatcher:
 
         normalized = self._normalize_message(message_content)
         matches = []
-        for p in patterns:
-            try:
-                if await asyncio.wait_for(
-                    self._match_with_timeout(p.pattern, normalized),
-                    timeout=self.REGEX_TIMEOUT_SECONDS,
-                ):
-                    matches.append((p.phrase_id, p.emoji))
-            except asyncio.TimeoutError:
-                logger.warning("Regex timeout for %s", p.phrase_id)
-                await self._disable_pattern(p.phrase_id)
+        with trace_span(
+            "phrase_matcher.match_phrases",
+            attributes={
+                "discord.guild_id": str(server_id),
+                "phrase_matcher.pattern_count": len(patterns),
+            },
+        ):
+            for p in patterns:
+                try:
+                    if await asyncio.wait_for(
+                        self._match_with_timeout(p.pattern, normalized),
+                        timeout=self.REGEX_TIMEOUT_SECONDS,
+                    ):
+                        matches.append((p.phrase_id, p.emoji))
+                except asyncio.TimeoutError:
+                    logger.warning("Regex timeout for %s", p.phrase_id)
+                    await self._disable_pattern(p.phrase_id)
+
         return matches
 
     async def _match_with_timeout(self, pattern: re.Pattern, text: str) -> re.Match | None:
@@ -101,6 +123,8 @@ class PhraseMatcher:
             raise RegexValidationError(f"Invalid regex: {e}")
 
     async def _disable_pattern(self, phrase_id: str):
+        if self.metrics:
+            self.metrics.errors_total.labels(error_type="phrase_regex_timeout").inc()
         try:
             async with self.db_pool.acquire() as conn:
                 await conn.execute(

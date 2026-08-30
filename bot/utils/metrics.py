@@ -34,7 +34,18 @@ class BotMetrics:
         self.cache_size = Gauge("bot_cache_size", "Current cache size")
         self.cache_hits = Counter("bot_cache_hits_total", "Cache hits")
         self.cache_misses = Counter("bot_cache_misses_total", "Cache misses")
+        self.cache_evictions_total = Counter("bot_cache_evictions_total", "Total cache evictions")
         self.errors_total = Counter("bot_errors_total", "Total errors", ["error_type"])
+        self.rate_limit_decisions_total = Counter(
+            "bot_rate_limit_decisions_total",
+            "Rate limit decisions",
+            ["scope", "result"],
+        )
+        self.whitelist_events_total = Counter(
+            "bot_whitelist_events_total",
+            "Whitelist events (submissions, approvals, rejections)",
+            ["event", "outcome"],
+        )
 
     def set_connection_status(self, status: int):
         self.active_connections.set(status)

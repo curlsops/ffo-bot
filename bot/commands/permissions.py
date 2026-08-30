@@ -4,9 +4,10 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from bot.auth.command_helpers import require_guild, require_super_admin, send_error
+from bot.auth.command_helpers import execute_command, require_guild, require_super_admin, send_error
 from bot.utils.pagination import truncate_for_discord
 from bot.utils.server_roles import get_server_role_ids, set_server_role
+from bot.utils.telemetry import trace_span
 from config.constants import Role
 
 logger = logging.getLogger(__name__)
@@ -196,6 +197,39 @@ class PermissionsListView(discord.ui.View):
         await interaction.response.edit_message(content=self._format_page(), view=self)
 
 
+async def _super_admin_guild_check(interaction: discord.Interaction, cmd: str, bot) -> bool:
+    if not await require_super_admin(interaction, cmd, bot):
+        return False
+    return await require_guild(interaction)
+
+
+async def _permissions_list_check(
+    self: "PermissionsGroup", interaction: discord.Interaction
+) -> bool:
+    return await _super_admin_guild_check(interaction, "permissions list", self.cog.bot)
+
+
+async def _permissions_add_check(
+    self: "PermissionsGroup", interaction: discord.Interaction, user: str, role: str
+) -> bool:
+    return await _super_admin_guild_check(interaction, "permissions add", self.cog.bot)
+
+
+async def _permissions_remove_check(
+    self: "PermissionsGroup", interaction: discord.Interaction, user: str, role: str
+) -> bool:
+    return await _super_admin_guild_check(interaction, "permissions remove", self.cog.bot)
+
+
+async def _permissions_set_check(
+    self: "PermissionsGroup",
+    interaction: discord.Interaction,
+    level: str,
+    discord_role: discord.Role | None = None,
+) -> bool:
+    return await _super_admin_guild_check(interaction, "permissions set", self.cog.bot)
+
+
 @app_commands.guild_only()
 @app_commands.default_permissions(administrator=True)
 class PermissionsGroup(app_commands.Group):
@@ -204,28 +238,23 @@ class PermissionsGroup(app_commands.Group):
         self.cog = cog
 
     @app_commands.command(name="list", description="List user permissions and role config")
+    @execute_command(
+        permission_check=_permissions_list_check,
+        error_message="Error fetching permissions.",
+        logger=logger,
+        log_prefix="permissions list error",
+    )
     async def list_cmd(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
-        if not await require_super_admin(interaction, "permissions list", self.cog.bot):
-            return
-        if not await require_guild(interaction):
-            return
-
         bot = self.cog.bot
         guild = interaction.guild
 
-        try:
-            role_ids = await get_server_role_ids(bot.db_pool, interaction.guild_id, cache=bot.cache)
-            role_members = _role_members(guild, role_ids) if role_ids else []
-            async with bot.db_pool.acquire() as conn:
-                user_rows = await conn.fetch(
-                    "SELECT user_id, role FROM user_permissions WHERE server_id = $1 AND is_active = true ORDER BY CASE role WHEN 'super_admin' THEN 3 WHEN 'admin' THEN 2 WHEN 'moderator' THEN 1 END DESC",
-                    interaction.guild_id,
-                )
-        except Exception as e:
-            logger.error("permissions list error: %s", e, exc_info=True)
-            await send_error(interaction, "Error fetching permissions.")
-            return
+        role_ids = await get_server_role_ids(bot.db_pool, interaction.guild_id, cache=bot.cache)
+        role_members = _role_members(guild, role_ids) if role_ids else []
+        async with bot.db_pool.acquire() as conn:
+            user_rows = await conn.fetch(
+                "SELECT user_id, role FROM user_permissions WHERE server_id = $1 AND is_active = true ORDER BY CASE role WHEN 'super_admin' THEN 3 WHEN 'admin' THEN 2 WHEN 'moderator' THEN 1 END DESC",
+                interaction.guild_id,
+            )
 
         if not role_ids and not role_members and not user_rows:
             await interaction.followup.send(
@@ -249,18 +278,27 @@ class PermissionsGroup(app_commands.Group):
     @app_commands.describe(user="User to grant role to", role="Role to grant")
     @app_commands.choices(role=ROLE_CHOICES)
     @app_commands.autocomplete(user=_permissions_user_autocomplete)
+    @execute_command(
+        permission_check=_permissions_add_check,
+        error_message="Error granting role.",
+        logger=logger,
+        log_prefix="permissions add error",
+    )
     async def add_cmd(self, interaction: discord.Interaction, user: str, role: str):
-        await interaction.response.defer(ephemeral=True)
-        if not await require_super_admin(interaction, "permissions add", self.cog.bot):
-            return
-        if not await require_guild(interaction):
-            return
-        user_id, target, err = await _parse_user_and_target(interaction, user, self.cog.bot)
-        if err:
-            await send_error(interaction, err)
-            return
-        assert target is not None
-        try:
+        with trace_span(
+            "permissions.grant",
+            attributes={
+                "guild_id": str(interaction.guild_id),
+                "permissions.role": role,
+            },
+        ) as span:
+            user_id, target, err = await _parse_user_and_target(interaction, user, self.cog.bot)
+            if err:
+                await send_error(interaction, err)
+                return
+            assert target is not None
+            span.set_attribute("permissions.target_user_id", user_id)
+
             async with self.cog.bot.db_pool.acquire() as conn:
                 existing = await conn.fetchval(
                     "SELECT 1 FROM user_permissions WHERE server_id = $1 AND user_id = $2 AND role = $3 AND is_active = true LIMIT 1",
@@ -292,26 +330,32 @@ class PermissionsGroup(app_commands.Group):
             await interaction.followup.send(
                 f"✅ Granted {role} to {target.mention}", ephemeral=True
             )
-        except Exception as e:
-            logger.error("permissions add error: %s", e, exc_info=True)
-            await send_error(interaction, "Error granting role.")
 
     @app_commands.command(name="remove", description="Revoke Admin or Moderator from a user")
     @app_commands.describe(user="User to revoke role from", role="Role to revoke")
     @app_commands.choices(role=ROLE_CHOICES)
     @app_commands.autocomplete(user=_permissions_user_autocomplete)
+    @execute_command(
+        permission_check=_permissions_remove_check,
+        error_message="Error revoking role.",
+        logger=logger,
+        log_prefix="permissions remove error",
+    )
     async def remove_cmd(self, interaction: discord.Interaction, user: str, role: str):
-        await interaction.response.defer(ephemeral=True)
-        if not await require_super_admin(interaction, "permissions remove", self.cog.bot):
-            return
-        if not await require_guild(interaction):
-            return
-        user_id, target, err = await _parse_user_and_target(interaction, user, self.cog.bot)
-        if err:
-            await send_error(interaction, err)
-            return
-        assert target is not None
-        try:
+        with trace_span(
+            "permissions.revoke",
+            attributes={
+                "guild_id": str(interaction.guild_id),
+                "permissions.role": role,
+            },
+        ) as span:
+            user_id, target, err = await _parse_user_and_target(interaction, user, self.cog.bot)
+            if err:
+                await send_error(interaction, err)
+                return
+            assert target is not None
+            span.set_attribute("permissions.target_user_id", user_id)
+
             async with self.cog.bot.db_pool.acquire() as conn:
                 result = await conn.execute(
                     "UPDATE user_permissions SET is_active = false, revoked_at = NOW() WHERE server_id = $1 AND user_id = $2 AND role = $3 AND is_active = true",
@@ -334,9 +378,6 @@ class PermissionsGroup(app_commands.Group):
             await interaction.followup.send(
                 f"✅ Revoked {role} from {target.mention}", ephemeral=True
             )
-        except Exception as e:
-            logger.error("permissions remove error: %s", e, exc_info=True)
-            await send_error(interaction, "Error revoking role.")
 
     @app_commands.command(
         name="set",
@@ -347,17 +388,18 @@ class PermissionsGroup(app_commands.Group):
         discord_role="Discord role (leave empty to clear)",
     )
     @app_commands.choices(level=LEVEL_CHOICES)
+    @execute_command(
+        permission_check=_permissions_set_check,
+        error_message="Error updating role.",
+        logger=logger,
+        log_prefix="permissions set error",
+    )
     async def set_cmd(
         self,
         interaction: discord.Interaction,
         level: str,
         discord_role: discord.Role | None = None,
     ):
-        await interaction.response.defer(ephemeral=True)
-        if not await require_super_admin(interaction, "permissions set", self.cog.bot):
-            return
-        if not await require_guild(interaction):
-            return
         guild = interaction.guild
         if not guild:
             return
@@ -370,6 +412,7 @@ class PermissionsGroup(app_commands.Group):
             discord_role.id if discord_role else None,
             cache=self.cog.bot.cache,
             server_name=guild.name,
+            metrics=self.cog.bot.metrics,
         )
         if not success:
             await send_error(interaction, "Failed to update.")

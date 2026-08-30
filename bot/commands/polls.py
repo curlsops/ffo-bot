@@ -9,6 +9,7 @@ from discord.ext import commands
 
 from bot.auth.command_helpers import execute_command, require_admin
 from bot.utils.discord_helpers import discord_timestamp
+from bot.utils.telemetry import trace_span
 
 logger = logging.getLogger(__name__)
 
@@ -46,26 +47,38 @@ async def _close_reaction_poll_after(
     opts: list[str],
     emojis: list[str],
     question: str,
+    bot=None,
 ) -> None:
     await asyncio.sleep(delta.total_seconds())
     try:
-        msg = await channel.fetch_message(message_id)
-        reaction_counts = {str(r.emoji): max(0, r.count - 1) for r in msg.reactions}
-        result_lines = [
-            f"{emojis[i]} {opts[i]} — {reaction_counts.get(emojis[i], 0)}" for i in range(len(opts))
-        ]
-        description = "\n".join(result_lines) + "\n\n*Poll ended*"
-        ended_embed = discord.Embed(
-            title=f"📊 {question}",
-            description=description,
-            color=discord.Color.dark_grey(),
-            timestamp=datetime.now(timezone.utc),
-        )
-        ended_embed.set_footer(text="Poll ended")
-        await msg.edit(embed=ended_embed)
-        await msg.clear_reactions()
+        with trace_span(
+            "poll.close_reaction_poll",
+            attributes={
+                "discord.channel_id": str(channel.id),
+                "poll.message_id": message_id,
+                "poll.option_count": len(opts),
+            },
+        ):
+            msg = await channel.fetch_message(message_id)
+            reaction_counts = {str(r.emoji): max(0, r.count - 1) for r in msg.reactions}
+            result_lines = [
+                f"{emojis[i]} {opts[i]} — {reaction_counts.get(emojis[i], 0)}"
+                for i in range(len(opts))
+            ]
+            description = "\n".join(result_lines) + "\n\n*Poll ended*"
+            ended_embed = discord.Embed(
+                title=f"📊 {question}",
+                description=description,
+                color=discord.Color.dark_grey(),
+                timestamp=datetime.now(timezone.utc),
+            )
+            ended_embed.set_footer(text="Poll ended")
+            await msg.edit(embed=ended_embed)
+            await msg.clear_reactions()
     except Exception as e:
         logger.warning("Failed to close reaction poll: %s", e)
+        if bot and bot.metrics:
+            bot.metrics.errors_total.labels(error_type="poll_close_failed").inc()
 
 
 async def _poll_permission_check(
@@ -165,21 +178,29 @@ class PollCommands(commands.Cog):
                 )
                 return
 
-            emojis = self._create_long_poll_emojis()[: len(opts)]
-            lines = [f"{emojis[i]} {opts[i]}" for i in range(len(opts))]
-            ends_at = datetime.now(timezone.utc) + delta
-            embed = discord.Embed(
-                title=f"📊 {question}",
-                description="\n".join(lines) + "\n\n*React to vote*",
-                color=discord.Color.blue(),
-                timestamp=ends_at,
-            )
-            embed.set_footer(text=f"Ends {discord_timestamp(ends_at, 'R')}")
-            msg = await target.send(embed=embed)
-            for emoji in emojis:
-                await msg.add_reaction(emoji)
+            with trace_span(
+                "poll.create_reaction_poll",
+                attributes={
+                    "guild_id": str(interaction.guild_id),
+                    "discord.channel_id": str(target.id),
+                    "poll.option_count": len(opts),
+                },
+            ):
+                emojis = self._create_long_poll_emojis()[: len(opts)]
+                lines = [f"{emojis[i]} {opts[i]}" for i in range(len(opts))]
+                ends_at = datetime.now(timezone.utc) + delta
+                embed = discord.Embed(
+                    title=f"📊 {question}",
+                    description="\n".join(lines) + "\n\n*React to vote*",
+                    color=discord.Color.blue(),
+                    timestamp=ends_at,
+                )
+                embed.set_footer(text=f"Ends {discord_timestamp(ends_at, 'R')}")
+                msg = await target.send(embed=embed)
+                for emoji in emojis:
+                    await msg.add_reaction(emoji)
             asyncio.create_task(
-                _close_reaction_poll_after(target, msg.id, delta, opts, emojis, question)
+                _close_reaction_poll_after(target, msg.id, delta, opts, emojis, question, self.bot)
             )
             await interaction.followup.send(
                 f"Poll created with {len(opts)} options (reaction-based). React to vote.",

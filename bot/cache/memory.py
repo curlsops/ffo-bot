@@ -3,7 +3,10 @@ import logging
 from collections import OrderedDict
 from dataclasses import dataclass
 from datetime import UTC, datetime, timedelta
-from typing import Any
+from typing import TYPE_CHECKING, Any
+
+if TYPE_CHECKING:
+    from bot.utils.metrics import BotMetrics
 
 logger = logging.getLogger(__name__)
 
@@ -34,22 +37,30 @@ class InMemoryCache:
         max_size: int = 10000,
         default_ttl: int = 300,
         max_memory_bytes: int = 0,
+        metrics: "BotMetrics | None" = None,
     ):
         self._store: OrderedDict[str, CacheEntry] = OrderedDict()
         self.max_size = max_size
         self.default_ttl = default_ttl
         self.max_memory_bytes = max_memory_bytes
         self._total_bytes = 0
+        self.metrics = metrics
 
     def get(self, key: str) -> Any | None:
         if key not in self._store:
+            if self.metrics:
+                self.metrics.cache_misses.inc()
             return None
         entry = self._store[key]
         if entry.is_expired():
             self._total_bytes -= entry.bytes_estimate
             del self._store[key]
+            if self.metrics:
+                self.metrics.cache_misses.inc()
             return None
         self._store.move_to_end(key)
+        if self.metrics:
+            self.metrics.cache_hits.inc()
         return entry.value
 
     def set(self, key: str, value: Any, ttl: int | None = None):
@@ -123,3 +134,5 @@ class InMemoryCache:
             key = next(iter(self._store))
             self._total_bytes -= self._store[key].bytes_estimate
             del self._store[key]
+            if self.metrics:
+                self.metrics.cache_evictions_total.inc()

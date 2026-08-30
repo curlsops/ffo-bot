@@ -4,6 +4,7 @@ import aiohttp
 
 from bot.utils.http_session import get_session as _get_session
 from bot.utils.http_session import session_scope
+from bot.utils.telemetry import trace_span
 
 get_session = _get_session
 
@@ -34,34 +35,39 @@ class VoiceTranscriber:
             return None
 
         try:
-            timeout = aiohttp.ClientTimeout(total=30)
-            async with session_scope(timeout=timeout, session=get_session()) as session:
-                async with session.get(url, timeout=timeout) as resp:
-                    if resp.status != 200:
-                        logger.warning("Voice fetch failed: %s", resp.status)
-                        return None
-                    data = await resp.read()
+            with trace_span(
+                "voice_transcriber.transcribe",
+                attributes={"messages.attachment_filename": filename},
+            ) as span:
+                timeout = aiohttp.ClientTimeout(total=30)
+                async with session_scope(timeout=timeout, session=get_session()) as session:
+                    async with session.get(url, timeout=timeout) as resp:
+                        if resp.status != 200:
+                            logger.warning("Voice fetch failed: %s", resp.status)
+                            return None
+                        data = await resp.read()
 
-                if len(data) > WHISPER_MAX_BYTES:
-                    logger.warning("Voice message too large for transcription")
-                    return None
-
-                form = aiohttp.FormData()
-                form.add_field("file", data, filename=filename)
-                form.add_field("model", "whisper-1")
-                form.add_field("response_format", "text")
-                headers = {"Authorization": f"Bearer {self.api_key}"}
-                async with session.post(
-                    "https://api.openai.com/v1/audio/transcriptions",
-                    data=form,
-                    headers=headers,
-                ) as resp:
-                    if resp.status != 200:
-                        err = await resp.text()
-                        logger.warning("Whisper API error %s: %s", resp.status, err[:200])
+                    span.set_attribute("voice.byte_size", len(data))
+                    if len(data) > WHISPER_MAX_BYTES:
+                        logger.warning("Voice message too large for transcription")
                         return None
-                    text = (await resp.read()).decode("utf-8").strip()
-                    return text or None
+
+                    form = aiohttp.FormData()
+                    form.add_field("file", data, filename=filename)
+                    form.add_field("model", "whisper-1")
+                    form.add_field("response_format", "text")
+                    headers = {"Authorization": f"Bearer {self.api_key}"}
+                    async with session.post(
+                        "https://api.openai.com/v1/audio/transcriptions",
+                        data=form,
+                        headers=headers,
+                    ) as resp:
+                        if resp.status != 200:
+                            err = await resp.text()
+                            logger.warning("Whisper API error %s: %s", resp.status, err[:200])
+                            return None
+                        text = (await resp.read()).decode("utf-8").strip()
+                        return text or None
         except Exception as e:
             logger.error("Transcription error: %s", e, exc_info=True)
             return None

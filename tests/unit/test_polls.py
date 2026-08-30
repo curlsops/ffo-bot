@@ -307,6 +307,29 @@ class TestCloseReactionPollAfter:
                 )
         assert "Failed to close reaction poll" in caplog.text
 
+    @pytest.mark.asyncio
+    async def test_increments_metrics_error_on_close_poll_failure(self):
+        channel = MagicMock()
+        channel.fetch_message = AsyncMock(side_effect=RuntimeError("gone"))
+        bot = MagicMock()
+        bot.metrics = MagicMock()
+        bot.metrics.errors_total = MagicMock()
+        bot.metrics.errors_total.labels = MagicMock(return_value=MagicMock())
+
+        with patch("bot.commands.polls.asyncio.sleep", new_callable=AsyncMock):
+            await _close_reaction_poll_after(
+                channel,
+                1,
+                timedelta(seconds=0),
+                ["A"],
+                ["1️⃣"],
+                "Q?",
+                bot=bot,
+            )
+
+        bot.metrics.errors_total.labels.assert_called_once_with(error_type="poll_close_failed")
+        bot.metrics.errors_total.labels.return_value.inc.assert_called_once()
+
 
 class TestSetup:
     @pytest.mark.asyncio

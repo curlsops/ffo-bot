@@ -9,10 +9,11 @@ from discord.ext import commands
 
 from bot.auth.command_helpers import require_admin, send_error
 from bot.utils.autocomplete import cached_autocomplete
+from bot.utils.channel_config import get_quotebook_channel_id, set_quotebook_channel
 from bot.utils.discord_helpers import get_or_fetch_channel
 from bot.utils.log_context import log_command_start
 from bot.utils.pagination import ListPaginatedView
-from bot.utils.quotebook_channel import get_quotebook_channel_id, set_quotebook_channel
+from bot.utils.telemetry import trace_span
 from config.constants import Constants
 
 logger = logging.getLogger(__name__)
@@ -259,53 +260,61 @@ class QuoteGroup(app_commands.Group):
             return
 
         try:
-            row = None
-            async with self.cog.bot.db_pool.acquire() as conn:
-                result = await conn.execute(
-                    """
-                    UPDATE quotebook SET approved = true, updated_at = NOW()
-                    WHERE id = $1 AND server_id = $2 AND approved = false
-                    """,
-                    qid,
-                    interaction.guild_id,
-                )
+            with trace_span(
+                "quotebook.approve",
+                attributes={
+                    "guild_id": str(interaction.guild_id),
+                    "quotebook.quote_id": str(qid),
+                },
+            ):
+                row = None
+                async with self.cog.bot.db_pool.acquire() as conn:
+                    result = await conn.execute(
+                        """
+                        UPDATE quotebook SET approved = true, updated_at = NOW()
+                        WHERE id = $1 AND server_id = $2 AND approved = false
+                        """,
+                        qid,
+                        interaction.guild_id,
+                    )
 
-                if "UPDATE 0" in result:
-                    await send_error(interaction, "Quote not found or already approved.")
-                    return
+                    if "UPDATE 0" in result:
+                        await send_error(interaction, "Quote not found or already approved.")
+                        return
 
-                row = await conn.fetchrow(
-                    "SELECT quote_text, attribution FROM quotebook WHERE id = $1", qid
-                )
+                    row = await conn.fetchrow(
+                        "SELECT quote_text, attribution FROM quotebook WHERE id = $1", qid
+                    )
 
-            _invalidate_quotebook_cache(self.cog.bot.cache, interaction.guild_id)
-            await interaction.followup.send("Quote approved!", ephemeral=True)
+                _invalidate_quotebook_cache(self.cog.bot.cache, interaction.guild_id)
+                await interaction.followup.send("Quote approved!", ephemeral=True)
 
-            if row:
-                channel_id = await get_quotebook_channel_id(
-                    self.cog.bot.db_pool,
-                    interaction.guild_id,
-                    self.cog.bot.cache,
-                )
-                if channel_id:
-                    channel = await get_or_fetch_channel(self.cog.bot, channel_id)
-                    if channel is None:
-                        logger.warning("Could not fetch quotebook channel %s", channel_id)
-                    if channel:
-                        text = row["quote_text"]
-                        if row["attribution"]:
-                            text += f"\n— {row['attribution']}"
-                        embed = discord.Embed(
-                            description=text[:4096],
-                            color=discord.Color.blue(),
-                        )
-                        embed.set_footer(text="📖 Quotebook")
-                        try:
-                            await channel.send(embed=embed)
-                        except discord.Forbidden:
-                            logger.warning(
-                                "Cannot post quote to channel %s (no permission)", channel_id
+                if row:
+                    channel_id = await get_quotebook_channel_id(
+                        self.cog.bot.db_pool,
+                        interaction.guild_id,
+                        self.cog.bot.cache,
+                    )
+                    if channel_id:
+                        channel = await get_or_fetch_channel(self.cog.bot, channel_id)
+                        if channel is None:
+                            logger.warning("Could not fetch quotebook channel %s", channel_id)
+                        if channel:
+                            text = row["quote_text"]
+                            if row["attribution"]:
+                                text += f"\n— {row['attribution']}"
+                            embed = discord.Embed(
+                                description=text[:4096],
+                                color=discord.Color.blue(),
                             )
+                            embed.set_footer(text="📖 Quotebook")
+                            try:
+                                await channel.send(embed=embed)
+                            except discord.Forbidden:
+                                logger.warning(
+                                    "Cannot post quote to channel %s (no permission)",
+                                    channel_id,
+                                )
         except Exception as e:
             logger.error("quote approve error: %s", e, exc_info=True)
             await send_error(interaction, "Error approving quote.")
@@ -360,74 +369,92 @@ class QuoteGroup(app_commands.Group):
             return
 
         try:
-            await self.cog.bot._register_server(interaction.guild)
-            await set_quotebook_channel(
-                self.cog.bot.db_pool,
-                interaction.guild_id,
-                channel.id,
-                self.cog.bot.cache,
-            )
-
-            collected: list[tuple[str, str | None, int]] = []
-            async for message in channel.history(limit=None, oldest_first=True):
-                if message.author.bot:
-                    continue
-                for quote_text, attribution in _parse_quotes_from_message(message):
-                    if quote_text:
-                        collected.append((quote_text, attribution, message.author.id))
-
-            quote_texts = list({q[0] for q in collected})
-            async with self.cog.bot.db_pool.acquire() as conn:
-                existing_rows = await conn.fetch(
-                    """
-                    SELECT quote_text FROM quotebook
-                    WHERE server_id = $1 AND quote_text = ANY($2::text[])
-                    """,
+            with trace_span(
+                "quotebook.import",
+                attributes={
+                    "guild_id": str(interaction.guild_id),
+                    "discord.channel_id": str(channel.id),
+                    "quotebook.auto_approve": auto_approve,
+                },
+            ):
+                await self.cog.bot._register_server(interaction.guild)
+                await set_quotebook_channel(
+                    self.cog.bot.db_pool,
                     interaction.guild_id,
-                    quote_texts,
+                    channel.id,
+                    self.cog.bot.cache,
                 )
-                existing = {r["quote_text"] for r in existing_rows}
 
-            imported = 0
-            skipped = 0
-            async with self.cog.bot.db_pool.acquire() as conn:
-                for quote_text, attribution, author_id in collected:
-                    if quote_text in existing:
-                        skipped += 1
-                        continue
-                    await conn.execute(
+                collected: list[tuple[str, str | None, int]] = []
+                messages_scanned = 0
+                with trace_span(
+                    "quotebook.import_scan_history",
+                ) as scan_span:
+                    async for message in channel.history(limit=None, oldest_first=True):
+                        messages_scanned += 1
+                        if message.author.bot:
+                            continue
+                        for quote_text, attribution in _parse_quotes_from_message(message):
+                            if quote_text:
+                                collected.append((quote_text, attribution, message.author.id))
+
+                    scan_span.set_attribute("quotebook.messages_scanned", messages_scanned)
+                    scan_span.set_attribute("quotebook.quotes_found", len(collected))
+
+                quote_texts = list({q[0] for q in collected})
+                async with self.cog.bot.db_pool.acquire() as conn:
+                    existing_rows = await conn.fetch(
                         """
-                        INSERT INTO quotebook (server_id, quote_text, submitter_id, attribution, approved)
-                        VALUES ($1, $2, $3, $4, $5)
+                        SELECT quote_text FROM quotebook
+                        WHERE server_id = $1 AND quote_text = ANY($2::text[])
                         """,
                         interaction.guild_id,
-                        quote_text,
-                        author_id,
-                        attribution,
-                        auto_approve,
+                        quote_texts,
                     )
-                    existing.add(quote_text)
-                    imported += 1
-                    if auto_approve:
-                        text = f"{quote_text}\n— {attribution}" if attribution else quote_text
-                        embed = discord.Embed(
-                            description=text[:4096],
-                            color=discord.Color.blue(),
+                    existing = {r["quote_text"] for r in existing_rows}
+
+                imported = 0
+                skipped = 0
+                async with self.cog.bot.db_pool.acquire() as conn:
+                    for quote_text, attribution, author_id in collected:
+                        if quote_text in existing:
+                            skipped += 1
+                            continue
+                        await conn.execute(
+                            """
+                            INSERT INTO quotebook (server_id, quote_text, submitter_id, attribution, approved)
+                            VALUES ($1, $2, $3, $4, $5)
+                            """,
+                            interaction.guild_id,
+                            quote_text,
+                            author_id,
+                            attribution,
+                            auto_approve,
                         )
-                        embed.set_footer(text="📖 Quotebook (imported)")
-                        try:
-                            await channel.send(embed=embed)
-                        except discord.Forbidden:
-                            logger.warning("Cannot post imported quote to channel %s", channel.id)
+                        existing.add(quote_text)
+                        imported += 1
+                        if auto_approve:
+                            text = f"{quote_text}\n— {attribution}" if attribution else quote_text
+                            embed = discord.Embed(
+                                description=text[:4096],
+                                color=discord.Color.blue(),
+                            )
+                            embed.set_footer(text="📖 Quotebook (imported)")
+                            try:
+                                await channel.send(embed=embed)
+                            except discord.Forbidden:
+                                logger.warning(
+                                    "Cannot post imported quote to channel %s", channel.id
+                                )
 
-            _invalidate_quotebook_cache(self.cog.bot.cache, interaction.guild_id)
+                _invalidate_quotebook_cache(self.cog.bot.cache, interaction.guild_id)
 
-            msg = f"Imported **{imported}** quotes from {channel.mention}."
-            if auto_approve and imported:
-                msg += " New approved quotes have been posted."
-            if skipped:
-                msg += f" Skipped {skipped} duplicates."
-            await interaction.followup.send(msg, ephemeral=True)
+                msg = f"Imported **{imported}** quotes from {channel.mention}."
+                if auto_approve and imported:
+                    msg += " New approved quotes have been posted."
+                if skipped:
+                    msg += f" Skipped {skipped} duplicates."
+                await interaction.followup.send(msg, ephemeral=True)
 
         except discord.Forbidden:
             await send_error(interaction, "I don't have permission to read that channel.")

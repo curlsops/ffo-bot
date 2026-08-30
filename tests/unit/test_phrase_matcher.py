@@ -239,3 +239,17 @@ class TestTimeout:
             m.side_effect = asyncio.TimeoutError()
             assert await matcher.match_phrases("Hello World!", 123) == []
             conn.execute.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_timeout_increments_metrics(self, mock_cache):
+        conn = AsyncMock()
+        metrics = MagicMock()
+        metrics.errors_total.labels = MagicMock(return_value=MagicMock())
+        matcher = PhraseMatcher(_make_db_pool(conn), mock_cache, metrics=metrics)
+        matcher._patterns_by_server[123] = [_pattern()]
+
+        with patch.object(matcher, "_match_with_timeout", new_callable=AsyncMock) as m:
+            m.side_effect = asyncio.TimeoutError()
+            assert await matcher.match_phrases("Hello World!", 123) == []
+            metrics.errors_total.labels.assert_called_once_with(error_type="phrase_regex_timeout")
+            metrics.errors_total.labels.return_value.inc.assert_called_once()

@@ -2,10 +2,12 @@ import logging
 from typing import TYPE_CHECKING
 
 from bot.utils.server_config import get_servers_config, invalidate_servers_config
+from bot.utils.telemetry import trace_span
 from config.constants import Role
 
 if TYPE_CHECKING:
     from bot.cache.memory import InMemoryCache
+    from bot.utils.metrics import BotMetrics
 
 logger = logging.getLogger(__name__)
 
@@ -43,35 +45,46 @@ async def set_server_role(
     discord_role_id: int | None,
     cache: "InMemoryCache | None" = None,
     server_name: str | None = None,
+    metrics: "BotMetrics | None" = None,
 ) -> bool:
     key = ROLE_KEYS.get(role)
     if not key:
         return False
     try:
-        async with db_pool.acquire() as conn:
-            if discord_role_id is not None:
-                merge = {key: discord_role_id}
-                await conn.execute(
-                    """
-                    INSERT INTO servers (server_id, server_name, config)
-                    VALUES ($1, $2, $3::jsonb)
-                    ON CONFLICT (server_id) DO UPDATE
-                    SET config = COALESCE(servers.config, '{}'::jsonb) || EXCLUDED.config,
-                        server_name = COALESCE(NULLIF(EXCLUDED.server_name, 'Unknown'), servers.server_name),
-                        updated_at = NOW()
-                    """,
-                    server_id,
-                    server_name or "Unknown",
-                    merge,
-                )
-            else:
-                await conn.execute(
-                    "UPDATE servers SET config = config - $1, updated_at = NOW() WHERE server_id = $2",
-                    key,
-                    server_id,
-                )
-        invalidate_servers_config(cache, server_id)
-        return True
+        with trace_span(
+            "config.set_server_role",
+            attributes={
+                "discord.guild_id": str(server_id),
+                "ffo.role": role.value,
+                "config.action": "set" if discord_role_id is not None else "clear",
+            },
+        ):
+            async with db_pool.acquire() as conn:
+                if discord_role_id is not None:
+                    merge = {key: discord_role_id}
+                    await conn.execute(
+                        """
+                        INSERT INTO servers (server_id, server_name, config)
+                        VALUES ($1, $2, $3::jsonb)
+                        ON CONFLICT (server_id) DO UPDATE
+                        SET config = COALESCE(servers.config, '{}'::jsonb) || EXCLUDED.config,
+                            server_name = COALESCE(NULLIF(EXCLUDED.server_name, 'Unknown'), servers.server_name),
+                            updated_at = NOW()
+                        """,
+                        server_id,
+                        server_name or "Unknown",
+                        merge,
+                    )
+                else:
+                    await conn.execute(
+                        "UPDATE servers SET config = config - $1, updated_at = NOW() WHERE server_id = $2",
+                        key,
+                        server_id,
+                    )
+            invalidate_servers_config(cache, server_id)
+            return True
     except Exception:
         logger.exception("Failed to set server role %s", role.value)
+        if metrics:
+            metrics.errors_total.labels(error_type="server_role_update").inc()
         return False

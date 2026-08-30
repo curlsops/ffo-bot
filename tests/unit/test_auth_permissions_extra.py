@@ -146,6 +146,18 @@ class TestCheckCommandPermission:
         checker.check_role = AsyncMock(return_value=False)
         assert await checker.check_command_permission(_ctx(command_name="x")) is False
 
+    @pytest.mark.asyncio
+    async def test_db_unavailable_with_metrics(self):
+        bot = MagicMock()
+        bot.metrics = MagicMock()
+        bot.metrics.db_connection_errors = MagicMock()
+        checker, _, _ = _checker(
+            fetchval_side_effect=asyncpg.CannotConnectNowError("down"), bot=bot
+        )
+        checker.check_role = AsyncMock(return_value=False)
+        assert await checker.check_command_permission(_ctx(command_name="x")) is False
+        bot.metrics.db_connection_errors.inc.assert_called_once()
+
 
 class TestGetUserRole:
     @pytest.mark.asyncio
@@ -169,6 +181,18 @@ class TestGetUserRole:
     async def test_db_unavailable_returns_none(self):
         checker, _, _ = _checker(fetchval_side_effect=asyncpg.CannotConnectNowError("down"))
         assert await checker.get_user_role(1, 2) is None
+
+    @pytest.mark.asyncio
+    async def test_db_unavailable_with_metrics(self):
+        bot = MagicMock()
+        bot.metrics = MagicMock()
+        bot.metrics.db_connection_errors = MagicMock()
+        checker, _, _ = _checker(
+            fetchval_side_effect=asyncpg.CannotConnectNowError("down"), bot=bot
+        )
+        result = await checker.get_user_role(1, 2)
+        assert result is None
+        bot.metrics.db_connection_errors.inc.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_from_server_roles_when_member_has_role(self):
@@ -319,6 +343,18 @@ class TestLogPermissionDenial:
         )
         await checker._log_permission_denial(_ctx(command_name="x"), Role.SUPER_ADMIN)
         conn.execute.assert_awaited()
+
+    @pytest.mark.asyncio
+    async def test_transient_db_error_with_metrics(self):
+        bot = MagicMock()
+        bot.metrics = MagicMock()
+        bot.metrics.db_connection_errors = MagicMock()
+        checker, conn, _ = _checker(
+            execute_side_effect=asyncpg.CannotConnectNowError("connection lost"), bot=bot
+        )
+        await checker._log_permission_denial(_ctx(command_name="x"), Role.SUPER_ADMIN)
+        conn.execute.assert_awaited()
+        bot.metrics.db_connection_errors.inc.assert_called_once()
 
     @pytest.mark.asyncio
     async def test_handles_db_error(self):
