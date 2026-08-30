@@ -44,6 +44,15 @@ class TestFFOBotErrorHandlers:
         with patch("sys.exc_info", return_value=(ValueError, ValueError("test"), None)):
             await bot.on_error("on_message", MagicMock(guild=MagicMock(id=123)))
 
+    @pytest.mark.asyncio
+    async def test_on_error_with_metrics(self, bot):
+        bot.notifier = None
+        bot.metrics = MagicMock()
+        bot.metrics.errors_total = MagicMock()
+        with patch("sys.exc_info", return_value=(ValueError, ValueError("test"), None)):
+            await bot.on_error("on_message")
+        bot.metrics.errors_total.labels.assert_called_once_with(error_type="discord_event")
+
     def test_extract_server_id(self, bot):
         assert bot._extract_server_id([MagicMock(guild=MagicMock(id=123))]) == 123
         obj = MagicMock(spec=["guild_id"])
@@ -121,3 +130,12 @@ class TestFFOBotAppCommandError:
         i = self.make_interaction(done=False, command=None)
         await bot._on_app_command_error(i, discord.app_commands.AppCommandError())
         i.response.send_message.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_app_command_error_with_metrics(self, bot):
+        bot.notifier = None
+        bot.metrics = MagicMock()
+        bot.metrics.errors_total = MagicMock()
+        i = self.make_interaction(guild_id=None)
+        await bot._on_app_command_error(i, discord.app_commands.AppCommandError())
+        bot.metrics.errors_total.labels.assert_called_once_with(error_type="app_command")

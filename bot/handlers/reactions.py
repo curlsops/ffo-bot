@@ -3,10 +3,10 @@ import logging
 import discord
 from discord.ext import commands
 
-from bot.auth.permissions import PermissionContext
+from bot.services.whitelist import ResolutionOutcome
 from bot.utils.discord_helpers import get_or_fetch_channel
-from bot.utils.whitelist_cache import add_to_cache
-from config.constants import Constants, Role
+from bot.utils.telemetry import trace_span
+from config.constants import Constants
 
 logger = logging.getLogger(__name__)
 
@@ -37,7 +37,14 @@ class ReactionHandler(commands.Cog):
             return
 
         try:
-            await member.add_roles(role, reason="Reaction role")
+            with trace_span(
+                "reactions.role_grant",
+                attributes={
+                    "discord.guild_id": str(payload.guild_id),
+                    "discord.role_id": str(role_id),
+                },
+            ):
+                await member.add_roles(role, reason="Reaction role")
         except discord.HTTPException as e:
             logger.error("Failed to assign role: %s", e)
             if self.bot.metrics:
@@ -49,99 +56,85 @@ class ReactionHandler(commands.Cog):
         ):
             return False
 
-        from bot.commands.whitelist import WHITELIST_APPROVE_EMOJI, WHITELIST_REJECT_EMOJI
-        from bot.services.mojang import get_profile
-
+        svc = self.bot.whitelist_service
         emoji_str = str(payload.emoji)
-        if emoji_str not in (WHITELIST_APPROVE_EMOJI, WHITELIST_REJECT_EMOJI):
+        if emoji_str not in (svc.APPROVE_EMOJI, svc.REJECT_EMOJI):
             return False
 
-        ctx = PermissionContext(
-            server_id=payload.guild_id,
-            user_id=payload.user_id,
-            command_name="whitelist_approve",
-        )
-        if not await self.bot.permission_checker.check_role(ctx, Role.MODERATOR):
-            logger.info(
-                "Non-mod attempted whitelist %s on message %s in guild %s",
-                emoji_str,
-                payload.message_id,
-                payload.guild_id,
-                extra={"user_id": payload.user_id},
+        with trace_span(
+            "reactions.whitelist_resolve",
+            attributes={
+                "discord.guild_id": str(payload.guild_id),
+                "discord.message_id": str(payload.message_id),
+                "whitelist.emoji": emoji_str,
+            },
+        ):
+            result = await svc.resolve_reaction(
+                server_id=payload.guild_id,
+                message_id=payload.message_id,
+                moderator_id=payload.user_id,
+                emoji=emoji_str,
             )
-            try:
-                channel = await get_or_fetch_channel(self.bot, payload.channel_id)
-                if channel:
-                    msg = await channel.fetch_message(payload.message_id)
-                    await msg.remove_reaction(payload.emoji, discord.Object(id=payload.user_id))
-            except Exception as e:
-                logger.debug("Could not remove non-mod whitelist reaction: %s", e)
-            return True
 
-        async with self.bot.db_pool.acquire() as conn:
-            row = await conn.fetchrow(
-                """
-                DELETE FROM whitelist_pending
-                WHERE server_id = $1 AND message_id = $2
-                RETURNING username, channel_id, author_id, minecraft_uuid
-                """,
-                payload.guild_id,
-                payload.message_id,
-            )
-        if not row:
-            return False
+            if result.outcome is ResolutionOutcome.NOT_APPLICABLE:
+                return False
 
-        username = row["username"]
-        channel_id = row["channel_id"]
-        author_id = row["author_id"]
-        minecraft_uuid = row.get("minecraft_uuid")
-        if minecraft_uuid is None:
-            profile = await get_profile(username)
-            minecraft_uuid = profile[0] if profile else None
-
-        whitelist_added = False
-        if emoji_str == WHITELIST_APPROVE_EMOJI and self.bot.minecraft_rcon:
-            try:
-                resp = await self.bot.minecraft_rcon.whitelist_add(username)
-                await add_to_cache(
-                    self.bot.db_pool,
+            if result.outcome is ResolutionOutcome.PERMISSION_DENIED:
+                logger.info(
+                    "Non-mod attempted whitelist %s on message %s in guild %s",
+                    emoji_str,
+                    payload.message_id,
                     payload.guild_id,
-                    username,
-                    added_by=payload.user_id,
-                    minecraft_uuid=str(minecraft_uuid) if minecraft_uuid else None,
-                    cache=self.bot.cache,
+                    extra={"user_id": payload.user_id},
                 )
-                channel = await get_or_fetch_channel(self.bot, channel_id)
+                try:
+                    channel = await get_or_fetch_channel(self.bot, payload.channel_id)
+                    if channel:
+                        msg = await channel.fetch_message(payload.message_id)
+                        await msg.remove_reaction(payload.emoji, discord.Object(id=payload.user_id))
+                except Exception as e:
+                    logger.debug("Could not remove non-mod whitelist reaction: %s", e)
+                return True
+
+            if result.outcome is ResolutionOutcome.APPROVED:
+                channel = await get_or_fetch_channel(self.bot, result.channel_id)
                 if channel:
-                    await channel.send(f"✅ **{username}** added to whitelist. {resp}")
-                author = self.bot.get_user(author_id) or await self.bot.fetch_user(author_id)
+                    await channel.send(
+                        f"✅ **{result.username}** added to whitelist. {result.rcon_response}"
+                    )
+                author = self.bot.get_user(result.author_id) or await self.bot.fetch_user(
+                    result.author_id
+                )
                 if author:
                     try:
                         await author.send(
-                            f"You have been added to the Minecraft whitelist as **{username}**."
+                            f"You have been added to the Minecraft whitelist as **{result.username}**."
                         )
                     except discord.Forbidden:
                         logger.debug(
-                            "Could not DM whitelist approval to %s (DMs disabled)", author_id
+                            "Could not DM whitelist approval to %s (DMs disabled)",
+                            result.author_id,
                         )
                     except Exception as e:
-                        logger.warning("Failed to DM whitelist approval to %s: %s", author_id, e)
-                whitelist_added = True
-            except Exception as e:
-                logger.warning("RCON whitelist add on approve failed: %s", e)
-                channel = await get_or_fetch_channel(self.bot, channel_id)
+                        logger.warning(
+                            "Failed to DM whitelist approval to %s: %s", result.author_id, e
+                        )
+            elif result.outcome is ResolutionOutcome.APPROVE_FAILED:
+                channel = await get_or_fetch_channel(self.bot, result.channel_id)
                 if channel:
-                    await channel.send(f"❌ Failed to add **{username}** to whitelist: {e}")
+                    await channel.send(
+                        f"❌ Failed to add **{result.username}** to whitelist: {result.error}"
+                    )
 
-        try:
-            channel = await get_or_fetch_channel(self.bot, channel_id)
-            if channel:
-                msg = await channel.fetch_message(payload.message_id)
-                await msg.clear_reactions()
-                if whitelist_added:
-                    await msg.add_reaction(WHITELIST_APPROVE_EMOJI)
-        except Exception as e:
-            logger.debug("Could not clear whitelist message reactions: %s", e)
+            try:
+                channel = await get_or_fetch_channel(self.bot, result.channel_id)
+                if channel:
+                    msg = await channel.fetch_message(payload.message_id)
+                    await msg.clear_reactions()
+                    if result.outcome is ResolutionOutcome.APPROVED:
+                        await msg.add_reaction(svc.APPROVE_EMOJI)
+            except Exception as e:
+                logger.debug("Could not clear whitelist message reactions: %s", e)
 
         return True
 
@@ -164,7 +157,14 @@ class ReactionHandler(commands.Cog):
             return
 
         try:
-            await member.remove_roles(role, reason="Reaction role")
+            with trace_span(
+                "reactions.role_revoke",
+                attributes={
+                    "discord.guild_id": str(payload.guild_id),
+                    "discord.role_id": str(role_id),
+                },
+            ):
+                await member.remove_roles(role, reason="Reaction role")
         except discord.HTTPException as e:
             logger.error("Failed to remove role: %s", e)
             if self.bot.metrics:

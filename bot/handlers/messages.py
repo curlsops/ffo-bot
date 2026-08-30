@@ -5,12 +5,11 @@ from typing import Awaitable, cast
 import asyncpg
 import discord
 from discord.ext import commands
-from opentelemetry import trace
 
-from bot.commands.whitelist import WHITELIST_APPROVE_EMOJI, WHITELIST_REJECT_EMOJI
 from bot.processors.unit_converter import detect_and_convert
-from bot.services.mojang import get_profile
+from bot.services.whitelist import SubmissionOutcome
 from bot.utils.pagination import truncate_for_discord
+from bot.utils.telemetry import trace_span
 from bot.utils.user_preferences import OPT_OUT_CACHE_KEY
 from bot.utils.whitelist_channel import get_whitelist_channel_id
 from config.constants import Constants
@@ -18,13 +17,6 @@ from config.constants import Constants
 logger = logging.getLogger(__name__)
 
 
-def _message_tracer():
-    return trace.get_tracer(__name__)
-
-
-MOJANG_CACHE_TTL = 300
-MOJANG_CACHE_KEY = "mojang:profile:{username}"
-_MOJANG_NOT_FOUND = object()
 MESSAGE_HANDLER_MAX_CONCURRENCY = 3
 MESSAGE_HANDLER_DB_HEAVY_CONCURRENCY = 1
 
@@ -43,9 +35,14 @@ class MessageHandler(commands.Cog):
             self.bot._message_handler_tasks.add(task)
         try:
             if getattr(self.bot.settings, "otel_trace_discord_messages", False):
-                with _message_tracer().start_as_current_span("discord.message") as span:
-                    span.set_attribute("discord.guild_id", str(message.guild.id))
-                    span.set_attribute("discord.channel_id", str(message.channel.id))
+                with trace_span(
+                    "discord.message",
+                    feature="messages",
+                    attributes={
+                        "discord.guild_id": str(message.guild.id),
+                        "discord.channel_id": str(message.channel.id),
+                    },
+                ):
                     await self._handle_message(message)
             else:
                 await self._handle_message(message)
@@ -91,9 +88,14 @@ class MessageHandler(commands.Cog):
             self.bot.metrics.messages_processed.labels(server_id=str(after.guild.id)).inc()
 
         if getattr(self.bot.settings, "otel_trace_discord_messages", False):
-            with _message_tracer().start_as_current_span("discord.message_edit") as span:
-                span.set_attribute("discord.guild_id", str(after.guild.id))
-                span.set_attribute("discord.channel_id", str(after.channel.id))
+            with trace_span(
+                "discord.message_edit",
+                feature="messages",
+                attributes={
+                    "discord.guild_id": str(after.guild.id),
+                    "discord.channel_id": str(after.channel.id),
+                },
+            ):
                 await self._process_phrase_matching_edit(after)
         else:
             await self._process_phrase_matching_edit(after)
@@ -135,50 +137,41 @@ class MessageHandler(commands.Cog):
                 self.bot.metrics.errors_total.labels(error_type="phrase_matching").inc()
 
     async def _process_whitelist_channel(self, message: discord.Message):
-        if not message.guild or not message.content:
-            return
-        channel_id = await get_whitelist_channel_id(
-            self.bot.db_pool, message.guild.id, cache=self.bot.cache
-        )
-        if channel_id != message.channel.id:
-            return
-
-        content = message.content.strip()
-        if not content or " " in content:
-            return
-
-        if not (3 <= len(content) <= 16) or not content.replace("_", "").isalnum():
-            return
-
-        username = content
-        profile = await self._get_mojang_profile_cached(username)
-        if profile:
-            uuid_val, _ = profile
-            try:
-                await message.add_reaction(WHITELIST_APPROVE_EMOJI)
-                await message.add_reaction(WHITELIST_REJECT_EMOJI)
-                async with self.bot.db_pool.acquire() as conn:
-                    await conn.execute(
-                        """
-                        INSERT INTO whitelist_pending (server_id, message_id, channel_id, username, author_id, minecraft_uuid)
-                        VALUES ($1, $2, $3, $4, $5, $6::uuid)
-                        ON CONFLICT (server_id, message_id) DO NOTHING
-                        """,
-                        message.guild.id,
-                        message.id,
-                        message.channel.id,
-                        username,
-                        message.author.id,
-                        uuid_val,
-                    )
-            except discord.HTTPException as e:
-                logger.warning("Failed to add whitelist reactions: %s", e)
-            except asyncpg.PostgresError as e:
-                logger.error("Whitelist pending insert error: %s", e, exc_info=True)
-        else:
-            await message.reply(
-                f"{message.author.mention} Your Minecraft username does not exist. Please try again."
+        with trace_span(
+            "messages.whitelist_channel",
+            feature="messages",
+            attributes={
+                "discord.guild_id": str(message.guild.id),
+                "discord.channel_id": str(message.channel.id),
+            },
+        ):
+            if not message.guild or not message.content:
+                return
+            channel_id = await get_whitelist_channel_id(
+                self.bot.db_pool, message.guild.id, cache=self.bot.cache
             )
+            if channel_id != message.channel.id:
+                return
+
+            svc = self.bot.whitelist_service
+            result = await svc.submit_ign(
+                server_id=message.guild.id,
+                channel_id=message.channel.id,
+                message_id=message.id,
+                author_id=message.author.id,
+                content=message.content,
+            )
+
+            if result.outcome is SubmissionOutcome.ACCEPTED:
+                try:
+                    await message.add_reaction(svc.APPROVE_EMOJI)
+                    await message.add_reaction(svc.REJECT_EMOJI)
+                except discord.HTTPException as e:
+                    logger.warning("Failed to add whitelist reactions: %s", e)
+            elif result.outcome is SubmissionOutcome.NOT_FOUND:
+                await message.reply(
+                    f"{message.author.mention} Your Minecraft username does not exist. Please try again."
+                )
 
     async def _process_phrase_matching(self, message: discord.Message):
         try:
@@ -262,19 +255,6 @@ class MessageHandler(commands.Cog):
             )
         )
 
-    async def _get_mojang_profile_cached(self, username: str):
-        key = MOJANG_CACHE_KEY.format(username=username.lower())
-        if self.bot.cache:
-            cached = self.bot.cache.get(key)
-            if cached is not None:
-                return None if cached is _MOJANG_NOT_FOUND else cached
-        profile = await get_profile(username)
-        if self.bot.cache:
-            self.bot.cache.set(
-                key, _MOJANG_NOT_FOUND if profile is None else profile, ttl=MOJANG_CACHE_TTL
-            )
-        return profile
-
     async def _log_phrase_matches_batch(
         self,
         rows: list[tuple[int, int, int, int, str, str]],
@@ -343,24 +323,32 @@ class MessageHandler(commands.Cog):
         ]
         if not atts:
             return
-        results = await asyncio.gather(
-            *[vt.transcribe(att.url, att.filename) for att in atts],
-            return_exceptions=True,
-        )
-        for att, result in zip(atts, results):
-            if isinstance(result, Exception):
-                logger.error("Voice transcription error: %s", result, exc_info=True)
-            elif result:
-                embed = discord.Embed(
-                    description=truncate_for_discord(cast(str, result)),
-                    color=discord.Color.blue(),
-                )
-                embed.set_author(
-                    name=f"Voice message from {message.author.display_name}",
-                    icon_url=message.author.display_avatar.url,
-                )
-                embed.set_footer(text="Transcribed automatically")
-                await message.reply(embed=embed)
+        with trace_span(
+            "messages.voice_transcribe",
+            feature="messages",
+            attributes={
+                "discord.guild_id": str(message.guild.id),
+                "messages.attachment_count": len(atts),
+            },
+        ):
+            results = await asyncio.gather(
+                *[vt.transcribe(att.url, att.filename) for att in atts],
+                return_exceptions=True,
+            )
+            for att, result in zip(atts, results):
+                if isinstance(result, Exception):
+                    logger.error("Voice transcription error: %s", result, exc_info=True)
+                elif result:
+                    embed = discord.Embed(
+                        description=truncate_for_discord(cast(str, result)),
+                        color=discord.Color.blue(),
+                    )
+                    embed.set_author(
+                        name=f"Voice message from {message.author.display_name}",
+                        icon_url=message.author.display_avatar.url,
+                    )
+                    embed.set_footer(text="Transcribed automatically")
+                    await message.reply(embed=embed)
 
     async def _check_user_opt_out(self, server_id: int, user_id: int) -> bool:
         cache_key = OPT_OUT_CACHE_KEY.format(server_id=server_id, user_id=user_id)

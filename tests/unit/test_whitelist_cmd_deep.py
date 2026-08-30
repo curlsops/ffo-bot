@@ -456,3 +456,87 @@ async def test_whitelist_cog_load_unload():
     bot.add_cog = AsyncMock()
     await wl.setup(bot)
     bot.add_cog.assert_awaited_once()
+
+
+@pytest.mark.asyncio
+async def test_toggle_rcon_error_with_metrics():
+    bot = build_whitelist_bot()
+    bot.db_pool, _ = mock_db_pool()
+    bot.minecraft_rcon.whitelist_on = AsyncMock(side_effect=MinecraftRCONError("down"))
+    bot.metrics = MagicMock()
+    bot.metrics.errors_total.labels.return_value.inc = MagicMock()
+    cog = WhitelistCommands(bot)
+    i = mock_interaction(user_id=2)
+    i.guild = MagicMock()
+    await invoke(cog, "whitelist_cmd", None, i, operation=_op("on"), username=None)
+    bot.metrics.errors_total.labels.assert_called_with(error_type="whitelist_rcon_unreachable")
+    assert_followup_contains(i, "RCON", case_sensitive=False)
+
+
+@pytest.mark.asyncio
+async def test_add_rcon_error_with_metrics():
+    with patch(
+        "bot.commands.whitelist.get_profile",
+        new_callable=AsyncMock,
+        return_value=("uuid", "Steve"),
+    ):
+        bot = build_whitelist_bot()
+        bot.db_pool, _ = mock_db_pool()
+        bot.minecraft_rcon.whitelist_add = AsyncMock(side_effect=MinecraftRCONError("x"))
+        bot.metrics = MagicMock()
+        bot.metrics.errors_total.labels.return_value.inc = MagicMock()
+        cog = WhitelistCommands(bot)
+        i = mock_interaction(user_id=2)
+        await invoke(cog, "whitelist_cmd", None, i, operation=_op("add"), username="Steve")
+    bot.metrics.errors_total.labels.assert_called_with(error_type="whitelist_rcon_unreachable")
+    assert_followup_contains(i, "RCON", case_sensitive=False)
+
+
+@pytest.mark.asyncio
+async def test_list_rcon_error_with_metrics():
+    bot = build_whitelist_bot()
+    bot.db_pool, _ = mock_db_pool()
+    bot.minecraft_rcon.whitelist_list = AsyncMock(side_effect=MinecraftRCONError("x"))
+    bot.metrics = MagicMock()
+    bot.metrics.errors_total.labels.return_value.inc = MagicMock()
+    cog = WhitelistCommands(bot)
+    i = mock_interaction(user_id=2)
+    await invoke(cog, "whitelist_cmd", None, i, operation=_op("list"), username=None)
+    bot.metrics.errors_total.labels.assert_called_with(error_type="whitelist_rcon_unreachable")
+    assert_followup_contains(i, "RCON", case_sensitive=False)
+
+
+@pytest.mark.asyncio
+async def test_push_rcon_error_with_metrics():
+    bot = build_whitelist_bot()
+    bot.minecraft_rcon.push_master_whitelist = AsyncMock(side_effect=MinecraftRCONError("down"))
+    bot.whitelist_service.get_cached_usernames = AsyncMock(return_value=["Steve"])
+    bot.db_pool, _ = mock_db_pool()
+    bot.metrics = MagicMock()
+    bot.metrics.errors_total.labels.return_value.inc = MagicMock()
+    cog = WhitelistCommands(bot)
+    i = mock_interaction(user_id=2)
+    await invoke(
+        cog,
+        "whitelist_cmd",
+        None,
+        i,
+        operation=_op("push"),
+        username=None,
+    )
+    bot.metrics.errors_total.labels.assert_called_with(error_type="whitelist_rcon_unreachable")
+    assert_followup_contains(i, "Could not", case_sensitive=False)
+
+
+@pytest.mark.asyncio
+async def test_remove_rcon_error_with_metrics():
+    bot = build_whitelist_bot()
+    bot.db_pool, _ = mock_db_pool()
+    bot.minecraft_rcon.whitelist_remove = AsyncMock(side_effect=MinecraftRCONError("x"))
+    bot.metrics = MagicMock()
+    bot.metrics.errors_total.labels.return_value.inc = MagicMock()
+    cog = WhitelistCommands(bot)
+    i = mock_interaction(user_id=2)
+    await invoke(cog, "whitelist_cmd", None, i, operation=_op("remove"), username="Steve")
+    bot.metrics.errors_total.labels.assert_called_with(error_type="whitelist_rcon_unreachable")
+    assert_followup_contains(i, "RCON", case_sensitive=False)

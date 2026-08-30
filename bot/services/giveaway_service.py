@@ -1,7 +1,12 @@
+import logging
+
 import discord
 
-from bot.utils.discord_helpers import discord_timestamp
+from bot.utils.discord_helpers import discord_timestamp, get_or_fetch_channel
 from bot.utils.giveaway_selection import select_weighted_winners
+from bot.utils.telemetry import trace_span
+
+logger = logging.getLogger(__name__)
 
 
 def select_winners(entries: list, count: int) -> list:
@@ -101,3 +106,31 @@ def build_ended_embed(giveaway, winners: list[int], entry_count: int) -> discord
         footer = f"{len(winners)} {winner_word} • {footer}"
     embed.set_footer(text=footer)
     return embed
+
+
+async def finalize_and_announce(
+    bot, giveaway: dict, winners: list[int], entry_count: int, announcement: str
+):
+    with trace_span(
+        "giveaway.finalize_and_announce",
+        feature="giveaway",
+        attributes={
+            "discord.channel_id": str(giveaway["channel_id"]),
+            "giveaway.id": str(giveaway["id"]),
+        },
+    ):
+        channel = await get_or_fetch_channel(bot, giveaway["channel_id"])
+        if not channel:
+            logger.warning(
+                "Could not fetch channel %s for giveaway %s",
+                giveaway["channel_id"],
+                giveaway["id"],
+            )
+            return None
+        try:
+            msg = await channel.fetch_message(giveaway["message_id"])  # type: ignore[attr-defined]
+            await msg.edit(embed=build_ended_embed(giveaway, winners, entry_count), view=None)
+        except discord.NotFound:
+            pass
+        await channel.send(announcement)  # type: ignore[attr-defined]
+        return channel

@@ -6,9 +6,11 @@ from discord import app_commands
 from discord.ext import commands
 
 from bot.auth.command_helpers import require_admin, send_error
+from bot.utils.admin_crud_dispatch import dispatch_operation
 from bot.utils.autocomplete import cached_autocomplete
 from bot.utils.pagination import ListPaginatedView
 from bot.utils.regex_validator import RegexValidationError
+from bot.utils.telemetry import trace_span
 from bot.utils.validation import InputValidator, ValidationError
 from config.constants import Constants
 
@@ -110,7 +112,14 @@ async def _add_reactbot_phrase(
     try:
         phrase = InputValidator.validate_phrase_pattern(phrase)
         emoji = InputValidator.validate_emoji(emoji)
-        await cog.bot.phrase_matcher.validate_pattern(phrase)
+        with trace_span(
+            "reactbot.validate_pattern",
+            attributes={
+                "guild_id": str(interaction.guild_id),
+                "reactbot.pattern_length": len(phrase),
+            },
+        ):
+            await cog.bot.phrase_matcher.validate_pattern(phrase)
 
         emoji_valid, emoji_error = await cog._validate_emoji_accessible(interaction, emoji)
         if not emoji_valid:
@@ -128,12 +137,6 @@ async def _add_reactbot_phrase(
         cog.bot.phrase_matcher.invalidate_cache(interaction.guild_id)
         _invalidate_reactbot_cache(cog.bot.cache, interaction.guild_id)
         await interaction.followup.send(f"✅ Added: `{phrase}` → {emoji}", ephemeral=True)
-        if cog.bot.metrics:
-            cog.bot.metrics.commands_executed.labels(
-                command_name="reactbot add",
-                server_id=str(interaction.guild_id),
-                status="success",
-            ).inc()
     except asyncpg.UniqueViolationError:
         await send_error(
             interaction,
@@ -194,15 +197,12 @@ def _reactbot_command(cog: "ReactBotCommands"):
         phrase: str | None = None,
         emoji: str | None = None,
     ):
-        await interaction.response.defer(ephemeral=True)
         handlers = {
             "list": lambda: _list_reactbot_phrases(cog, interaction),
             "add": lambda: _add_reactbot_phrase(cog, interaction, phrase, emoji),
             "remove": lambda: _remove_reactbot_phrase(cog, interaction, phrase),
         }
-        handler = handlers.get(operation.value)
-        if handler is not None:
-            await handler()
+        await dispatch_operation(interaction, operation.value, handlers)
 
     return reactbot_cmd
 

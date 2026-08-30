@@ -346,6 +346,26 @@ class TestGiveawayView:
         await view.entries_button(i)
         assert_followup_contains(i, "Error")
 
+    @pytest.mark.asyncio
+    async def test_join_button_error_with_metrics(self, view, mock_bot):
+        mock_bot.db_pool = db_ctx(AsyncMock(fetchrow=AsyncMock(side_effect=Exception("DB"))))
+        mock_bot.metrics = MagicMock()
+        mock_bot.metrics.errors_total.labels.return_value.inc = MagicMock()
+        i = interaction()
+        await view.join_button(i)
+        mock_bot.metrics.errors_total.labels.assert_called_with(error_type="giveaway_join")
+        assert_followup_contains(i, "Error")
+
+    @pytest.mark.asyncio
+    async def test_entries_button_error_with_metrics(self, view, mock_bot):
+        mock_bot.db_pool = db_ctx(AsyncMock(fetchrow=AsyncMock(side_effect=Exception("DB"))))
+        mock_bot.metrics = MagicMock()
+        mock_bot.metrics.errors_total.labels.return_value.inc = MagicMock()
+        i = interaction()
+        await view.entries_button(i)
+        mock_bot.metrics.errors_total.labels.assert_called_with(error_type="giveaway_entries")
+        assert_followup_contains(i, "Error")
+
 
 class TestEntryEdgeCases:
     def test_calculate_entries_very_large_bonus(self, view):

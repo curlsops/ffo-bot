@@ -301,6 +301,22 @@ class TestEndGiveaway:
         assert "End giveaway error" in caplog.text
 
     @pytest.mark.asyncio
+    async def test_error_with_metrics(self, manager):
+        manager.bot.metrics = MagicMock()
+        manager.bot.metrics.errors_total = MagicMock()
+        manager.bot.db_pool = _db_ctx(MagicMock(execute=AsyncMock(side_effect=Exception("Error"))))
+        await manager._end_giveaway(_giveaway())
+        manager.bot.metrics.errors_total.labels.assert_called_once_with(error_type="giveaway_end")
+
+    @pytest.mark.asyncio
+    async def test_error_without_metrics(self, manager, caplog):
+        caplog.set_level(logging.WARNING, logger="bot.tasks.giveaway_manager")
+        manager.bot.metrics = None
+        manager.bot.db_pool = _db_ctx(MagicMock(execute=AsyncMock(side_effect=Exception("Error"))))
+        await manager._end_giveaway(_giveaway())
+        assert "End giveaway error" in caplog.text
+
+    @pytest.mark.asyncio
     async def test_msg_edit_error_logged(self, manager, caplog):
         caplog.set_level(logging.WARNING, logger="bot.tasks.giveaway_manager")
         manager.bot.db_pool = _db_ctx(
@@ -422,8 +438,48 @@ class TestCreatePrizeThread:
         assert "Cannot create prize thread" in caplog.text
 
     @pytest.mark.asyncio
+    async def test_handles_forbidden_create_thread_with_metrics(self, manager):
+        manager.bot.metrics = MagicMock()
+        manager.bot.metrics.errors_total = MagicMock()
+        channel, _ = _channel_with_msg()
+        channel.create_thread = AsyncMock(side_effect=discord.Forbidden(MagicMock(), ""))
+        await manager._create_prize_thread(channel, _giveaway(), [100])
+        manager.bot.metrics.errors_total.labels.assert_called_once_with(
+            error_type="giveaway_prize_thread"
+        )
+
+    @pytest.mark.asyncio
+    async def test_handles_forbidden_create_thread_without_metrics(self, manager, caplog):
+        caplog.set_level(logging.WARNING, logger="bot.tasks.giveaway_manager")
+        manager.bot.metrics = None
+        channel, _ = _channel_with_msg()
+        channel.create_thread = AsyncMock(side_effect=discord.Forbidden(MagicMock(), ""))
+        await manager._create_prize_thread(channel, _giveaway(), [100])
+        assert "Cannot create prize thread" in caplog.text
+
+    @pytest.mark.asyncio
     async def test_handles_generic_exception(self, manager, caplog):
         caplog.set_level(logging.WARNING, logger="bot.tasks.giveaway_manager")
+        channel, _ = _channel_with_msg()
+        channel.create_thread = AsyncMock(side_effect=Exception("boom"))
+        await manager._create_prize_thread(channel, _giveaway(), [100])
+        assert "Could not create prize thread" in caplog.text
+
+    @pytest.mark.asyncio
+    async def test_handles_generic_exception_with_metrics(self, manager):
+        manager.bot.metrics = MagicMock()
+        manager.bot.metrics.errors_total = MagicMock()
+        channel, _ = _channel_with_msg()
+        channel.create_thread = AsyncMock(side_effect=Exception("boom"))
+        await manager._create_prize_thread(channel, _giveaway(), [100])
+        manager.bot.metrics.errors_total.labels.assert_called_once_with(
+            error_type="giveaway_prize_thread"
+        )
+
+    @pytest.mark.asyncio
+    async def test_handles_generic_exception_without_metrics(self, manager, caplog):
+        caplog.set_level(logging.WARNING, logger="bot.tasks.giveaway_manager")
+        manager.bot.metrics = None
         channel, _ = _channel_with_msg()
         channel.create_thread = AsyncMock(side_effect=Exception("boom"))
         await manager._create_prize_thread(channel, _giveaway(), [100])

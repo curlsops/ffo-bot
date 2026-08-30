@@ -2,7 +2,7 @@ import logging
 
 from discord.ext import commands, tasks
 
-from bot.utils.whitelist_cache import reconcile_whitelist_cache
+from bot.utils.telemetry import trace_span
 
 logger = logging.getLogger(__name__)
 
@@ -11,24 +11,31 @@ async def reconcile_all_cached_servers(bot: commands.Bot) -> None:
     pool = getattr(bot, "db_pool", None)
     if pool is None:
         return
-    cache = getattr(bot, "cache", None)
-    try:
-        async with pool.acquire() as conn:
-            rows = await conn.fetch("SELECT DISTINCT server_id FROM whitelist_cache")
-    except Exception as e:
-        logger.warning("Whitelist auto-reconcile: could not list cache servers: %s", e)
+    whitelist_service = getattr(bot, "whitelist_service", None)
+    if whitelist_service is None:
         return
-    for row in rows:
-        sid = int(row["server_id"])
-        out = await reconcile_whitelist_cache(pool, sid, cache=cache)
-        if out["updated"] or out["pruned"] or out["uuid_filled"]:
-            logger.info(
-                "Whitelist cache auto-reconcile server_id=%s renamed=%d pruned=%d uuid_backfill=%d",
-                sid,
-                len(out["updated"]),
-                len(out["pruned"]),
-                len(out["uuid_filled"]),
-            )
+    with trace_span("whitelist_cache_reconcile.run", feature="whitelist") as span:
+        try:
+            async with pool.acquire() as conn:
+                rows = await conn.fetch("SELECT DISTINCT server_id FROM whitelist_cache")
+        except Exception as e:
+            logger.warning("Whitelist auto-reconcile: could not list cache servers: %s", e)
+            metrics = getattr(bot, "metrics", None)
+            if metrics:
+                metrics.errors_total.labels(error_type="whitelist_reconcile_list_servers").inc()
+            return
+        span.set_attribute("whitelist.server_count", len(rows))
+        for row in rows:
+            sid = int(row["server_id"])
+            out = await whitelist_service.reconcile_whitelist_cache(sid)
+            if out["updated"] or out["pruned"] or out["uuid_filled"]:
+                logger.info(
+                    "Whitelist cache auto-reconcile server_id=%s renamed=%d pruned=%d uuid_backfill=%d",
+                    sid,
+                    len(out["updated"]),
+                    len(out["pruned"]),
+                    len(out["uuid_filled"]),
+                )
 
 
 class WhitelistCacheReconciler(commands.Cog):

@@ -595,3 +595,106 @@ class TestSyncFromRcon:
         result = await svc.sync_from_rcon(123)
         assert result.ok
         assert result.unreachable_target_ids == ("bad",)
+
+
+class TestMetricsEvents:
+    @pytest.mark.asyncio
+    async def test_submit_ign_accepted_increments_metrics(self):
+        conn = mock_db_conn()
+        pool = db_pool_with_conn(conn)
+        mojang = mock_mojang_port(profiles={"Steve": ("uuid-1", "Steve")})
+        metrics = MagicMock()
+        metrics.whitelist_events_total.labels = MagicMock(return_value=MagicMock())
+        svc = build_whitelist_service(db_pool=pool, mojang=mojang, metrics=metrics)
+        result = await svc.submit_ign(
+            server_id=1, channel_id=2, message_id=3, author_id=4, content="Steve"
+        )
+        assert result.outcome is SubmissionOutcome.ACCEPTED
+        metrics.whitelist_events_total.labels.assert_called_once_with(
+            event="submit", outcome="ACCEPTED"
+        )
+        metrics.whitelist_events_total.labels.return_value.inc.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_resolve_reaction_rejected_increments_metrics(self):
+        conn = mock_db_conn()
+        conn.fetchrow = AsyncMock(
+            return_value={
+                "username": "Steve",
+                "channel_id": 2,
+                "author_id": 4,
+                "minecraft_uuid": "uuid-1",
+            }
+        )
+        pool = db_pool_with_conn(conn)
+        checker = mock_permission_checker_port(allow=True)
+        metrics = MagicMock()
+        metrics.whitelist_events_total.labels = MagicMock(return_value=MagicMock())
+        svc = build_whitelist_service(db_pool=pool, permission_checker=checker, metrics=metrics)
+        result = await svc.resolve_reaction(server_id=1, message_id=3, moderator_id=4, emoji="❌")
+        assert result.outcome is ResolutionOutcome.REJECTED
+        metrics.whitelist_events_total.labels.assert_called_once_with(
+            event="reject", outcome="REJECTED"
+        )
+        metrics.whitelist_events_total.labels.return_value.inc.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_resolve_reaction_approve_failed_increments_metrics(self):
+        conn = mock_db_conn()
+        conn.fetchrow = AsyncMock(
+            return_value={
+                "username": "Steve",
+                "channel_id": 2,
+                "author_id": 4,
+                "minecraft_uuid": "uuid-1",
+            }
+        )
+        pool = db_pool_with_conn(conn)
+        rcon = mock_rcon_port()
+        rcon.whitelist_add = AsyncMock(side_effect=Exception("RCON failed"))
+        checker = mock_permission_checker_port(allow=True)
+        metrics = MagicMock()
+        metrics.whitelist_events_total.labels = MagicMock(return_value=MagicMock())
+        svc = build_whitelist_service(
+            db_pool=pool, rcon=rcon, permission_checker=checker, metrics=metrics
+        )
+        result = await svc.resolve_reaction(server_id=1, message_id=3, moderator_id=4, emoji="✅")
+        assert result.outcome is ResolutionOutcome.APPROVE_FAILED
+        metrics.whitelist_events_total.labels.assert_called_once_with(
+            event="approve", outcome="APPROVE_FAILED"
+        )
+        metrics.whitelist_events_total.labels.return_value.inc.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_resolve_reaction_approved_increments_metrics(self):
+        conn = mock_db_conn()
+        conn.fetchrow = AsyncMock(
+            return_value={
+                "username": "Steve",
+                "channel_id": 2,
+                "author_id": 4,
+                "minecraft_uuid": "uuid-1",
+            }
+        )
+        conn.execute = AsyncMock()
+        pool = db_pool_with_conn(conn)
+        rcon = mock_rcon_port()
+        rcon.whitelist_add = AsyncMock(return_value="Added")
+        notifier = mock_notifier_port()
+        notifier.notify_whitelist = AsyncMock(return_value=True)
+        checker = mock_permission_checker_port(allow=True)
+        metrics = MagicMock()
+        metrics.whitelist_events_total.labels = MagicMock(return_value=MagicMock())
+        svc = build_whitelist_service(
+            db_pool=pool,
+            rcon=rcon,
+            notifier=notifier,
+            permission_checker=checker,
+            metrics=metrics,
+        )
+        result = await svc.resolve_reaction(server_id=1, message_id=3, moderator_id=4, emoji="✅")
+        assert result.outcome is ResolutionOutcome.APPROVED
+        metrics.whitelist_events_total.labels.assert_called_once_with(
+            event="approve", outcome="APPROVED"
+        )
+        metrics.whitelist_events_total.labels.return_value.inc.assert_called_once()

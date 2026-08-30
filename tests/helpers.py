@@ -151,6 +151,7 @@ def build_whitelist_service(
     cache=None,
     notifier=None,
     permission_checker=None,
+    metrics=None,
 ):
     from bot.services.whitelist import WhitelistService
 
@@ -163,6 +164,7 @@ def build_whitelist_service(
         permission_checker=(
             permission_checker if permission_checker is not None else mock_permission_checker_port()
         ),
+        metrics=metrics,
     )
 
 

@@ -6,23 +6,13 @@ from discord.ext import commands
 
 from bot.auth.command_helpers import require_admin, require_mod, require_rcon
 from bot.services.minecraft_rcon import MinecraftRCONError, parse_whitelist_list_response
-from bot.services.mojang import get_profile, get_profile_by_uuid, get_profiles_batch
+from bot.services.mojang import get_profile, get_profile_by_uuid
 from bot.utils.log_context import log_command_start
 from bot.utils.pagination import ListPaginatedView, truncate_for_discord
-from bot.utils.whitelist_cache import (
-    add_to_cache,
-    get_cache_entry,
-    get_cached_usernames,
-    reconcile_whitelist_cache,
-    remove_from_cache,
-    sync_from_rcon,
-)
+from bot.utils.telemetry import trace_span
 from bot.utils.whitelist_channel import get_whitelist_channel_id, set_whitelist_channel
 
 logger = logging.getLogger(__name__)
-
-WHITELIST_APPROVE_EMOJI = "\u2705"
-WHITELIST_REJECT_EMOJI = "\u274c"
 
 OPERATION_CHOICES = [
     app_commands.Choice(name="Add", value="add"),
@@ -49,16 +39,10 @@ async def _whitelist_username_autocomplete(
     bot = interaction.client
     if not bot.minecraft_rcon:
         return []
-    usernames = await get_cached_usernames(bot.db_pool, interaction.guild_id, cache=bot.cache)
+    usernames = await bot.whitelist_service.get_cached_usernames(interaction.guild_id)
     if not usernames and bot.minecraft_rcon._is_configured():
-        await sync_from_rcon(
-            bot.db_pool,
-            interaction.guild_id,
-            bot.minecraft_rcon,
-            batch_fetch=get_profiles_batch,
-            cache=bot.cache,
-        )
-        usernames = await get_cached_usernames(bot.db_pool, interaction.guild_id, cache=bot.cache)
+        await bot.whitelist_service.sync_from_rcon(interaction.guild_id)
+        usernames = await bot.whitelist_service.get_cached_usernames(interaction.guild_id)
     cur = current.lower()
     choices = [
         app_commands.Choice(name=u, value=u) for u in usernames if not cur or cur in u.lower()
@@ -270,6 +254,8 @@ class WhitelistCommands(commands.Cog):
             await interaction.followup.send(f"Whitelist: {resp}", ephemeral=True)
         except MinecraftRCONError as e:
             logger.warning("RCON whitelist %s failed: %s", op, e)
+            if self.bot.metrics:
+                self.bot.metrics.errors_total.labels(error_type="whitelist_rcon_unreachable").inc()
             await interaction.followup.send(
                 "Could not connect to the Minecraft server. Check RCON configuration.",
                 ephemeral=True,
@@ -289,32 +275,42 @@ class WhitelistCommands(commands.Cog):
                 ephemeral=True,
             )
             return
-        try:
-            resp = await self.bot.minecraft_rcon.whitelist_add(valid)
-            profile = await get_profile(valid)
-            minecraft_uuid = profile[0] if profile else None
-            await add_to_cache(
-                self.bot.db_pool,
-                interaction.guild_id,
-                valid,
-                added_by=interaction.user.id,
-                minecraft_uuid=minecraft_uuid,
-                cache=self.bot.cache,
-            )
-            if self.bot.notifier and self.bot.settings.feature_notify_moderation:
-                await self.bot.notifier.notify_whitelist(
+        with trace_span(
+            "whitelist.add",
+            feature="whitelist",
+            attributes={
+                "guild_id": str(interaction.guild_id),
+                "whitelist.username": valid,
+            },
+        ):
+            try:
+                resp = await self.bot.minecraft_rcon.whitelist_add(valid)
+                profile = await get_profile(valid)
+                minecraft_uuid = profile[0] if profile else None
+                await self.bot.whitelist_service.add_to_cache(
                     interaction.guild_id,
-                    "Add",
-                    interaction.user.id,
-                    username=valid,
+                    valid,
+                    added_by=interaction.user.id,
+                    minecraft_uuid=minecraft_uuid,
                 )
-            await interaction.followup.send(f"Whitelist: {resp}", ephemeral=True)
-        except MinecraftRCONError as e:
-            logger.warning("RCON whitelist add failed: %s", e)
-            await interaction.followup.send(
-                "Could not connect to the Minecraft server. Check RCON configuration.",
-                ephemeral=True,
-            )
+                if self.bot.notifier and self.bot.settings.feature_notify_moderation:
+                    await self.bot.notifier.notify_whitelist(
+                        interaction.guild_id,
+                        "Add",
+                        interaction.user.id,
+                        username=valid,
+                    )
+                await interaction.followup.send(f"Whitelist: {resp}", ephemeral=True)
+            except MinecraftRCONError as e:
+                logger.warning("RCON whitelist add failed: %s", e)
+                if self.bot.metrics:
+                    self.bot.metrics.errors_total.labels(
+                        error_type="whitelist_rcon_unreachable"
+                    ).inc()
+                await interaction.followup.send(
+                    "Could not connect to the Minecraft server. Check RCON configuration.",
+                    ephemeral=True,
+                )
 
     async def _handle_list(self, interaction: discord.Interaction):
         try:
@@ -335,104 +331,117 @@ class WhitelistCommands(commands.Cog):
             )
         except MinecraftRCONError as e:
             logger.warning("RCON whitelist list failed: %s", e)
+            if self.bot.metrics:
+                self.bot.metrics.errors_total.labels(error_type="whitelist_rcon_unreachable").inc()
             await interaction.followup.send(
                 "Could not connect to the Minecraft server. Check RCON configuration.",
                 ephemeral=True,
             )
 
     async def _handle_sync(self, interaction: discord.Interaction):
-        out = await sync_from_rcon(
-            self.bot.db_pool,
-            interaction.guild_id,
-            self.bot.minecraft_rcon,
-            batch_fetch=get_profiles_batch,
-            cache=self.bot.cache,
-        )
-        if out.ok:
-            count = len(
-                await get_cached_usernames(
-                    self.bot.db_pool, interaction.guild_id, cache=self.bot.cache
+        with trace_span(
+            "whitelist.sync",
+            feature="whitelist",
+            attributes={"guild_id": str(interaction.guild_id)},
+        ):
+            out = await self.bot.whitelist_service.sync_from_rcon(interaction.guild_id)
+            if out.ok:
+                count = len(
+                    await self.bot.whitelist_service.get_cached_usernames(interaction.guild_id)
                 )
-            )
-            msg = f"Synced {count} player(s) from {out.reachable_targets} Minecraft server(s)."
-            if out.unreachable_target_ids:
-                msg += (
-                    f" {len(out.unreachable_target_ids)} server(s) unreachable (details in logs)."
+                msg = f"Synced {count} player(s) from {out.reachable_targets} Minecraft server(s)."
+                if out.unreachable_target_ids:
+                    msg += f" {len(out.unreachable_target_ids)} server(s) unreachable (details in logs)."
+                await interaction.followup.send(msg, ephemeral=True)
+            else:
+                await interaction.followup.send(
+                    "Failed to sync from Minecraft. Check RCON settings and logs.",
+                    ephemeral=True,
                 )
-            await interaction.followup.send(msg, ephemeral=True)
-        else:
-            await interaction.followup.send(
-                "Failed to sync from Minecraft. Check RCON settings and logs.",
-                ephemeral=True,
-            )
 
     async def _handle_push(self, interaction: discord.Interaction):
-        master = await get_cached_usernames(
-            self.bot.db_pool, interaction.guild_id, cache=self.bot.cache
-        )
+        master = await self.bot.whitelist_service.get_cached_usernames(interaction.guild_id)
         if not master:
             await interaction.followup.send(
                 "Whitelist cache is empty. Approve IGN posts or use Add.",
                 ephemeral=True,
             )
             return
-        try:
-            results = await self.bot.minecraft_rcon.push_master_whitelist(master)
-        except MinecraftRCONError as e:
-            logger.warning("RCON push master failed: %s", e)
-            await interaction.followup.send(
-                "Could not push to Minecraft servers. Check RCON configuration.",
-                ephemeral=True,
-            )
-            return
-        lines = []
-        for tr in results:
-            if tr.error:
-                lines.append(f"**{tr.target_id}**: error: {tr.error}")
-            else:
-                lines.append(
-                    f"**{tr.target_id}**: +{len(tr.added)} added, −{len(tr.removed)} removed"
+        with trace_span(
+            "whitelist.push",
+            feature="whitelist",
+            attributes={
+                "guild_id": str(interaction.guild_id),
+                "whitelist.master_count": len(master),
+            },
+        ) as span:
+            try:
+                results = await self.bot.minecraft_rcon.push_master_whitelist(master)
+            except MinecraftRCONError as e:
+                logger.warning("RCON push master failed: %s", e)
+                if self.bot.metrics:
+                    self.bot.metrics.errors_total.labels(
+                        error_type="whitelist_rcon_unreachable"
+                    ).inc()
+                await interaction.followup.send(
+                    "Could not push to Minecraft servers. Check RCON configuration.",
+                    ephemeral=True,
                 )
-        summary = truncate_for_discord("\n".join(lines))
-        if self.bot.notifier and self.bot.settings.feature_notify_moderation:
-            await self.bot.notifier.notify_whitelist(
-                interaction.guild_id,
-                "Push",
-                interaction.user.id,
-            )
-        await interaction.followup.send(summary, ephemeral=True)
+                return
+            span.set_attribute("whitelist.target_count", len(results))
+            lines = []
+            for tr in results:
+                if tr.error:
+                    lines.append(f"**{tr.target_id}**: error: {tr.error}")
+                else:
+                    lines.append(
+                        f"**{tr.target_id}**: +{len(tr.added)} added, −{len(tr.removed)} removed"
+                    )
+            summary = truncate_for_discord("\n".join(lines))
+            if self.bot.notifier and self.bot.settings.feature_notify_moderation:
+                await self.bot.notifier.notify_whitelist(
+                    interaction.guild_id,
+                    "Push",
+                    interaction.user.id,
+                )
+            await interaction.followup.send(summary, ephemeral=True)
 
     async def _handle_repair(self, interaction: discord.Interaction):
-        summary = await reconcile_whitelist_cache(
-            self.bot.db_pool, interaction.guild_id, cache=self.bot.cache
-        )
-        lines: list[str] = []
-        if summary["updated"]:
-            lines.append(
-                "Renamed in cache (Mojang): "
-                + ", ".join(summary["updated"][:40])
-                + (" …" if len(summary["updated"]) > 40 else "")
+        with trace_span(
+            "whitelist.repair",
+            feature="whitelist",
+            attributes={"guild_id": str(interaction.guild_id)},
+        ):
+            summary = await self.bot.whitelist_service.reconcile_whitelist_cache(
+                interaction.guild_id
             )
-        if summary["uuid_filled"]:
-            lines.append(f"UUID saved for {len(summary['uuid_filled'])} account(s).")
-        if summary["pruned"]:
-            lines.append(
-                "Removed stale names (no Mojang profile): "
-                + ", ".join(summary["pruned"][:40])
-                + (" …" if len(summary["pruned"]) > 40 else "")
-            )
-        if not lines:
-            lines.append(
-                "No cache changes (entries match Mojang UUID lookup, or APIs did not respond)."
-            )
-        msg = truncate_for_discord("\n".join(lines))
-        if self.bot.notifier and self.bot.settings.feature_notify_moderation:
-            await self.bot.notifier.notify_whitelist(
-                interaction.guild_id,
-                "Repair",
-                interaction.user.id,
-            )
-        await interaction.followup.send(msg, ephemeral=True)
+            lines: list[str] = []
+            if summary["updated"]:
+                lines.append(
+                    "Renamed in cache (Mojang): "
+                    + ", ".join(summary["updated"][:40])
+                    + (" …" if len(summary["updated"]) > 40 else "")
+                )
+            if summary["uuid_filled"]:
+                lines.append(f"UUID saved for {len(summary['uuid_filled'])} account(s).")
+            if summary["pruned"]:
+                lines.append(
+                    "Removed stale names (no Mojang profile): "
+                    + ", ".join(summary["pruned"][:40])
+                    + (" …" if len(summary["pruned"]) > 40 else "")
+                )
+            if not lines:
+                lines.append(
+                    "No cache changes (entries match Mojang UUID lookup, or APIs did not respond)."
+                )
+            msg = truncate_for_discord("\n".join(lines))
+            if self.bot.notifier and self.bot.settings.feature_notify_moderation:
+                await self.bot.notifier.notify_whitelist(
+                    interaction.guild_id,
+                    "Repair",
+                    interaction.user.id,
+                )
+            await interaction.followup.send(msg, ephemeral=True)
 
     async def _handle_remove(self, interaction: discord.Interaction, username: str | None):
         if not username:
@@ -448,40 +457,54 @@ class WhitelistCommands(commands.Cog):
                 ephemeral=True,
             )
             return
-        try:
-            resp = await self.bot.minecraft_rcon.whitelist_remove(valid)
-            if _rcon_remove_sounds_failed(resp):
-                entry = await get_cache_entry(self.bot.db_pool, interaction.guild_id, valid)
-                uid = entry.get("minecraft_uuid") if entry else None
-                if uid:
-                    prof = await get_profile_by_uuid(uid)
-                    if prof and prof[1].lower() != valid.lower():
-                        resp = await self.bot.minecraft_rcon.whitelist_remove(prof[1])
-            if _rcon_remove_sounds_failed(resp):
+        with trace_span(
+            "whitelist.remove",
+            feature="whitelist",
+            attributes={
+                "guild_id": str(interaction.guild_id),
+                "whitelist.username": valid,
+                "whitelist.retried_after_rename": False,
+            },
+        ) as span:
+            try:
+                resp = await self.bot.minecraft_rcon.whitelist_remove(valid)
+                if _rcon_remove_sounds_failed(resp):
+                    entry = await self.bot.whitelist_service.get_cache_entry(
+                        interaction.guild_id, valid
+                    )
+                    uid = entry.get("minecraft_uuid") if entry else None
+                    if uid:
+                        prof = await get_profile_by_uuid(uid)
+                        if prof and prof[1].lower() != valid.lower():
+                            span.set_attribute("whitelist.retried_after_rename", True)
+                            resp = await self.bot.minecraft_rcon.whitelist_remove(prof[1])
+                if _rcon_remove_sounds_failed(resp):
+                    await interaction.followup.send(
+                        "Could not remove that name on the server (it may be outdated after a "
+                        "Mojang rename). Try **Repair**, then Remove again with the updated name, "
+                        f"or Sync from RCON. Last response: {resp[:300]}",
+                        ephemeral=True,
+                    )
+                    return
+                await self.bot.whitelist_service.remove_from_cache(interaction.guild_id, valid)
+                if self.bot.notifier and self.bot.settings.feature_notify_moderation:
+                    await self.bot.notifier.notify_whitelist(
+                        interaction.guild_id,
+                        "Remove",
+                        interaction.user.id,
+                        username=valid,
+                    )
+                await interaction.followup.send(f"Whitelist: {resp}", ephemeral=True)
+            except MinecraftRCONError as e:
+                logger.warning("RCON whitelist remove failed: %s", e)
+                if self.bot.metrics:
+                    self.bot.metrics.errors_total.labels(
+                        error_type="whitelist_rcon_unreachable"
+                    ).inc()
                 await interaction.followup.send(
-                    "Could not remove that name on the server (it may be outdated after a "
-                    "Mojang rename). Try **Repair**, then Remove again with the updated name, "
-                    f"or Sync from RCON. Last response: {resp[:300]}",
+                    "Could not connect to the Minecraft server. Check RCON configuration.",
                     ephemeral=True,
                 )
-                return
-            await remove_from_cache(
-                self.bot.db_pool, interaction.guild_id, valid, cache=self.bot.cache
-            )
-            if self.bot.notifier and self.bot.settings.feature_notify_moderation:
-                await self.bot.notifier.notify_whitelist(
-                    interaction.guild_id,
-                    "Remove",
-                    interaction.user.id,
-                    username=valid,
-                )
-            await interaction.followup.send(f"Whitelist: {resp}", ephemeral=True)
-        except MinecraftRCONError as e:
-            logger.warning("RCON whitelist remove failed: %s", e)
-            await interaction.followup.send(
-                "Could not connect to the Minecraft server. Check RCON configuration.",
-                ephemeral=True,
-            )
 
     async def cog_load(self):
         self.bot.tree.add_command(self.whitelist_cmd)

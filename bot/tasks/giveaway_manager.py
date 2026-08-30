@@ -7,14 +7,14 @@ from discord.ext import commands, tasks
 
 from bot.auth.permissions import PermissionContext
 from bot.commands.giveaway import CACHE_GIVEAWAY_MESSAGE_ID
+from bot.services.giveaway_repository import get_repository
 from bot.services.giveaway_service import (
     build_end_announcement,
-    build_ended_embed,
+    finalize_and_announce,
     select_winners,
 )
 from bot.utils.db import TRANSIENT_DB_ERRORS
-from bot.utils.discord_helpers import get_or_fetch_channel
-from bot.views.giveaway import GIVEAWAY_COLUMNS
+from bot.utils.telemetry import trace_span
 from config.constants import Role
 
 logger = logging.getLogger(__name__)
@@ -97,15 +97,14 @@ class GiveawayManager(commands.Cog):
     @tasks.loop(seconds=15)
     async def check_giveaways(self):
         try:
-            async with self.bot.db_pool.acquire() as conn:
-                expired = await conn.fetch(
-                    "SELECT "
-                    + GIVEAWAY_COLUMNS
-                    + " FROM giveaways WHERE is_active = true AND ends_at <= $1",
-                    datetime.now(timezone.utc),
-                )
-            for g in expired:
-                await self._end_giveaway(g)
+            expired = await get_repository(self.bot).fetch_expired(datetime.now(timezone.utc))
+            with trace_span(
+                "giveaway.check_tick",
+                feature="giveaway",
+                attributes={"giveaway.expired_count": len(expired)},
+            ):
+                for g in expired:
+                    await self._end_giveaway(g)
         except TRANSIENT_DB_ERRORS as e:
             logger.warning("Giveaway check skipped (DB unavailable): %s", e)
         except Exception as e:
@@ -116,112 +115,123 @@ class GiveawayManager(commands.Cog):
         await self.bot.wait_until_ready()
 
     async def _end_giveaway(self, giveaway):
-        try:
-            now = datetime.now(timezone.utc)
-            async with self.bot.db_pool.acquire() as conn:
-                await conn.execute(
-                    "UPDATE giveaways SET is_active = false, ended_at = $1 WHERE id = $2",
+        with trace_span(
+            "giveaway.end",
+            feature="giveaway",
+            attributes={
+                "discord.guild_id": str(giveaway["server_id"]),
+                "giveaway.id": str(giveaway["id"]),
+                "giveaway.winners_count": giveaway["winners_count"],
+            },
+        ):
+            try:
+                now = datetime.now(timezone.utc)
+                giveaway_repo = get_repository(self.bot)
+                await giveaway_repo.mark_ended(
+                    giveaway["id"],
                     now,
-                    giveaway["id"],
+                    cache=self.bot.cache,
+                    message_id=giveaway["message_id"],
                 )
-                entries = await conn.fetch(
-                    "SELECT user_id, entries FROM giveaway_entries WHERE giveaway_id = $1",
-                    giveaway["id"],
-                )
-            if self.bot.cache:
-                self.bot.cache.delete(
-                    CACHE_GIVEAWAY_MESSAGE_ID.format(server_id=giveaway["server_id"])
-                )
-
-            winners = self._select_winners(entries, giveaway["winners_count"])
-            if winners:
-                async with self.bot.db_pool.acquire() as conn:
-                    await conn.executemany(
-                        "UPDATE giveaway_entries SET is_winner = true WHERE giveaway_id = $1 AND user_id = $2",
-                        [(giveaway["id"], w) for w in winners],
+                entries = await giveaway_repo.fetch_entries(giveaway["id"])
+                if self.bot.cache:
+                    self.bot.cache.delete(
+                        CACHE_GIVEAWAY_MESSAGE_ID.format(server_id=giveaway["server_id"])
                     )
 
-            channel = await get_or_fetch_channel(self.bot, giveaway["channel_id"])
-            if not channel:
-                logger.warning(
-                    "Could not fetch channel %s for giveaway %s",
-                    giveaway["channel_id"],
-                    giveaway["id"],
-                )
-                return
+                winners = select_winners(entries, giveaway["winners_count"])
+                if winners:
+                    await giveaway_repo.set_winners(giveaway["id"], set(winners))
 
-            try:
-                msg = await channel.fetch_message(giveaway["message_id"])
                 g = dict(giveaway)
                 g["ended_at"] = now
-                await msg.edit(embed=self._build_ended_embed(g, winners, len(entries)), view=None)
-            except discord.NotFound:  # message already deleted
-                pass
+                channel = await finalize_and_announce(
+                    self.bot,
+                    g,
+                    winners,
+                    len(entries),
+                    build_end_announcement(giveaway["prize"], winners),
+                )
+                if not channel:
+                    return
 
-            if winners:
-                await channel.send(build_end_announcement(giveaway["prize"], winners))
-                await self._create_prize_thread(channel, giveaway, winners)
-            else:
-                await channel.send(build_end_announcement(giveaway["prize"], winners))
+                if winners:
+                    await self._create_prize_thread(channel, giveaway, winners)
 
-            if self.bot.notifier:
-                try:
-                    await self.bot.notifier.notify_giveaway_ended(
-                        giveaway["server_id"], giveaway["prize"], winners, len(entries)
-                    )
-                except Exception as e:
-                    logger.warning("Notify giveaway ended failed: %s", e)
-        except Exception as e:
-            logger.error("End giveaway error %s: %s", giveaway["id"], e, exc_info=True)
+                if self.bot.notifier:
+                    try:
+                        await self.bot.notifier.notify_giveaway_ended(
+                            giveaway["server_id"],
+                            giveaway["prize"],
+                            winners,
+                            len(entries),
+                        )
+                    except Exception as e:
+                        logger.warning("Notify giveaway ended failed: %s", e)
+            except Exception as e:
+                logger.error("End giveaway error %s: %s", giveaway["id"], e, exc_info=True)
+                if self.bot.metrics:
+                    self.bot.metrics.errors_total.labels(error_type="giveaway_end").inc()
 
     async def _create_prize_thread(
         self, channel: discord.TextChannel, giveaway: dict, winners: list
     ):
-        try:
-            thread = await channel.create_thread(
-                name=giveaway["prize"][:80],
-                message=None,
-                invitable=False,
-            )
-            host_id = giveaway["host_id"]
-            for user_id in [host_id] + winners:
-                try:
-                    await thread.add_user(discord.Object(id=user_id))
-                except (discord.Forbidden, discord.HTTPException) as e:
-                    logger.warning("Could not add user %s to prize thread: %s", user_id, e)
+        with trace_span(
+            "giveaway.create_prize_thread",
+            feature="giveaway",
+            attributes={
+                "discord.channel_id": str(channel.id),
+                "giveaway.id": str(giveaway["id"]),
+                "giveaway.winner_count": len(winners),
+            },
+        ):
+            try:
+                thread = await channel.create_thread(
+                    name=giveaway["prize"][:80],
+                    message=None,
+                    invitable=False,
+                )
+                host_id = giveaway["host_id"]
+                for user_id in [host_id] + winners:
+                    try:
+                        await thread.add_user(discord.Object(id=user_id))
+                    except (discord.Forbidden, discord.HTTPException) as e:
+                        logger.warning("Could not add user %s to prize thread: %s", user_id, e)
 
-            host_mention = f"<@{host_id}>"
-            winner_mentions = " ".join(f"<@{w}>" for w in winners)
-            view = CloseGiveawayThreadView(host_id=host_id, timeout=None)
+                host_mention = f"<@{host_id}>"
+                winner_mentions = " ".join(f"<@{w}>" for w in winners)
+                view = CloseGiveawayThreadView(host_id=host_id, timeout=None)
 
-            embed = discord.Embed(
-                title="🎉 Giveaway Ended",
-                description=(
-                    f"**Prize:** {giveaway['prize']}\n\n"
-                    f"**Host:** {host_mention}\n"
-                    f"**Winners:** {winner_mentions}\n\n"
-                    "Congratulations! Prizes will be handled in this thread."
-                ),
-                color=discord.Color.gold(),
-            )
-            await thread.send(
-                content=f"{host_mention} {winner_mentions}",
-                embed=embed,
-                view=view,
-            )
-        except discord.Forbidden:
-            logger.warning(
-                "Cannot create prize thread (missing create_private_threads?): %s",
-                giveaway["id"],
-            )
-        except Exception as e:
-            logger.warning("Could not create prize thread for giveaway %s: %s", giveaway["id"], e)
-
-    def _select_winners(self, entries: list, count: int) -> list:
-        return select_winners(entries, count)
-
-    def _build_ended_embed(self, giveaway, winners: list, entry_count: int) -> discord.Embed:
-        return build_ended_embed(giveaway, winners, entry_count)
+                embed = discord.Embed(
+                    title="🎉 Giveaway Ended",
+                    description=(
+                        f"**Prize:** {giveaway['prize']}\n\n"
+                        f"**Host:** {host_mention}\n"
+                        f"**Winners:** {winner_mentions}\n\n"
+                        "Congratulations! Prizes will be handled in this thread."
+                    ),
+                    color=discord.Color.gold(),
+                )
+                await thread.send(
+                    content=f"{host_mention} {winner_mentions}",
+                    embed=embed,
+                    view=view,
+                )
+            except discord.Forbidden:
+                logger.warning(
+                    "Cannot create prize thread (missing create_private_threads?): %s",
+                    giveaway["id"],
+                )
+                if self.bot.metrics:
+                    self.bot.metrics.errors_total.labels(error_type="giveaway_prize_thread").inc()
+            except Exception as e:
+                logger.warning(
+                    "Could not create prize thread for giveaway %s: %s",
+                    giveaway["id"],
+                    e,
+                )
+                if self.bot.metrics:
+                    self.bot.metrics.errors_total.labels(error_type="giveaway_prize_thread").inc()
 
 
 async def setup(bot: commands.Bot):

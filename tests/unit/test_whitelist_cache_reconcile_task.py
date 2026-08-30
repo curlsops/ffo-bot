@@ -58,8 +58,29 @@ async def test_reconcile_all_cached_servers_fetch_fails(caplog):
     bot = MagicMock()
     bot.db_pool = pool
     bot.cache = None
+    bot.metrics = None
     await reconcile_all_cached_servers(bot)
     assert "could not list cache servers" in caplog.text
+
+
+@pytest.mark.asyncio
+async def test_reconcile_all_cached_servers_fetch_fails_with_metrics():
+    conn = AsyncMock()
+    conn.fetch = AsyncMock(side_effect=RuntimeError("db"))
+    ctx = MagicMock()
+    ctx.__aenter__ = AsyncMock(return_value=conn)
+    ctx.__aexit__ = AsyncMock(return_value=None)
+    pool = MagicMock()
+    pool.acquire.return_value = ctx
+    bot = MagicMock()
+    bot.db_pool = pool
+    bot.cache = None
+    bot.metrics = MagicMock()
+    bot.metrics.errors_total = MagicMock()
+    await reconcile_all_cached_servers(bot)
+    bot.metrics.errors_total.labels.assert_called_once_with(
+        error_type="whitelist_reconcile_list_servers"
+    )
 
 
 @pytest.mark.asyncio

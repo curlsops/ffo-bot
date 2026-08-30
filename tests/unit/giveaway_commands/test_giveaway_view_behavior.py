@@ -138,6 +138,21 @@ class TestAlreadyJoinedView:
         assert "Leave giveaway error" in caplog.text
 
     @pytest.mark.asyncio
+    async def test_leave_button_db_error_with_metrics(self, leave_view, mock_bot, caplog):
+        caplog.set_level(logging.WARNING, logger="bot.commands.giveaway")
+        ctx = MagicMock()
+        ctx.__aenter__ = AsyncMock(side_effect=Exception("DB unavailable"))
+        ctx.__aexit__ = AsyncMock(return_value=None)
+        mock_bot.db_pool = MagicMock(acquire=MagicMock(return_value=ctx))
+        mock_bot.metrics = MagicMock()
+        mock_bot.metrics.errors_total.labels.return_value.inc = MagicMock()
+        i = interaction()
+        await leave_view.leave_button.callback(i)
+        mock_bot.metrics.errors_total.labels.assert_called_with(error_type="giveaway_leave")
+        assert_followup_contains(i, "Error leaving")
+        assert "Leave giveaway error" in caplog.text
+
+    @pytest.mark.asyncio
     async def test_update_giveaway_embed_schedule_error_logged(self, leave_view, mock_bot, caplog):
         caplog.set_level(logging.WARNING, logger="bot.views.giveaway")
         i = interaction()

@@ -27,6 +27,7 @@ from config.settings import Settings
 from database.connection import DatabasePool
 
 if TYPE_CHECKING:
+    from discord.http import HTTPClient
     from mafic import NodePool
 
 logger = logging.getLogger(__name__)
@@ -46,6 +47,28 @@ def _discord_intents() -> discord.Intents:
     return intents
 
 
+async def sync_commands(
+    tree: app_commands.CommandTree,
+    http: HTTPClient,
+    application_id: int,
+    guilds: list[discord.Guild],
+    *,
+    clear_on_boot: bool,
+) -> int:
+    if clear_on_boot:
+        await http.bulk_upsert_global_commands(application_id, [])
+    for guild in guilds:
+        if clear_on_boot:
+            await http.bulk_upsert_guild_commands(application_id, guild.id, [])
+        tree.copy_global_to(guild=guild)
+        await tree.sync(guild=guild)
+    if guilds:
+        logger.info("Synced slash commands to %d guild(s)", len(guilds))
+        return len(guilds)
+    await tree.sync()
+    return 0
+
+
 class _FFOBotMixin(commands.Bot):
     settings: Settings
     db_pool: DatabasePool | None
@@ -57,6 +80,7 @@ class _FFOBotMixin(commands.Bot):
     rate_limiter: RateLimiter | None
     notifier: AdminNotifier | None
     minecraft_rcon: object | None
+    whitelist_service: object | None
     pool: NodePool | None
     _lavalink_node_created: bool
     _shutdown_event: asyncio.Event
@@ -74,6 +98,7 @@ class _FFOBotMixin(commands.Bot):
         self.rate_limiter = None
         self.notifier = None
         self.minecraft_rcon = None
+        self.whitelist_service = None
         self.pool = None
         self._lavalink_node_created = False
         self._shutdown_event = asyncio.Event()
@@ -87,14 +112,21 @@ class _FFOBotMixin(commands.Bot):
             if not db_url:
                 raise ValueError("Database URL not configured")
             self.metrics = BotMetrics()
-            self.db_pool = await DatabasePool.create(
-                db_url,
-                min_size=self.settings.db_pool_min_size,
-                max_size=self.settings.db_pool_max_size,
-                connection_timeout=self.settings.db_connection_timeout,
-                acquire_timeout=self.settings.db_acquire_timeout,
-                metrics=self.metrics,
-            )
+            with trace_span(
+                "bot.setup_hook.db_pool",
+                attributes={
+                    "db.pool_min_size": self.settings.db_pool_min_size,
+                    "db.pool_max_size": self.settings.db_pool_max_size,
+                },
+            ):
+                self.db_pool = await DatabasePool.create(
+                    db_url,
+                    min_size=self.settings.db_pool_min_size,
+                    max_size=self.settings.db_pool_max_size,
+                    connection_timeout=self.settings.db_connection_timeout,
+                    acquire_timeout=self.settings.db_acquire_timeout,
+                    metrics=self.metrics,
+                )
             max_memory_bytes = (
                 int(self.settings.cache_max_memory_mb * 1024 * 1024)
                 if self.settings.cache_max_memory_mb > 0
@@ -104,10 +136,11 @@ class _FFOBotMixin(commands.Bot):
                 max_size=self.settings.cache_max_size,
                 default_ttl=self.settings.cache_default_ttl,
                 max_memory_bytes=max_memory_bytes,
+                metrics=self.metrics,
             )
             set_session(create_session())
 
-            self.phrase_matcher = PhraseMatcher(self.db_pool, self.cache)
+            self.phrase_matcher = PhraseMatcher(self.db_pool, self.cache, metrics=self.metrics)
 
             if self.settings.feature_voice_transcription and self.settings.openai_api_key:
                 from bot.processors.voice_transcriber import VoiceTranscriber
@@ -120,6 +153,7 @@ class _FFOBotMixin(commands.Bot):
             self.rate_limiter = RateLimiter(
                 user_capacity=self.settings.rate_limit_user_capacity,
                 server_capacity=self.settings.rate_limit_server_capacity,
+                metrics=self.metrics,
             )
             self.notifier = AdminNotifier(self)
             from bot.utils.edit_tracker import EditTracker
@@ -130,6 +164,19 @@ class _FFOBotMixin(commands.Bot):
 
                 rcon = MinecraftRCONClient(self.settings)
                 self.minecraft_rcon = rcon
+
+                import bot.services.mojang as mojang
+                from bot.services.whitelist import WhitelistService
+
+                self.whitelist_service = WhitelistService(
+                    db_pool=self.db_pool,
+                    rcon=rcon,
+                    mojang=mojang,
+                    cache=self.cache,
+                    notifier=self.notifier,
+                    permission_checker=self.permission_checker,
+                    metrics=self.metrics,
+                )
             if self.settings.feature_music and self.settings.lavalink_password:
                 from mafic import NodePool
 
@@ -219,89 +266,90 @@ class _FFOBotMixin(commands.Bot):
                     WHERE g.is_active = true AND g.message_id IS NOT NULL
                     GROUP BY g.id, g.message_id
                     """)
-                for row in active:
-                    self.add_view(
-                        GiveawayView(row["id"], self, entry_count=row["entry_count"] or 0),
-                        message_id=row["message_id"],
-                    )
+                with trace_span(
+                    "bot.register_persistent_views",
+                    attributes={"giveaway.active_count": len(active)},
+                ):
+                    for row in active:
+                        self.add_view(
+                            GiveawayView(row["id"], self, entry_count=row["entry_count"] or 0),
+                            message_id=row["message_id"],
+                        )
 
     async def on_shard_ready(self, shard_id: int):
         if (getattr(self, "shard_count", None) or 0) > 1:
             logger.info("Shard %s connected", shard_id)
 
     async def on_ready(self):
-        if (getattr(self, "shard_count", None) or 0) > 1 and not self.is_ready():
-            return
+        with trace_span(
+            "bot.on_ready",
+            attributes={"discord.guild_count": len(self.guilds)},
+        ):
+            if (getattr(self, "shard_count", None) or 0) > 1 and not self.is_ready():
+                return
 
-        logger.info(
-            "Connected as %s (ID: %s) to %d servers", self.user, self.user.id, len(self.guilds)
-        )
-        logger.debug(
-            "on_ready feature_music=%s otel_messages=%s sync_commands=%s",
-            self.settings.feature_music,
-            self.settings.otel_trace_discord_messages,
-            getattr(self.settings, "sync_commands_on_boot", True),
-        )
+            logger.info(
+                "Connected as %s (ID: %s) to %d servers", self.user, self.user.id, len(self.guilds)
+            )
+            logger.debug(
+                "on_ready feature_music=%s otel_messages=%s sync_commands=%s",
+                self.settings.feature_music,
+                self.settings.otel_trace_discord_messages,
+                getattr(self.settings, "sync_commands_on_boot", True),
+            )
 
-        if self.pool and not self._lavalink_node_created:
-            self._lavalink_node_created = True
-            with trace_span(
-                "lavalink.connect",
-                feature="music",
-                attributes={
-                    "lavalink.host": self.settings.lavalink_host or "",
-                    "lavalink.port": int(self.settings.lavalink_port),
-                },
+            if self.pool and not self._lavalink_node_created:
+                self._lavalink_node_created = True
+                with trace_span(
+                    "lavalink.connect",
+                    feature="music",
+                    attributes={
+                        "lavalink.host": self.settings.lavalink_host or "",
+                        "lavalink.port": int(self.settings.lavalink_port),
+                    },
+                ):
+                    try:
+                        await self.pool.create_node(
+                            host=self.settings.lavalink_host,
+                            port=self.settings.lavalink_port,
+                            password=self.settings.lavalink_password,
+                            label="main",
+                        )
+                    except Exception as e:
+                        logger.warning("Lavalink connection failed, music disabled: %s", e)
+                        self.pool = None
+            elif self.settings.feature_music and not self.pool:
+                logger.debug("Music disabled (no Lavalink pool)")
+
+            if (
+                self.pool
+                and self.db_pool
+                and self.settings.feature_music
+                and self.settings.music_voice_recovery_on_ready
             ):
                 try:
-                    await self.pool.create_node(
-                        host=self.settings.lavalink_host,
-                        port=self.settings.lavalink_port,
-                        password=self.settings.lavalink_password,
-                        label="main",
-                    )
+                    from bot.commands.music import reconnect_music_voice_after_ready
+
+                    await reconnect_music_voice_after_ready(self)
                 except Exception as e:
-                    logger.warning("Lavalink connection failed, music disabled: %s", e)
-                    self.pool = None
-        elif self.settings.feature_music and not self.pool:
-            logger.debug("Music disabled (no Lavalink pool)")
+                    logger.warning("Music voice recovery failed: %s", e, exc_info=True)
 
-        if (
-            self.pool
-            and self.db_pool
-            and self.settings.feature_music
-            and self.settings.music_voice_recovery_on_ready
-        ):
-            try:
-                from bot.commands.music import reconnect_music_voice_after_ready
+            if getattr(self.settings, "sync_commands_on_boot", True):
+                with _tracer.start_as_current_span("discord.sync_commands") as sync_span:
+                    sync_span.set_attribute("discord.guild_count", len(self.guilds))
+                    if self.guilds:
+                        await asyncio.gather(*[self._register_server(g) for g in self.guilds])
+                    await sync_commands(
+                        self.tree,
+                        self._connection.http,
+                        self.application_id,
+                        self.guilds,
+                        clear_on_boot=getattr(self.settings, "clear_commands_on_boot", True),
+                    )
 
-                await reconnect_music_voice_after_ready(self)
-            except Exception as e:
-                logger.warning("Music voice recovery failed: %s", e, exc_info=True)
-
-        if getattr(self.settings, "sync_commands_on_boot", True):
-            with _tracer.start_as_current_span("discord.sync_commands") as sync_span:
-                sync_span.set_attribute("discord.guild_count", len(self.guilds))
-                clear_commands_on_boot = getattr(self.settings, "clear_commands_on_boot", True)
-                if clear_commands_on_boot:
-                    await self._connection.http.bulk_upsert_global_commands(self.application_id, [])
-                if self.guilds:
-                    await asyncio.gather(*[self._register_server(g) for g in self.guilds])
-                for guild in self.guilds:
-                    if clear_commands_on_boot:
-                        await self._connection.http.bulk_upsert_guild_commands(
-                            self.application_id, guild.id, []
-                        )
-                    self.tree.copy_global_to(guild=guild)
-                    await self.tree.sync(guild=guild)
-                if self.guilds:
-                    logger.info("Synced slash commands to %d guild(s)", len(self.guilds))
-                else:
-                    await self.tree.sync()
-
-        if self.metrics:
-            self.metrics.set_guild_count(len(self.guilds))
-            self.metrics.set_connection_status(1)
+            if self.metrics:
+                self.metrics.set_guild_count(len(self.guilds))
+                self.metrics.set_connection_status(1)
 
     async def _register_server(self, guild: discord.Guild):
         if not self.db_pool:
@@ -323,36 +371,47 @@ class _FFOBotMixin(commands.Bot):
             logger.error("Failed to register server %s: %s", guild.id, e, exc_info=True)
 
     async def on_guild_join(self, guild: discord.Guild):
-        logger.info("Joined server: %s (%s)", guild.name, guild.id)
-        await self._register_server(guild)
-        self.tree.copy_global_to(guild=guild)
-        await self.tree.sync(guild=guild)
-        if self.metrics:
-            self.metrics.set_guild_count(len(self.guilds))
-        if self.settings.bot_owner_server_id and self.settings.bot_owner_notify_channel_id:
-            owner_ch = self.get_channel(self.settings.bot_owner_notify_channel_id)
-            if (
-                owner_ch
-                and getattr(getattr(owner_ch, "guild", None), "id", None)
-                == self.settings.bot_owner_server_id
-            ):
-                try:
-                    embed = discord.Embed(
-                        title="Bot Added to Server",
-                        description=guild.name,
-                        color=discord.Color.green(),
-                    )
-                    embed.add_field(name="Server ID", value=str(guild.id), inline=True).add_field(
-                        name="Members", value=str(guild.member_count or 0), inline=True
-                    )
-                    await owner_ch.send(embed=embed)
-                except Exception as e:
-                    logger.warning("Failed to notify owner of new server: %s", e)
+        with trace_span(
+            "bot.on_guild_join",
+            attributes={
+                "discord.guild_id": guild.id,
+                "discord.member_count": guild.member_count or 0,
+            },
+        ):
+            logger.info("Joined server: %s (%s)", guild.name, guild.id)
+            await self._register_server(guild)
+            self.tree.copy_global_to(guild=guild)
+            await self.tree.sync(guild=guild)
+            if self.metrics:
+                self.metrics.set_guild_count(len(self.guilds))
+            if self.settings.bot_owner_server_id and self.settings.bot_owner_notify_channel_id:
+                owner_ch = self.get_channel(self.settings.bot_owner_notify_channel_id)
+                if (
+                    owner_ch
+                    and getattr(getattr(owner_ch, "guild", None), "id", None)
+                    == self.settings.bot_owner_server_id
+                ):
+                    try:
+                        embed = discord.Embed(
+                            title="Bot Added to Server",
+                            description=guild.name,
+                            color=discord.Color.green(),
+                        )
+                        embed.add_field(
+                            name="Server ID", value=str(guild.id), inline=True
+                        ).add_field(name="Members", value=str(guild.member_count or 0), inline=True)
+                        await owner_ch.send(embed=embed)
+                    except Exception as e:
+                        logger.warning("Failed to notify owner of new server: %s", e)
 
     async def on_guild_remove(self, guild: discord.Guild):
-        logger.info("Left server: %s (%s)", guild.name, guild.id)
-        if self.metrics:
-            self.metrics.set_guild_count(len(self.guilds))
+        with trace_span(
+            "bot.on_guild_remove",
+            attributes={"discord.guild_id": guild.id},
+        ):
+            logger.info("Left server: %s (%s)", guild.name, guild.id)
+            if self.metrics:
+                self.metrics.set_guild_count(len(self.guilds))
 
     async def close(self):
         logger.info("Shutting down...")
@@ -393,6 +452,8 @@ class _FFOBotMixin(commands.Bot):
     async def on_error(self, event_method: str, *args, **kwargs):
         error = sys.exc_info()[1]
         logger.exception("Error in %s", event_method)
+        if self.metrics:
+            self.metrics.errors_total.labels(error_type="discord_event").inc()
         if self.notifier and (server_id := self._extract_server_id(args)):
             exc = error if isinstance(error, Exception) else RuntimeError(str(error))
             await self.notifier.notify_error(server_id, exc, f"Event: {event_method}")
@@ -412,6 +473,8 @@ class _FFOBotMixin(commands.Bot):
     ):
         cmd_name = interaction.command.name if interaction.command else "unknown"
         logger.exception("App command error: %s", cmd_name)
+        if self.metrics:
+            self.metrics.errors_total.labels(error_type="app_command").inc()
         if self.notifier and interaction.guild_id:
             ctx = f"Command: /{cmd_name}" if interaction.command else "Unknown command"
             await self.notifier.notify_error(
@@ -425,16 +488,41 @@ class _FFOBotMixin(commands.Bot):
 
 
 class MetricsCommandTree(app_commands.CommandTree):
+    def _extract_command_name(self, interaction: discord.Interaction) -> str:
+        data = interaction.data or {}
+        if data.get("type", 1) == 1:
+            command, _ = self._get_app_command_options(data)
+            return command.qualified_name if command else "unknown"
+        return str(data.get("name", "unknown"))
+
+    async def interaction_check(self, interaction: discord.Interaction) -> bool:
+        bot = cast(_FFOBotMixin, self.client)
+        if not (bot.rate_limiter and interaction.guild_id):
+            return True
+
+        allowed, reason = await bot.rate_limiter.check_rate_limit(
+            interaction.user.id, interaction.guild_id
+        )
+        if allowed:
+            return True
+
+        command_name = self._extract_command_name(interaction)
+        trace.get_current_span().set_attribute("discord.rate_limited", True)
+        if bot.settings.feature_notify_rate_limit and bot.notifier:
+            await bot.notifier.notify_rate_limit_hit(
+                interaction.guild_id,
+                interaction.user.id,
+                reason,
+                command_name,
+            )
+        await send_ephemeral(interaction, reason)
+        return False
+
     async def _call(self, interaction: discord.Interaction) -> None:
         bot = cast(_FFOBotMixin, self.client)
         start = time.perf_counter()
         server_id = str(interaction.guild_id) if interaction.guild_id else "0"
-        data = interaction.data or {}
-        if data.get("type", 1) == 1:
-            command, _ = self._get_app_command_options(data)
-            command_name = command.qualified_name if command else "unknown"
-        else:
-            command_name = data.get("name", "unknown")
+        command_name = self._extract_command_name(interaction)
 
         with _tracer.start_as_current_span("discord.interaction") as span:
             span.set_attribute("discord.command", command_name)
@@ -444,23 +532,6 @@ class MetricsCommandTree(app_commands.CommandTree):
                 span.set_attribute("discord.channel_id", str(interaction.channel_id))
             span.set_attribute("discord.user_id", str(interaction.user.id))
             try:
-                if bot.rate_limiter and interaction.guild_id:
-                    allowed, reason = await bot.rate_limiter.check_rate_limit(
-                        interaction.user.id, interaction.guild_id
-                    )
-                    if not allowed:
-                        span.set_attribute("discord.rate_limited", True)
-                        if bot.settings.feature_notify_rate_limit and bot.notifier:
-                            await bot.notifier.notify_rate_limit_hit(
-                                interaction.guild_id,
-                                interaction.user.id,
-                                reason,
-                                command_name,
-                            )
-                        await send_ephemeral(interaction, reason)
-                        interaction.command_failed = True
-                        return
-
                 await super()._call(interaction)
             finally:
                 if getattr(interaction, "command_failed", False):
