@@ -357,6 +357,14 @@ class TestGiveawayView:
         assert_followup_contains(i, "Error")
 
     @pytest.mark.asyncio
+    async def test_join_button_error_without_metrics(self, view, mock_bot):
+        mock_bot.db_pool = db_ctx(AsyncMock(fetchrow=AsyncMock(side_effect=Exception("DB"))))
+        mock_bot.metrics = None
+        i = interaction()
+        await view.join_button(i)
+        assert_followup_contains(i, "Error")
+
+    @pytest.mark.asyncio
     async def test_entries_button_error_with_metrics(self, view, mock_bot):
         mock_bot.db_pool = db_ctx(AsyncMock(fetchrow=AsyncMock(side_effect=Exception("DB"))))
         mock_bot.metrics = MagicMock()
@@ -364,6 +372,14 @@ class TestGiveawayView:
         i = interaction()
         await view.entries_button(i)
         mock_bot.metrics.errors_total.labels.assert_called_with(error_type="giveaway_entries")
+        assert_followup_contains(i, "Error")
+
+    @pytest.mark.asyncio
+    async def test_entries_button_error_without_metrics(self, view, mock_bot):
+        mock_bot.db_pool = db_ctx(AsyncMock(fetchrow=AsyncMock(side_effect=Exception("DB"))))
+        mock_bot.metrics = None
+        i = interaction()
+        await view.entries_button(i)
         assert_followup_contains(i, "Error")
 
 
