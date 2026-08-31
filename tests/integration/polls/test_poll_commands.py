@@ -1,0 +1,71 @@
+from unittest.mock import AsyncMock, MagicMock
+
+import pytest
+
+from bot.commands.polls import PollCommands
+from tests.helpers import assert_followup_contains, mock_interaction
+
+
+def make_bot(admin=True):
+    bot = MagicMock()
+    bot.permission_checker.check_role = AsyncMock(return_value=admin)
+    return bot
+
+
+@pytest.mark.asyncio
+async def test_poll_success():
+    bot = make_bot()
+    cog = PollCommands(bot)
+    i = mock_interaction(guild_id=111, user_id=222)
+    i.channel.send = AsyncMock()
+    await cog.poll.callback(cog, i, "What do you prefer?", "Yes,No,Maybe", "1d")
+    i.channel.send.assert_awaited_once()
+    call = i.channel.send.call_args
+    assert call.kwargs.get("poll") is not None
+    assert call.kwargs["poll"].question == "What do you prefer?"
+    assert len(call.kwargs["poll"].answers) == 3
+    i.followup.send.assert_awaited_with("Poll created!", ephemeral=True)
+
+
+@pytest.mark.asyncio
+async def test_poll_channel_param_requires_admin():
+    bot = make_bot(admin=False)
+    cog = PollCommands(bot)
+    i = mock_interaction(guild_id=111, user_id=222)
+    target_channel = MagicMock(send=AsyncMock())
+    await cog.poll.callback(cog, i, "Question?", "Yes,No", "1d", channel=target_channel)
+    target_channel.send.assert_not_awaited()
+    i.followup.send.assert_awaited_with("Admin required.", ephemeral=True)
+
+
+@pytest.mark.asyncio
+async def test_poll_validation_too_few_options():
+    bot = make_bot()
+    cog = PollCommands(bot)
+    i = mock_interaction(guild_id=111, user_id=222)
+    i.channel.send = AsyncMock()
+    await cog.poll.callback(cog, i, "Question?", "OnlyOne", "1d")
+    i.channel.send.assert_not_awaited()
+    assert_followup_contains(i, "at least 2 options")
+
+
+@pytest.mark.asyncio
+async def test_poll_validation_invalid_duration():
+    bot = make_bot()
+    cog = PollCommands(bot)
+    i = mock_interaction(guild_id=111, user_id=222)
+    i.channel.send = AsyncMock()
+    await cog.poll.callback(cog, i, "Question?", "Yes,No", "invalid")
+    i.channel.send.assert_not_awaited()
+    assert_followup_contains(i, "Invalid duration")
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("duration", ["1h", "6h", "1d", "3d", "7d"])
+async def test_poll_durations(duration, mock_bot):
+    cog = PollCommands(mock_bot)
+    i = mock_interaction(guild_id=123, user_id=456)
+    i.channel.send = AsyncMock()
+    await cog.poll.callback(cog, i, "Q?", "A,B,C", duration=duration)
+    i.channel.send.assert_awaited()
+    i.followup.send.assert_awaited_with("Poll created!", ephemeral=True)
