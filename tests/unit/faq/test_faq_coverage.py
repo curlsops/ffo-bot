@@ -2,29 +2,13 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
-from bot.commands.faq import FAQCommands, _invalidate_faq_cache
+from bot.commands.faq import FAQCommands
 from tests.helpers import assert_followup_contains, build_faq_bot, mock_db_ctx, mock_interaction
 
 
 @pytest.fixture
 def cog():
     return FAQCommands(build_faq_bot())
-
-
-def test_invalidate_faq_cache_no_cache():
-    _invalidate_faq_cache(None, 1, None)
-
-
-def test_invalidate_faq_cache_with_topic():
-    c = MagicMock()
-    _invalidate_faq_cache(c, 7, "rules")
-    assert c.delete.call_count >= 3
-
-
-def test_invalidate_faq_cache_without_topic_skips_entry_key():
-    c = MagicMock()
-    _invalidate_faq_cache(c, 7, None)
-    assert c.delete.call_count == 2
 
 
 @pytest.mark.asyncio
@@ -172,9 +156,8 @@ async def test_list_all_fetch_exception(cog):
     conn = AsyncMock(fetch=AsyncMock(side_effect=RuntimeError("db")))
     cog.bot.db_pool.acquire.return_value = mock_db_ctx(conn)
     i = mock_interaction()
-    with patch("bot.commands.faq.send_error", new_callable=AsyncMock) as se:
-        await cog.faq_group.list_cmd.callback(cog.faq_group, i, None)
-    se.assert_awaited()
+    await cog.faq_group.list_cmd.callback(cog.faq_group, i, None)
+    i.followup.send.assert_awaited_with("❌ Error fetching FAQ.", ephemeral=True)
 
 
 @pytest.mark.asyncio
@@ -213,9 +196,8 @@ async def test_submit_exception(cog):
     conn = AsyncMock(fetchrow=AsyncMock(side_effect=RuntimeError("x")))
     cog.bot.db_pool.acquire.return_value = mock_db_ctx(conn)
     i = mock_interaction()
-    with patch("bot.commands.faq.send_error", new_callable=AsyncMock) as se:
-        await cog.faq_group.submit_cmd.callback(cog.faq_group, i, "Q")
-    se.assert_awaited()
+    await cog.faq_group.submit_cmd.callback(cog.faq_group, i, "Q")
+    i.followup.send.assert_awaited_with("❌ Error submitting question.", ephemeral=True)
 
 
 @pytest.mark.asyncio
@@ -233,9 +215,8 @@ async def test_add_exception(cog):
     )
     cog.bot.db_pool.acquire.return_value = mock_db_ctx(conn)
     i = mock_interaction()
-    with patch("bot.commands.faq.send_error", new_callable=AsyncMock) as se:
-        await cog.faq_group.add_cmd.callback(cog.faq_group, i, "nt", "q", "a")
-    se.assert_awaited()
+    await cog.faq_group.add_cmd.callback(cog.faq_group, i, "nt", "q", "a")
+    i.followup.send.assert_awaited_with("❌ Error adding FAQ.", ephemeral=True)
 
 
 @pytest.mark.asyncio
@@ -259,14 +240,12 @@ async def test_edit_empty_topic(cog):
 @pytest.mark.asyncio
 async def test_edit_exception(cog):
     conn = AsyncMock(
-        fetchrow=AsyncMock(return_value={"question": "a", "answer": "b"}),
-        execute=AsyncMock(side_effect=RuntimeError("x")),
+        fetchrow=AsyncMock(side_effect=RuntimeError("x")),
     )
     cog.bot.db_pool.acquire.return_value = mock_db_ctx(conn)
     i = mock_interaction()
-    with patch("bot.commands.faq.send_error", new_callable=AsyncMock) as se:
-        await cog.faq_group.edit_cmd.callback(cog.faq_group, i, "rules", "nq", None)
-    se.assert_awaited()
+    await cog.faq_group.edit_cmd.callback(cog.faq_group, i, "rules", "nq", None)
+    i.followup.send.assert_awaited_with("❌ Error editing FAQ.", ephemeral=True)
 
 
 @pytest.mark.asyncio
@@ -309,9 +288,8 @@ async def test_delete_exception(cog):
     conn = AsyncMock(execute=AsyncMock(side_effect=RuntimeError("db")))
     cog.bot.db_pool.acquire.return_value = mock_db_ctx(conn)
     i = mock_interaction()
-    with patch("bot.commands.faq.send_error", new_callable=AsyncMock) as se:
-        await cog.faq_group.delete_cmd.callback(cog.faq_group, i, "rules")
-    se.assert_awaited()
+    await cog.faq_group.delete_cmd.callback(cog.faq_group, i, "rules")
+    i.followup.send.assert_awaited_with("❌ Error deleting FAQ.", ephemeral=True)
 
 
 @pytest.mark.asyncio

@@ -4,7 +4,8 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from bot.auth.command_helpers import require_admin, send_error
+from bot.auth.command_helpers import execute_command, require_admin, send_error
+from bot.services.faq_service import CACHE_FAQ_TOPICS, FaqService
 from bot.utils.autocomplete import cached_autocomplete
 from bot.utils.log_context import log_command_start
 from bot.utils.pagination import EmbedPaginatedView, paginate_by_char_limit
@@ -17,18 +18,6 @@ MAX_QUESTION_LEN = 200
 MAX_TOPIC_LEN = 100
 MAX_TOPICS = 25
 FAQ_CHAR_LIMIT_PER_PAGE = 1800
-
-CACHE_FAQ_TOPICS = "faq_topics:{server_id}"
-CACHE_FAQ_ENTRY = "faq_entry:{server_id}:{topic}"
-CACHE_FAQ_ALL = "faq_all:{server_id}"
-
-
-def _invalidate_faq_cache(cache, server_id: int, topic: str | None = None) -> None:
-    if cache:
-        cache.delete(CACHE_FAQ_TOPICS.format(server_id=server_id))
-        cache.delete(CACHE_FAQ_ALL.format(server_id=server_id))
-        if topic:
-            cache.delete(CACHE_FAQ_ENTRY.format(server_id=server_id, topic=topic))
 
 
 def _build_faq_blocks(rows: list) -> list[str]:
@@ -43,15 +32,7 @@ FAQ_LIST_FOOTER = "Page {page}/{total} • Use /faq list topic:<name> for single
 
 
 async def _fetch_faq_topics(pool, guild_id: int):
-    async with pool.acquire() as conn:
-        return await conn.fetch(
-            """
-            SELECT topic FROM faq_entries
-            WHERE server_id = $1
-            ORDER BY sort_order, topic
-            """,
-            guild_id,
-        )
+    return await FaqService(pool).list_topics(guild_id)
 
 
 def _faq_topics_to_choices(rows: list[dict], current: str) -> list[app_commands.Choice[str]]:
@@ -76,6 +57,30 @@ async def _faq_topic_autocomplete(
     )
 
 
+async def _faq_add_check(
+    self: "FAQGroup", interaction: discord.Interaction, topic: str, question: str, answer: str
+) -> bool:
+    return await require_admin(interaction, "faq add", self.cog.bot)
+
+
+async def _faq_edit_check(
+    self: "FAQGroup",
+    interaction: discord.Interaction,
+    topic: str,
+    question: str | None = None,
+    answer: str | None = None,
+) -> bool:
+    return await require_admin(interaction, "faq edit", self.cog.bot)
+
+
+async def _faq_submissions_check(self: "FAQGroup", interaction: discord.Interaction) -> bool:
+    return await require_admin(interaction, "faq submissions", self.cog.bot)
+
+
+async def _faq_delete_check(self: "FAQGroup", interaction: discord.Interaction, topic: str) -> bool:
+    return await require_admin(interaction, "faq delete", self.cog.bot)
+
+
 @app_commands.guild_only()
 class FAQGroup(app_commands.Group):
     def __init__(self, cog: "FAQCommands"):
@@ -85,91 +90,72 @@ class FAQGroup(app_commands.Group):
     @app_commands.command(name="list", description="List FAQ topics or show a specific topic")
     @app_commands.describe(topic="Topic to look up (leave empty to list all)")
     @app_commands.autocomplete(topic=_faq_topic_autocomplete)
+    @execute_command(
+        error_message="Error fetching FAQ.",
+        logger=logger,
+        log_prefix="faq list error",
+    )
     async def list_cmd(
         self,
         interaction: discord.Interaction,
         topic: str | None = None,
     ):
-        await interaction.response.defer(ephemeral=True)
         log_command_start(logger, "faq", "faq list", interaction)
         if not interaction.guild_id:
             return
 
-        try:
-            topic_key = topic.strip().lower() if topic else None
-            if topic_key:
-                cache_key = CACHE_FAQ_ENTRY.format(server_id=interaction.guild_id, topic=topic_key)
-                row = self.cog.bot.cache.get(cache_key) if self.cog.bot.cache else None
-                if row is None:
-                    async with self.cog.bot.db_pool.acquire() as conn:
-                        row = await conn.fetchrow(
-                            """
-                            SELECT question, answer FROM faq_entries
-                            WHERE server_id = $1 AND topic = $2
-                            """,
-                            interaction.guild_id,
-                            topic_key,
-                        )
-                    if row and self.cog.bot.cache:
-                        self.cog.bot.cache.set(cache_key, dict(row), ttl=Constants.CACHE_TTL)
-                if not row:
-                    await interaction.followup.send(
-                        f"No FAQ entry for **{topic}**. Use `/faq list` with no topic to list.",
-                        ephemeral=True,
-                    )
-                    return
-                embed = discord.Embed(
-                    title=row["question"][:256],
-                    description=row["answer"][:MAX_ANSWER_LEN],
-                    color=discord.Color.blue(),
-                )
-                embed.set_footer(text=f"FAQ • {topic}")
-                await interaction.followup.send(embed=embed, ephemeral=True)
-            else:
-                cache_key = CACHE_FAQ_ALL.format(server_id=interaction.guild_id)
-                rows = self.cog.bot.cache.get(cache_key) if self.cog.bot.cache else None
-                if rows is None:
-                    async with self.cog.bot.db_pool.acquire() as conn:
-                        rows = await conn.fetch(
-                            """
-                            SELECT topic, question, answer FROM faq_entries
-                            WHERE server_id = $1
-                            ORDER BY sort_order, topic
-                            """,
-                            interaction.guild_id,
-                        )
-                    rows = [dict(r) for r in rows]
-                    if self.cog.bot.cache:
-                        self.cog.bot.cache.set(cache_key, rows, ttl=Constants.CACHE_TTL)
-                if not rows:
-                    await interaction.followup.send(
-                        "No FAQ entries yet. Admins can add them with `/faq add`.",
-                        ephemeral=True,
-                    )
-                    return
-                blocks = _build_faq_blocks(rows)
-                pages = paginate_by_char_limit(blocks, FAQ_CHAR_LIMIT_PER_PAGE)
-                view = EmbedPaginatedView(pages, title="FAQ", footer_template=FAQ_LIST_FOOTER)
+        topic_key = topic.strip().lower() if topic else None
+        if topic_key:
+            row = await self.cog.service.fetch_entry(
+                interaction.guild_id, topic_key, cache=self.cog.bot.cache
+            )
+            if not row:
                 await interaction.followup.send(
-                    embed=view._format_page(),
-                    view=view,
+                    f"No FAQ entry for **{topic}**. Use `/faq list` with no topic to list.",
                     ephemeral=True,
                 )
-        except Exception as e:
-            logger.error("faq list error: %s", e, exc_info=True)
-            await send_error(interaction, "Error fetching FAQ.")
+                return
+            embed = discord.Embed(
+                title=row["question"][:256],
+                description=row["answer"][:MAX_ANSWER_LEN],
+                color=discord.Color.blue(),
+            )
+            embed.set_footer(text=f"FAQ • {topic}")
+            await interaction.followup.send(embed=embed, ephemeral=True)
+        else:
+            rows = await self.cog.service.fetch_all_entries(
+                interaction.guild_id, cache=self.cog.bot.cache
+            )
+            if not rows:
+                await interaction.followup.send(
+                    "No FAQ entries yet. Admins can add them with `/faq add`.",
+                    ephemeral=True,
+                )
+                return
+            blocks = _build_faq_blocks(rows)
+            pages = paginate_by_char_limit(blocks, FAQ_CHAR_LIMIT_PER_PAGE)
+            view = EmbedPaginatedView(pages, title="FAQ", footer_template=FAQ_LIST_FOOTER)
+            await interaction.followup.send(
+                embed=view._format_page(),
+                view=view,
+                ephemeral=True,
+            )
 
     @app_commands.command(
         name="submit",
         description="Submit a question you'd like answered in the FAQ",
     )
     @app_commands.describe(question="Your question (max 200 chars)")
+    @execute_command(
+        error_message="Error submitting question.",
+        logger=logger,
+        log_prefix="faq submit error",
+    )
     async def submit_cmd(
         self,
         interaction: discord.Interaction,
         question: str,
     ):
-        await interaction.response.defer(ephemeral=True)
         log_command_start(logger, "faq", "faq submit", interaction)
         if not interaction.guild_id:
             return
@@ -180,33 +166,21 @@ class FAQGroup(app_commands.Group):
         if not q:
             await send_error(interaction, "Question cannot be empty.")
             return
-        try:
-            row = None
-            async with self.cog.bot.db_pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    """
-                    INSERT INTO faq_submissions (server_id, question, submitter_id)
-                    VALUES ($1, $2, $3)
-                    RETURNING id
-                    """,
-                    interaction.guild_id,
-                    q,
-                    interaction.user.id,
-                )
-            if row and self.cog.bot.notifier:
-                await self.cog.bot.notifier.notify_faq_submission(
-                    interaction.guild_id,
-                    q,
-                    interaction.user.id,
-                    str(row["id"]),
-                )
-            await interaction.followup.send(
-                "Question submitted! Admins will review it and may add it to the FAQ.",
-                ephemeral=True,
+
+        submission_id = await self.cog.service.submit_question(
+            interaction.guild_id, q, interaction.user.id
+        )
+        if submission_id and self.cog.bot.notifier:
+            await self.cog.bot.notifier.notify_faq_submission(
+                interaction.guild_id,
+                q,
+                interaction.user.id,
+                submission_id,
             )
-        except Exception as e:
-            logger.error("faq submit error: %s", e, exc_info=True)
-            await send_error(interaction, "Error submitting question.")
+        await interaction.followup.send(
+            "Question submitted! Admins will review it and may add it to the FAQ.",
+            ephemeral=True,
+        )
 
     @app_commands.command(name="add", description="Add a FAQ entry (Admin)")
     @app_commands.default_permissions(administrator=True)
@@ -216,6 +190,12 @@ class FAQGroup(app_commands.Group):
         answer="The answer (max 1024 chars)",
     )
     @app_commands.autocomplete(topic=_faq_topic_autocomplete)
+    @execute_command(
+        permission_check=_faq_add_check,
+        error_message="Error adding FAQ.",
+        logger=logger,
+        log_prefix="faq add error",
+    )
     async def add_cmd(
         self,
         interaction: discord.Interaction,
@@ -223,10 +203,7 @@ class FAQGroup(app_commands.Group):
         question: str,
         answer: str,
     ):
-        await interaction.response.defer(ephemeral=True)
         log_command_start(logger, "faq", "faq add", interaction)
-        if not await require_admin(interaction, "faq add", self.cog.bot):
-            return
 
         topic = topic.strip().lower()[:MAX_TOPIC_LEN]
         question = question.strip()[:MAX_QUESTION_LEN]
@@ -239,42 +216,22 @@ class FAQGroup(app_commands.Group):
             )
             return
 
-        try:
-            async with self.cog.bot.db_pool.acquire() as conn:
-                count = await conn.fetchval(
-                    "SELECT COUNT(*) FROM faq_entries WHERE server_id = $1",
-                    interaction.guild_id,
-                )
-                if count and count >= MAX_TOPICS:
-                    await interaction.followup.send(
-                        f"Maximum {MAX_TOPICS} FAQ topics per server.",
-                        ephemeral=True,
-                    )
-                    return
+        count = await self.cog.service.count_entries(interaction.guild_id)
+        if count and count >= MAX_TOPICS:
+            await interaction.followup.send(
+                f"Maximum {MAX_TOPICS} FAQ topics per server.",
+                ephemeral=True,
+            )
+            return
 
-                await conn.execute(
-                    """
-                    INSERT INTO faq_entries (server_id, topic, question, answer, sort_order)
-                    VALUES ($1, $2, $3, $4, COALESCE(
-                        (SELECT MAX(sort_order) + 1 FROM faq_entries WHERE server_id = $1), 0
-                    ))
-                    ON CONFLICT (server_id, topic) DO UPDATE
-                    SET question = EXCLUDED.question, answer = EXCLUDED.answer, updated_at = NOW()
-                    """,
-                    interaction.guild_id,
-                    topic,
-                    question,
-                    answer,
-                )
-            _invalidate_faq_cache(self.cog.bot.cache, interaction.guild_id, topic)
-            if self.cog.bot.notifier:
-                await self.cog.bot.notifier.notify_faq_changed(
-                    interaction.guild_id, "Added/Updated", topic, interaction.user.id
-                )
-            await interaction.followup.send(f"FAQ **{topic}** added/updated.", ephemeral=True)
-        except Exception as e:
-            logger.error("faq add error: %s", e, exc_info=True)
-            await send_error(interaction, "Error adding FAQ.")
+        await self.cog.service.upsert_entry(
+            interaction.guild_id, topic, question, answer, cache=self.cog.bot.cache
+        )
+        if self.cog.bot.notifier:
+            await self.cog.bot.notifier.notify_faq_changed(
+                interaction.guild_id, "Added/Updated", topic, interaction.user.id
+            )
+        await interaction.followup.send(f"FAQ **{topic}** added/updated.", ephemeral=True)
 
     @app_commands.command(name="edit", description="Edit a FAQ entry (Admin)")
     @app_commands.default_permissions(administrator=True)
@@ -284,6 +241,12 @@ class FAQGroup(app_commands.Group):
         answer="New answer (leave empty to keep)",
     )
     @app_commands.autocomplete(topic=_faq_topic_autocomplete)
+    @execute_command(
+        permission_check=_faq_edit_check,
+        error_message="Error editing FAQ.",
+        logger=logger,
+        log_prefix="faq edit error",
+    )
     async def edit_cmd(
         self,
         interaction: discord.Interaction,
@@ -291,10 +254,7 @@ class FAQGroup(app_commands.Group):
         question: str | None = None,
         answer: str | None = None,
     ):
-        await interaction.response.defer(ephemeral=True)
         log_command_start(logger, "faq", "faq edit", interaction)
-        if not await require_admin(interaction, "faq edit", self.cog.bot):
-            return
 
         topic = topic.strip().lower()[:MAX_TOPIC_LEN]
         if not topic:
@@ -308,129 +268,89 @@ class FAQGroup(app_commands.Group):
             )
             return
 
-        try:
-            async with self.cog.bot.db_pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    "SELECT question, answer FROM faq_entries WHERE server_id = $1 AND topic = $2",
-                    interaction.guild_id,
-                    topic,
-                )
-                if not row:
-                    await interaction.followup.send(
-                        f"No FAQ entry for **{topic}**.", ephemeral=True
-                    )
-                    return
+        new_q = question.strip()[:MAX_QUESTION_LEN] if question else None
+        new_a = answer.strip()[:MAX_ANSWER_LEN] if answer else None
 
-                new_q = question.strip()[:MAX_QUESTION_LEN] if question else row["question"]
-                new_a = answer.strip()[:MAX_ANSWER_LEN] if answer else row["answer"]
-
-                await conn.execute(
-                    """
-                    UPDATE faq_entries
-                    SET question = $1, answer = $2, updated_at = NOW()
-                    WHERE server_id = $3 AND topic = $4
-                    """,
-                    new_q,
-                    new_a,
-                    interaction.guild_id,
-                    topic,
-                )
-            _invalidate_faq_cache(self.cog.bot.cache, interaction.guild_id, topic)
-            if self.cog.bot.notifier:
-                await self.cog.bot.notifier.notify_faq_changed(
-                    interaction.guild_id, "Edited", topic, interaction.user.id
-                )
-            await interaction.followup.send(f"FAQ **{topic}** updated.", ephemeral=True)
-        except Exception as e:
-            logger.error("faq edit error: %s", e, exc_info=True)
-            await send_error(interaction, "Error editing FAQ.")
+        row = await self.cog.service.edit_entry(
+            interaction.guild_id, topic, new_q, new_a, cache=self.cog.bot.cache
+        )
+        if not row:
+            await interaction.followup.send(f"No FAQ entry for **{topic}**.", ephemeral=True)
+            return
+        if self.cog.bot.notifier:
+            await self.cog.bot.notifier.notify_faq_changed(
+                interaction.guild_id, "Edited", topic, interaction.user.id
+            )
+        await interaction.followup.send(f"FAQ **{topic}** updated.", ephemeral=True)
 
     @app_commands.command(
         name="submissions",
         description="List pending FAQ question submissions (Admin)",
     )
     @app_commands.default_permissions(administrator=True)
+    @execute_command(
+        permission_check=_faq_submissions_check,
+        error_message="Error fetching submissions.",
+        logger=logger,
+        log_prefix="faq submissions error",
+    )
     async def submissions_cmd(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
         log_command_start(logger, "faq", "faq submissions", interaction)
-        if not await require_admin(interaction, "faq submissions", self.cog.bot):
+        rows = await self.cog.service.list_submissions(interaction.guild_id)
+        if not rows:
+            await interaction.followup.send(
+                "No pending FAQ submissions.",
+                ephemeral=True,
+            )
             return
-        try:
-            async with self.cog.bot.db_pool.acquire() as conn:
-                rows = await conn.fetch(
-                    """
-                    SELECT id, question, submitter_id, created_at
-                    FROM faq_submissions
-                    WHERE server_id = $1
-                    ORDER BY created_at DESC
-                    LIMIT 25
-                    """,
-                    interaction.guild_id,
-                )
-            if not rows:
-                await interaction.followup.send(
-                    "No pending FAQ submissions.",
-                    ephemeral=True,
-                )
-                return
-            lines = []
-            for r in rows:
-                short = (r["question"][:60] + "…") if len(r["question"]) > 60 else r["question"]
-                lines.append(f"`{str(r['id'])[:8]}` <@{r['submitter_id']}>: {short}")
-            await interaction.followup.send(
-                "**Pending FAQ submissions:**\n" + "\n".join(lines),
-                ephemeral=True,
-            )
-        except Exception as e:
-            logger.error("faq submissions error: %s", e, exc_info=True)
-            await interaction.followup.send(
-                "Error fetching submissions.",
-                ephemeral=True,
-            )
+        lines = []
+        for r in rows:
+            short = (r["question"][:60] + "…") if len(r["question"]) > 60 else r["question"]
+            lines.append(f"`{str(r['id'])[:8]}` <@{r['submitter_id']}>: {short}")
+        await interaction.followup.send(
+            "**Pending FAQ submissions:**\n" + "\n".join(lines),
+            ephemeral=True,
+        )
 
     @app_commands.command(name="delete", description="Delete a FAQ entry (Admin)")
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(topic="Topic to delete")
     @app_commands.autocomplete(topic=_faq_topic_autocomplete)
+    @execute_command(
+        permission_check=_faq_delete_check,
+        error_message="Error deleting FAQ.",
+        logger=logger,
+        log_prefix="faq delete error",
+    )
     async def delete_cmd(
         self,
         interaction: discord.Interaction,
         topic: str,
     ):
-        await interaction.response.defer(ephemeral=True)
         log_command_start(logger, "faq", "faq delete", interaction)
-        if not await require_admin(interaction, "faq delete", self.cog.bot):
-            return
 
         topic = topic.strip().lower()[:MAX_TOPIC_LEN]
         if not topic:
             await send_error(interaction, "Topic is required.")
             return
 
-        try:
-            async with self.cog.bot.db_pool.acquire() as conn:
-                result = await conn.execute(
-                    "DELETE FROM faq_entries WHERE server_id = $1 AND topic = $2",
-                    interaction.guild_id,
-                    topic,
-                )
-            if "DELETE 0" in result:
-                await send_error(interaction, f"No FAQ entry for **{topic}**.")
-                return
-            _invalidate_faq_cache(self.cog.bot.cache, interaction.guild_id, topic)
-            if self.cog.bot.notifier:
-                await self.cog.bot.notifier.notify_faq_changed(
-                    interaction.guild_id, "Deleted", topic, interaction.user.id
-                )
-            await interaction.followup.send(f"FAQ **{topic}** deleted.", ephemeral=True)
-        except Exception as e:
-            logger.error("faq delete error: %s", e, exc_info=True)
-            await send_error(interaction, "Error deleting FAQ.")
+        deleted = await self.cog.service.delete_entry(
+            interaction.guild_id, topic, cache=self.cog.bot.cache
+        )
+        if not deleted:
+            await send_error(interaction, f"No FAQ entry for **{topic}**.")
+            return
+        if self.cog.bot.notifier:
+            await self.cog.bot.notifier.notify_faq_changed(
+                interaction.guild_id, "Deleted", topic, interaction.user.id
+            )
+        await interaction.followup.send(f"FAQ **{topic}** deleted.", ephemeral=True)
 
 
 class FAQCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.service = FaqService(bot.db_pool)
         self.faq_group = FAQGroup(self)
 
     async def cog_load(self):

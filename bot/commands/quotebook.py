@@ -7,7 +7,12 @@ import discord
 from discord import app_commands
 from discord.ext import commands
 
-from bot.auth.command_helpers import require_admin, send_error
+from bot.auth.command_helpers import execute_command, require_admin, send_error
+from bot.services.quotebook_service import (
+    CACHE_QUOTE_APPROVE_AUTOCOMPLETE,
+    CACHE_QUOTE_AUTOCOMPLETE,
+    QuotebookService,
+)
 from bot.utils.autocomplete import cached_autocomplete
 from bot.utils.channel_config import get_quotebook_channel_id, set_quotebook_channel
 from bot.utils.discord_helpers import get_or_fetch_channel
@@ -17,22 +22,6 @@ from bot.utils.telemetry import trace_span
 from config.constants import Constants
 
 logger = logging.getLogger(__name__)
-
-CACHE_QUOTE_AUTOCOMPLETE = "quotebook_autocomplete:{server_id}"
-CACHE_QUOTE_APPROVE_AUTOCOMPLETE = "quotebook_approve_autocomplete:{server_id}"
-CACHE_QUOTE_PENDING = "quotebook_pending:{server_id}"
-CACHE_QUOTE_APPROVED = "quotebook_approved:{server_id}"
-
-
-def _invalidate_quotebook_cache(cache, server_id: int) -> None:
-    if cache:
-        for key in (
-            CACHE_QUOTE_AUTOCOMPLETE,
-            CACHE_QUOTE_APPROVE_AUTOCOMPLETE,
-            CACHE_QUOTE_PENDING,
-            CACHE_QUOTE_APPROVED,
-        ):
-            cache.delete(key.format(server_id=server_id))
 
 
 def _parse_quotes_from_message(
@@ -69,31 +58,11 @@ def _parse_quotes_from_message(
 
 
 async def _fetch_quote_ids(pool, guild_id: int):
-    async with pool.acquire() as conn:
-        return await conn.fetch(
-            """
-            SELECT id, quote_text, approved
-            FROM quotebook
-            WHERE server_id = $1
-            ORDER BY approved, created_at DESC
-            LIMIT 25
-            """,
-            guild_id,
-        )
+    return await QuotebookService(pool).list_quote_ids(guild_id)
 
 
 async def _fetch_quote_approve_ids(pool, guild_id: int):
-    async with pool.acquire() as conn:
-        return await conn.fetch(
-            """
-            SELECT id, quote_text
-            FROM quotebook
-            WHERE server_id = $1 AND approved = false
-            ORDER BY created_at DESC
-            LIMIT 25
-            """,
-            guild_id,
-        )
+    return await QuotebookService(pool).list_pending_quote_ids(guild_id)
 
 
 def _rows_to_choices(
@@ -145,6 +114,31 @@ async def _quote_id_approve_autocomplete(
     )
 
 
+async def _quote_list_check(self: "QuoteGroup", interaction: discord.Interaction) -> bool:
+    return await require_admin(interaction, "quote list", self.cog.bot)
+
+
+async def _quote_approve_check(
+    self: "QuoteGroup", interaction: discord.Interaction, quote_id: str
+) -> bool:
+    return await require_admin(interaction, "quote approve", self.cog.bot)
+
+
+async def _quote_delete_check(
+    self: "QuoteGroup", interaction: discord.Interaction, quote_id: str
+) -> bool:
+    return await require_admin(interaction, "quote delete", self.cog.bot)
+
+
+async def _quote_import_check(
+    self: "QuoteGroup",
+    interaction: discord.Interaction,
+    channel: discord.TextChannel,
+    auto_approve: bool = True,
+) -> bool:
+    return await require_admin(interaction, "quote import", self.cog.bot)
+
+
 @app_commands.guild_only()
 class QuoteGroup(app_commands.Group):
     def __init__(self, cog: "QuotebookCommands"):
@@ -156,13 +150,17 @@ class QuoteGroup(app_commands.Group):
         text="The quote text (max 500 chars)",
         attribution="Optional: who said it (e.g. '— Albert Einstein')",
     )
+    @execute_command(
+        error_message="Error submitting quote.",
+        logger=logger,
+        log_prefix="quote submit error",
+    )
     async def submit_cmd(
         self,
         interaction: discord.Interaction,
         text: str,
         attribution: str | None = None,
     ):
-        await interaction.response.defer(ephemeral=True)
         log_command_start(logger, "quotebook", "quote submit", interaction)
         if not interaction.guild_id:
             return
@@ -174,84 +172,60 @@ class QuoteGroup(app_commands.Group):
 
         attr = attribution.strip()[:255] if attribution else None
 
-        try:
-            quote_id = None
-            async with self.cog.bot.db_pool.acquire() as conn:
-                row = await conn.fetchrow(
-                    """
-                    INSERT INTO quotebook (server_id, quote_text, submitter_id, attribution, approved)
-                    VALUES ($1, $2, $3, $4, false)
-                    RETURNING id
-                    """,
-                    interaction.guild_id,
-                    text,
-                    interaction.user.id,
-                    attr,
-                )
-                quote_id = str(row["id"])
-            _invalidate_quotebook_cache(self.cog.bot.cache, interaction.guild_id)
-            if self.cog.bot.notifier and quote_id:
-                await self.cog.bot.notifier.notify_quotebook_submitted(
-                    interaction.guild_id, text, interaction.user.id, quote_id
-                )
-            await interaction.followup.send(
-                "Quote submitted! An admin will review it.",
-                ephemeral=True,
+        quote_id = await self.cog.service.submit_quote(
+            interaction.guild_id, text, interaction.user.id, attr, cache=self.cog.bot.cache
+        )
+        if self.cog.bot.notifier and quote_id:
+            await self.cog.bot.notifier.notify_quotebook_submitted(
+                interaction.guild_id, text, interaction.user.id, quote_id
             )
-        except Exception as e:
-            logger.error("quote submit error: %s", e, exc_info=True)
-            await send_error(interaction, "Error submitting quote.")
+        await interaction.followup.send(
+            "Quote submitted! An admin will review it.",
+            ephemeral=True,
+        )
 
     @app_commands.command(name="list", description="List all quotes (Admin only)")
     @app_commands.default_permissions(administrator=True)
+    @execute_command(
+        permission_check=_quote_list_check,
+        error_message="Error listing quotes.",
+        logger=logger,
+        log_prefix="quote list error",
+    )
     async def list_cmd(self, interaction: discord.Interaction):
-        await interaction.response.defer(ephemeral=True)
         log_command_start(logger, "quotebook", "quote list", interaction)
-        if not await require_admin(interaction, "quote list", self.cog.bot):
+
+        rows = await self.cog.service.list_all_quotes(interaction.guild_id)
+
+        if not rows:
+            await send_error(interaction, "No quotes in the book yet.")
             return
 
-        try:
-            async with self.cog.bot.db_pool.acquire() as conn:
-                rows = await conn.fetch(
-                    """
-                    SELECT id, quote_text, attribution, approved
-                    FROM quotebook
-                    WHERE server_id = $1
-                    ORDER BY approved, created_at DESC
-                    """,
-                    interaction.guild_id,
-                )
-            rows = [dict(r) for r in rows]
+        def fmt(r):
+            short = r["quote_text"][:80] + "…" if len(r["quote_text"]) > 80 else r["quote_text"]
+            attr = f" — {r['attribution']}" if r["attribution"] else ""
+            status = " ✓" if r["approved"] else " (pending)"
+            return f"`{str(r['id'])[:8]}` {short}{attr}{status}"
 
-            if not rows:
-                await send_error(interaction, "No quotes in the book yet.")
-                return
-
-            def fmt(r):
-                short = r["quote_text"][:80] + "…" if len(r["quote_text"]) > 80 else r["quote_text"]
-                attr = f" — {r['attribution']}" if r["attribution"] else ""
-                status = " ✓" if r["approved"] else " (pending)"
-                return f"`{str(r['id'])[:8]}` {short}{attr}{status}"
-
-            view = ListPaginatedView(rows, "**Quotebook:**", fmt)
-            await interaction.followup.send(
-                view._format_page(),
-                view=view,
-                ephemeral=True,
-            )
-        except Exception as e:
-            logger.error("quote list error: %s", e, exc_info=True)
-            await send_error(interaction, "Error listing quotes.")
+        view = ListPaginatedView(rows, "**Quotebook:**", fmt)
+        await interaction.followup.send(
+            view._format_page(),
+            view=view,
+            ephemeral=True,
+        )
 
     @app_commands.command(name="approve", description="Approve a quote (Admin only)")
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(quote_id="Quote ID (from /quote list, pending only)")
     @app_commands.autocomplete(quote_id=_quote_id_approve_autocomplete)
+    @execute_command(
+        permission_check=_quote_approve_check,
+        error_message="Error approving quote.",
+        logger=logger,
+        log_prefix="quote approve error",
+    )
     async def approve_cmd(self, interaction: discord.Interaction, quote_id: str):
-        await interaction.response.defer(ephemeral=True)
         log_command_start(logger, "quotebook", "quote approve", interaction)
-        if not await require_admin(interaction, "quote approve", self.cog.bot):
-            return
 
         try:
             qid = UUID(quote_id)
@@ -259,75 +233,60 @@ class QuoteGroup(app_commands.Group):
             await send_error(interaction, "Invalid quote ID.")
             return
 
-        try:
-            with trace_span(
-                "quotebook.approve",
-                attributes={
-                    "guild_id": str(interaction.guild_id),
-                    "quotebook.quote_id": str(qid),
-                },
-            ):
-                row = None
-                async with self.cog.bot.db_pool.acquire() as conn:
-                    result = await conn.execute(
-                        """
-                        UPDATE quotebook SET approved = true, updated_at = NOW()
-                        WHERE id = $1 AND server_id = $2 AND approved = false
-                        """,
-                        qid,
-                        interaction.guild_id,
+        with trace_span(
+            "quotebook.approve",
+            attributes={
+                "guild_id": str(interaction.guild_id),
+                "quotebook.quote_id": str(qid),
+            },
+        ):
+            row = await self.cog.service.approve_quote(
+                qid, interaction.guild_id, cache=self.cog.bot.cache
+            )
+            if row is None:
+                await send_error(interaction, "Quote not found or already approved.")
+                return
+
+            await interaction.followup.send("Quote approved!", ephemeral=True)
+
+            channel_id = await get_quotebook_channel_id(
+                self.cog.bot.db_pool,
+                interaction.guild_id,
+                self.cog.bot.cache,
+            )
+            if channel_id:
+                channel = await get_or_fetch_channel(self.cog.bot, channel_id)
+                if channel is None:
+                    logger.warning("Could not fetch quotebook channel %s", channel_id)
+                if channel:
+                    text = row["quote_text"]
+                    if row["attribution"]:
+                        text += f"\n— {row['attribution']}"
+                    embed = discord.Embed(
+                        description=text[:4096],
+                        color=discord.Color.blue(),
                     )
-
-                    if "UPDATE 0" in result:
-                        await send_error(interaction, "Quote not found or already approved.")
-                        return
-
-                    row = await conn.fetchrow(
-                        "SELECT quote_text, attribution FROM quotebook WHERE id = $1", qid
-                    )
-
-                _invalidate_quotebook_cache(self.cog.bot.cache, interaction.guild_id)
-                await interaction.followup.send("Quote approved!", ephemeral=True)
-
-                if row:
-                    channel_id = await get_quotebook_channel_id(
-                        self.cog.bot.db_pool,
-                        interaction.guild_id,
-                        self.cog.bot.cache,
-                    )
-                    if channel_id:
-                        channel = await get_or_fetch_channel(self.cog.bot, channel_id)
-                        if channel is None:
-                            logger.warning("Could not fetch quotebook channel %s", channel_id)
-                        if channel:
-                            text = row["quote_text"]
-                            if row["attribution"]:
-                                text += f"\n— {row['attribution']}"
-                            embed = discord.Embed(
-                                description=text[:4096],
-                                color=discord.Color.blue(),
-                            )
-                            embed.set_footer(text="📖 Quotebook")
-                            try:
-                                await channel.send(embed=embed)
-                            except discord.Forbidden:
-                                logger.warning(
-                                    "Cannot post quote to channel %s (no permission)",
-                                    channel_id,
-                                )
-        except Exception as e:
-            logger.error("quote approve error: %s", e, exc_info=True)
-            await send_error(interaction, "Error approving quote.")
+                    embed.set_footer(text="📖 Quotebook")
+                    try:
+                        await channel.send(embed=embed)
+                    except discord.Forbidden:
+                        logger.warning(
+                            "Cannot post quote to channel %s (no permission)",
+                            channel_id,
+                        )
 
     @app_commands.command(name="delete", description="Delete a quote (Admin only)")
     @app_commands.default_permissions(administrator=True)
     @app_commands.describe(quote_id="Quote ID")
     @app_commands.autocomplete(quote_id=_quote_id_autocomplete)
+    @execute_command(
+        permission_check=_quote_delete_check,
+        error_message="Error deleting quote.",
+        logger=logger,
+        log_prefix="quote delete error",
+    )
     async def delete_cmd(self, interaction: discord.Interaction, quote_id: str):
-        await interaction.response.defer(ephemeral=True)
         log_command_start(logger, "quotebook", "quote delete", interaction)
-        if not await require_admin(interaction, "quote delete", self.cog.bot):
-            return
 
         try:
             qid = UUID(quote_id)
@@ -335,18 +294,8 @@ class QuoteGroup(app_commands.Group):
             await send_error(interaction, "Invalid quote ID.")
             return
 
-        try:
-            async with self.cog.bot.db_pool.acquire() as conn:
-                await conn.execute(
-                    "DELETE FROM quotebook WHERE id = $1 AND server_id = $2",
-                    qid,
-                    interaction.guild_id,
-                )
-            _invalidate_quotebook_cache(self.cog.bot.cache, interaction.guild_id)
-            await interaction.followup.send("Quote deleted.", ephemeral=True)
-        except Exception as e:
-            logger.error("quote delete error: %s", e, exc_info=True)
-            await send_error(interaction, "Error deleting quote.")
+        await self.cog.service.delete_quote(qid, interaction.guild_id, cache=self.cog.bot.cache)
+        await interaction.followup.send("Quote deleted.", ephemeral=True)
 
     @app_commands.command(
         name="import",
@@ -357,16 +306,19 @@ class QuoteGroup(app_commands.Group):
         channel="Channel to import from (reads full history)",
         auto_approve="Approve imported quotes immediately (default: true)",
     )
+    @execute_command(
+        permission_check=_quote_import_check,
+        error_message="Error importing quotes.",
+        logger=logger,
+        log_prefix="quote import error",
+    )
     async def import_cmd(
         self,
         interaction: discord.Interaction,
         channel: discord.TextChannel,
         auto_approve: bool = True,
     ):
-        await interaction.response.defer(ephemeral=True)
         log_command_start(logger, "quotebook", "quote import", interaction)
-        if not await require_admin(interaction, "quote import", self.cog.bot):
-            return
 
         try:
             with trace_span(
@@ -401,53 +353,24 @@ class QuoteGroup(app_commands.Group):
                     scan_span.set_attribute("quotebook.messages_scanned", messages_scanned)
                     scan_span.set_attribute("quotebook.quotes_found", len(collected))
 
-                quote_texts = list({q[0] for q in collected})
-                async with self.cog.bot.db_pool.acquire() as conn:
-                    existing_rows = await conn.fetch(
-                        """
-                        SELECT quote_text FROM quotebook
-                        WHERE server_id = $1 AND quote_text = ANY($2::text[])
-                        """,
-                        interaction.guild_id,
-                        quote_texts,
-                    )
-                    existing = {r["quote_text"] for r in existing_rows}
+                inserted = await self.cog.service.import_new_quotes(
+                    interaction.guild_id, collected, auto_approve, cache=self.cog.bot.cache
+                )
+                imported = len(inserted)
+                skipped = len(collected) - imported
 
-                imported = 0
-                skipped = 0
-                async with self.cog.bot.db_pool.acquire() as conn:
-                    for quote_text, attribution, author_id in collected:
-                        if quote_text in existing:
-                            skipped += 1
-                            continue
-                        await conn.execute(
-                            """
-                            INSERT INTO quotebook (server_id, quote_text, submitter_id, attribution, approved)
-                            VALUES ($1, $2, $3, $4, $5)
-                            """,
-                            interaction.guild_id,
-                            quote_text,
-                            author_id,
-                            attribution,
-                            auto_approve,
+                if auto_approve:
+                    for quote_text, attribution in inserted:
+                        text = f"{quote_text}\n— {attribution}" if attribution else quote_text
+                        embed = discord.Embed(
+                            description=text[:4096],
+                            color=discord.Color.blue(),
                         )
-                        existing.add(quote_text)
-                        imported += 1
-                        if auto_approve:
-                            text = f"{quote_text}\n— {attribution}" if attribution else quote_text
-                            embed = discord.Embed(
-                                description=text[:4096],
-                                color=discord.Color.blue(),
-                            )
-                            embed.set_footer(text="📖 Quotebook (imported)")
-                            try:
-                                await channel.send(embed=embed)
-                            except discord.Forbidden:
-                                logger.warning(
-                                    "Cannot post imported quote to channel %s", channel.id
-                                )
-
-                _invalidate_quotebook_cache(self.cog.bot.cache, interaction.guild_id)
+                        embed.set_footer(text="📖 Quotebook (imported)")
+                        try:
+                            await channel.send(embed=embed)
+                        except discord.Forbidden:
+                            logger.warning("Cannot post imported quote to channel %s", channel.id)
 
                 msg = f"Imported **{imported}** quotes from {channel.mention}."
                 if auto_approve and imported:
@@ -463,50 +386,40 @@ class QuoteGroup(app_commands.Group):
             await send_error(interaction, f"Error importing: {e}")
 
     @app_commands.command(name="random", description="Post a random approved quote")
+    @execute_command(
+        defer_ephemeral=False,
+        error_message="Error fetching quote.",
+        logger=logger,
+        log_prefix="quote random error",
+    )
     async def random_cmd(self, interaction: discord.Interaction):
-        await interaction.response.defer()
         log_command_start(logger, "quotebook", "quote random", interaction)
 
-        try:
-            cache_key = CACHE_QUOTE_APPROVED.format(server_id=interaction.guild_id)
-            rows = self.cog.bot.cache.get(cache_key) if self.cog.bot.cache else None
-            if rows is None:
-                async with self.cog.bot.db_pool.acquire() as conn:
-                    rows = await conn.fetch(
-                        """
-                        SELECT quote_text, attribution
-                        FROM quotebook
-                        WHERE server_id = $1 AND approved = true
-                        """,
-                        interaction.guild_id,
-                    )
-                rows = [dict(r) for r in rows]
-                if self.cog.bot.cache:
-                    self.cog.bot.cache.set(cache_key, rows, ttl=Constants.CACHE_TTL)
+        rows = await self.cog.service.fetch_approved_quotes(
+            interaction.guild_id, cache=self.cog.bot.cache
+        )
 
-            if not rows:
-                await send_error(interaction, "No quotes in the book yet.")
-                return
+        if not rows:
+            await send_error(interaction, "No quotes in the book yet.")
+            return
 
-            r = random.choice(rows)
-            text = r["quote_text"]
-            if r["attribution"]:
-                text += f"\n— {r['attribution']}"
+        r = random.choice(rows)
+        text = r["quote_text"]
+        if r["attribution"]:
+            text += f"\n— {r['attribution']}"
 
-            embed = discord.Embed(
-                description=text[:4096],
-                color=discord.Color.blue(),
-            )
-            embed.set_footer(text="📖 Quotebook")
-            await interaction.followup.send(embed=embed, ephemeral=False)
-        except Exception as e:
-            logger.error("quote random error: %s", e, exc_info=True)
-            await send_error(interaction, "Error fetching quote.")
+        embed = discord.Embed(
+            description=text[:4096],
+            color=discord.Color.blue(),
+        )
+        embed.set_footer(text="📖 Quotebook")
+        await interaction.followup.send(embed=embed, ephemeral=False)
 
 
 class QuotebookCommands(commands.Cog):
     def __init__(self, bot):
         self.bot = bot
+        self.service = QuotebookService(bot.db_pool)
         self.quote_group = QuoteGroup(self)
 
     async def cog_load(self):
