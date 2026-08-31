@@ -8,10 +8,11 @@ from config.constants import Role
 from tests.helpers import db_pool_with_conn, mock_db_conn
 
 _BOT = Path(__file__).resolve().parents[2] / "bot" / "commands"
+_SERVICES = Path(__file__).resolve().parents[2] / "bot" / "services"
 
 
 def test_permissions_add_uses_select_then_insert():
-    text = (_BOT / "permissions.py").read_text()
+    text = (_SERVICES / "permissions_repository.py").read_text()
     assert "INSERT INTO user_permissions" in text and "ON CONFLICT" not in text
     assert "SELECT" in text and "fetchval" in text
 

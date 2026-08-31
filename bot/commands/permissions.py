@@ -5,6 +5,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from bot.auth.command_helpers import execute_command, require_guild, require_super_admin, send_error
+from bot.auth.permissions import GrantOutcome, RevokeOutcome
 from bot.utils.pagination import truncate_for_discord
 from bot.utils.server_roles import get_server_role_ids, set_server_role
 from bot.utils.telemetry import trace_span
@@ -250,11 +251,7 @@ class PermissionsGroup(app_commands.Group):
 
         role_ids = await get_server_role_ids(bot.db_pool, interaction.guild_id, cache=bot.cache)
         role_members = _role_members(guild, role_ids) if role_ids else []
-        async with bot.db_pool.acquire() as conn:
-            user_rows = await conn.fetch(
-                "SELECT user_id, role FROM user_permissions WHERE server_id = $1 AND is_active = true ORDER BY CASE role WHEN 'super_admin' THEN 3 WHEN 'admin' THEN 2 WHEN 'moderator' THEN 1 END DESC",
-                interaction.guild_id,
-            )
+        user_rows = await bot.permission_checker.list_grants(interaction.guild_id)
 
         if not role_ids and not role_members and not user_rows:
             await interaction.followup.send(
@@ -299,26 +296,17 @@ class PermissionsGroup(app_commands.Group):
             assert target is not None
             span.set_attribute("permissions.target_user_id", user_id)
 
-            async with self.cog.bot.db_pool.acquire() as conn:
-                existing = await conn.fetchval(
-                    "SELECT 1 FROM user_permissions WHERE server_id = $1 AND user_id = $2 AND role = $3 AND is_active = true LIMIT 1",
-                    interaction.guild_id,
-                    user_id,
-                    role,
+            outcome = await self.cog.bot.permission_checker.grant_role(
+                interaction.guild_id, user_id, role, interaction.user.id
+            )
+            if outcome is GrantOutcome.ALREADY_GRANTED:
+                await interaction.followup.send(
+                    f"{target.mention} already has {role}.", ephemeral=True
                 )
-                if existing:
-                    await interaction.followup.send(
-                        f"{target.mention} already has {role}.", ephemeral=True
-                    )
-                    return
-                await conn.execute(
-                    "INSERT INTO user_permissions (server_id, user_id, role, granted_by) VALUES ($1, $2, $3, $4)",
-                    interaction.guild_id,
-                    user_id,
-                    role,
-                    interaction.user.id,
-                )
-            self.cog.bot.permission_checker.invalidate_user_cache(interaction.guild_id, user_id)
+                return
+            if outcome is GrantOutcome.ERROR:
+                await send_error(interaction, "Temporary database error, please try again.")
+                return
             if self.cog.bot.notifier:
                 await self.cog.bot.notifier.notify_permission_changed(
                     interaction.guild_id,
@@ -356,17 +344,15 @@ class PermissionsGroup(app_commands.Group):
             assert target is not None
             span.set_attribute("permissions.target_user_id", user_id)
 
-            async with self.cog.bot.db_pool.acquire() as conn:
-                result = await conn.execute(
-                    "UPDATE user_permissions SET is_active = false, revoked_at = NOW() WHERE server_id = $1 AND user_id = $2 AND role = $3 AND is_active = true",
-                    interaction.guild_id,
-                    user_id,
-                    role,
-                )
-            if result == "UPDATE 0":
+            outcome = await self.cog.bot.permission_checker.revoke_role(
+                interaction.guild_id, user_id, role
+            )
+            if outcome is RevokeOutcome.NOT_FOUND:
                 await send_error(interaction, f"{target.mention} doesn't have {role}.")
                 return
-            self.cog.bot.permission_checker.invalidate_user_cache(interaction.guild_id, user_id)
+            if outcome is RevokeOutcome.ERROR:
+                await send_error(interaction, "Temporary database error, please try again.")
+                return
             if self.cog.bot.notifier:
                 await self.cog.bot.notifier.notify_permission_changed(
                     interaction.guild_id,

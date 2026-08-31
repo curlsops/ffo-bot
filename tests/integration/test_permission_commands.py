@@ -2,21 +2,23 @@ from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
+from bot.auth.permissions import PermissionChecker
 from bot.commands.permissions import PermissionCommands
 from tests.helpers import assert_followup_contains, mock_db_pool, mock_interaction, mock_user
 
 
 def _make_bot(fetch_rows=None, fetchrow_result=None, fetchval_result=None, execute_result="OK"):
     bot = MagicMock()
-    bot.permission_checker.check_role = AsyncMock(return_value=True)
-    bot.permission_checker.invalidate_user_cache = MagicMock()
-    bot._register_server = AsyncMock()
-    bot.cache = MagicMock()
-    bot.cache.get = MagicMock(return_value=None)
     pool, conn = mock_db_pool(
         fetch=fetch_rows, fetchrow=fetchrow_result, fetchval=fetchval_result, execute=execute_result
     )
     bot.db_pool = pool
+    bot.cache = MagicMock()
+    bot.cache.get = MagicMock(return_value=None)
+    bot.permission_checker = PermissionChecker(pool, bot.cache, bot)
+    bot.permission_checker.check_role = AsyncMock(return_value=True)
+    bot.permission_checker.invalidate_user_cache = MagicMock()
+    bot._register_server = AsyncMock()
     bot.fetch_user = AsyncMock(side_effect=lambda uid: mock_user(uid, f"user-{uid}"))
     return bot, conn
 

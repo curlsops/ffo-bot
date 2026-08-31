@@ -1,7 +1,9 @@
 import logging
 from dataclasses import dataclass
+from enum import Enum, auto
 from typing import TYPE_CHECKING, cast
 
+from bot.services.permissions_repository import PermissionsRepository
 from bot.utils.db import TRANSIENT_DB_ERRORS
 from bot.utils.telemetry import trace_span
 from config.constants import Constants, Role
@@ -19,11 +21,24 @@ class PermissionContext:
     command_name: str | None = None
 
 
+class GrantOutcome(Enum):
+    GRANTED = auto()
+    ALREADY_GRANTED = auto()
+    ERROR = auto()
+
+
+class RevokeOutcome(Enum):
+    REVOKED = auto()
+    NOT_FOUND = auto()
+    ERROR = auto()
+
+
 class PermissionChecker:
     def __init__(self, db_pool, cache, bot: "Bot | None" = None):
         self.db_pool = db_pool
         self.cache = cache
         self.bot = bot
+        self.repository = PermissionsRepository(db_pool)
 
     def _is_discord_admin(self, server_id: int, user_id: int) -> bool:
         if not self.bot:
@@ -70,18 +85,9 @@ class PermissionChecker:
             return bool(cached)
 
         try:
-            async with self.db_pool.acquire() as conn:
-                has_permission = await conn.fetchval(
-                    """
-                    SELECT EXISTS(
-                        SELECT 1 FROM command_permissions
-                        WHERE server_id = $1 AND user_id = $2 AND command_name = $3 AND is_active = true
-                    )
-                    """,
-                    ctx.server_id,
-                    ctx.user_id,
-                    ctx.command_name,
-                )
+            has_permission = await self.repository.has_command_permission(
+                ctx.server_id, ctx.user_id, ctx.command_name
+            )
         except TRANSIENT_DB_ERRORS:
             if self.bot and hasattr(self.bot, "metrics") and self.bot.metrics:
                 self.bot.metrics.db_connection_errors.inc()
@@ -132,18 +138,8 @@ class PermissionChecker:
 
             if role is None:
                 try:
-                    async with self.db_pool.acquire() as conn:
-                        role_str = await conn.fetchval(
-                            """
-                            SELECT role FROM user_permissions
-                            WHERE server_id = $1 AND user_id = $2 AND is_active = true
-                            ORDER BY CASE role WHEN 'super_admin' THEN 3 WHEN 'admin' THEN 2 WHEN 'moderator' THEN 1 END DESC
-                            LIMIT 1
-                            """,
-                            server_id,
-                            user_id,
-                        )
-                    role = Role(cast(str, role_str)) if role_str else None
+                    role_str = await self.repository.fetch_user_role(server_id, user_id)
+                    role = Role(role_str) if role_str else None
                     if role is not None:
                         role_source = "db"
                 except TRANSIENT_DB_ERRORS:
@@ -156,16 +152,11 @@ class PermissionChecker:
 
     async def _log_permission_denial(self, ctx: PermissionContext, required_role: Role):
         try:
-            async with self.db_pool.acquire(timeout=2) as conn:
-                await conn.execute(
-                    """
-                    INSERT INTO audit_log (server_id, user_id, action, target_type, details)
-                    VALUES ($1, $2, 'permission_denied', 'command', $3)
-                    """,
-                    ctx.server_id,
-                    ctx.user_id,
-                    {"command": ctx.command_name, "required_role": required_role.value},
-                )
+            await self.repository.log_permission_denial(
+                ctx.server_id,
+                ctx.user_id,
+                {"command": ctx.command_name, "required_role": required_role.value},
+            )
         except TRANSIENT_DB_ERRORS:
             if self.bot and hasattr(self.bot, "metrics") and self.bot.metrics:
                 self.bot.metrics.db_connection_errors.inc()
@@ -174,3 +165,37 @@ class PermissionChecker:
 
     def invalidate_user_cache(self, server_id: int, user_id: int):
         self.cache.delete(f"user_role:{server_id}:{user_id}")
+
+    async def list_grants(self, server_id: int) -> list[dict]:
+        try:
+            return await self.repository.list_active_grants(server_id)
+        except TRANSIENT_DB_ERRORS:
+            if self.bot and hasattr(self.bot, "metrics") and self.bot.metrics:
+                self.bot.metrics.db_connection_errors.inc()
+            raise
+
+    async def grant_role(
+        self, server_id: int, user_id: int, role: str, granted_by: int
+    ) -> GrantOutcome:
+        try:
+            if await self.repository.find_active_grant(server_id, user_id, role):
+                return GrantOutcome.ALREADY_GRANTED
+            await self.repository.insert_grant(server_id, user_id, role, granted_by)
+        except TRANSIENT_DB_ERRORS:
+            if self.bot and hasattr(self.bot, "metrics") and self.bot.metrics:
+                self.bot.metrics.db_connection_errors.inc()
+            return GrantOutcome.ERROR
+        self.invalidate_user_cache(server_id, user_id)
+        return GrantOutcome.GRANTED
+
+    async def revoke_role(self, server_id: int, user_id: int, role: str) -> RevokeOutcome:
+        try:
+            removed = await self.repository.revoke_grant(server_id, user_id, role)
+        except TRANSIENT_DB_ERRORS:
+            if self.bot and hasattr(self.bot, "metrics") and self.bot.metrics:
+                self.bot.metrics.db_connection_errors.inc()
+            return RevokeOutcome.ERROR
+        if not removed:
+            return RevokeOutcome.NOT_FOUND
+        self.invalidate_user_cache(server_id, user_id)
+        return RevokeOutcome.REVOKED

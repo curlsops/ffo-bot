@@ -2,6 +2,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
 
+from bot.auth.permissions import GrantOutcome, RevokeOutcome
 from bot.commands.permissions import (
     PermissionCommands,
     PermissionsListView,
@@ -19,6 +20,9 @@ def mock_bot():
     bot = MagicMock()
     bot.permission_checker.check_role = AsyncMock(return_value=True)
     bot.permission_checker.invalidate_user_cache = MagicMock()
+    bot.permission_checker.list_grants = AsyncMock(return_value=[])
+    bot.permission_checker.grant_role = AsyncMock(return_value=GrantOutcome.GRANTED)
+    bot.permission_checker.revoke_role = AsyncMock(return_value=RevokeOutcome.REVOKED)
     bot._register_server = AsyncMock()
     bot.cache = MagicMock()
     bot.notifier = MagicMock()
@@ -136,8 +140,6 @@ async def test_permissions_list_empty_message(cog, mock_bot):
         new_callable=AsyncMock,
         return_value={},
     ):
-        pool, conn = mock_db_pool(fetch=[])
-        mock_bot.db_pool = pool
         i = mock_interaction()
         await cog.permissions_group.list_cmd.callback(cog.permissions_group, i)
     assert "No permissions configured" in i.followup.send.call_args[0][0]
@@ -164,10 +166,9 @@ async def test_permissions_list_with_roles_and_users(cog, mock_bot):
         new_callable=AsyncMock,
         return_value={Role.MODERATOR: 999},
     ):
-        pool, conn = mock_db_pool(
-            fetch=[{"user_id": 5, "role": "moderator"}],
+        mock_bot.permission_checker.list_grants = AsyncMock(
+            return_value=[{"user_id": 5, "role": "moderator"}]
         )
-        mock_bot.db_pool = pool
         i = mock_interaction()
         i.guild.get_role = MagicMock(return_value=role)
         await cog.permissions_group.list_cmd.callback(cog.permissions_group, i)
@@ -176,8 +177,7 @@ async def test_permissions_list_with_roles_and_users(cog, mock_bot):
 
 @pytest.mark.asyncio
 async def test_permissions_add_duplicate(cog, mock_bot):
-    pool, conn = mock_db_pool(fetchval=1)
-    mock_bot.db_pool = pool
+    mock_bot.permission_checker.grant_role = AsyncMock(return_value=GrantOutcome.ALREADY_GRANTED)
     i = mock_interaction(guild_get_member=mock_user(20, "x"))
     await cog.permissions_group.add_cmd.callback(cog.permissions_group, i, user="20", role="admin")
     assert "already has" in i.followup.send.call_args[0][0]
@@ -185,18 +185,23 @@ async def test_permissions_add_duplicate(cog, mock_bot):
 
 @pytest.mark.asyncio
 async def test_permissions_add_insert_failure(cog, mock_bot):
-    pool, conn = mock_db_pool(fetchval=None)
-    conn.execute = AsyncMock(side_effect=RuntimeError("db"))
-    mock_bot.db_pool = pool
+    mock_bot.permission_checker.grant_role = AsyncMock(side_effect=RuntimeError("db"))
     i = mock_interaction(guild_get_member=mock_user(20, "x"))
     await cog.permissions_group.add_cmd.callback(cog.permissions_group, i, user="20", role="admin")
     assert_followup_contains(i, "Error granting role", case_sensitive=False)
 
 
 @pytest.mark.asyncio
+async def test_permissions_add_transient_db_error(cog, mock_bot):
+    mock_bot.permission_checker.grant_role = AsyncMock(return_value=GrantOutcome.ERROR)
+    i = mock_interaction(guild_get_member=mock_user(20, "x"))
+    await cog.permissions_group.add_cmd.callback(cog.permissions_group, i, user="20", role="admin")
+    assert_followup_contains(i, "Temporary database error", case_sensitive=False)
+
+
+@pytest.mark.asyncio
 async def test_permissions_remove_no_rows(cog, mock_bot):
-    pool, conn = mock_db_pool(execute="UPDATE 0")
-    mock_bot.db_pool = pool
+    mock_bot.permission_checker.revoke_role = AsyncMock(return_value=RevokeOutcome.NOT_FOUND)
     i = mock_interaction(guild_get_member=mock_user(20, "x"))
     await cog.permissions_group.remove_cmd.callback(
         cog.permissions_group, i, user="20", role="admin"
@@ -206,14 +211,22 @@ async def test_permissions_remove_no_rows(cog, mock_bot):
 
 @pytest.mark.asyncio
 async def test_permissions_remove_exception(cog, mock_bot):
-    pool, conn = mock_db_pool(execute="UPDATE 1")
-    conn.execute = AsyncMock(side_effect=[RuntimeError("x")])
-    mock_bot.db_pool = pool
+    mock_bot.permission_checker.revoke_role = AsyncMock(side_effect=RuntimeError("x"))
     i = mock_interaction(guild_get_member=mock_user(20, "x"))
     await cog.permissions_group.remove_cmd.callback(
         cog.permissions_group, i, user="20", role="admin"
     )
     assert_followup_contains(i, "Error revoking role", case_sensitive=False)
+
+
+@pytest.mark.asyncio
+async def test_permissions_remove_transient_db_error(cog, mock_bot):
+    mock_bot.permission_checker.revoke_role = AsyncMock(return_value=RevokeOutcome.ERROR)
+    i = mock_interaction(guild_get_member=mock_user(20, "x"))
+    await cog.permissions_group.remove_cmd.callback(
+        cog.permissions_group, i, user="20", role="admin"
+    )
+    assert_followup_contains(i, "Temporary database error", case_sensitive=False)
 
 
 @pytest.mark.asyncio
@@ -361,8 +374,6 @@ async def test_permissions_add_require_guild_false(cog, mock_bot):
 
 @pytest.mark.asyncio
 async def test_permissions_add_success_with_notifier(cog, mock_bot):
-    pool, conn = mock_db_pool(fetchval=None)
-    mock_bot.db_pool = pool
     i = mock_interaction(guild_get_member=mock_user(23, "z"))
     await cog.permissions_group.add_cmd.callback(cog.permissions_group, i, user="23", role="admin")
     mock_bot.notifier.notify_permission_changed.assert_awaited()
@@ -370,8 +381,6 @@ async def test_permissions_add_success_with_notifier(cog, mock_bot):
 
 @pytest.mark.asyncio
 async def test_permissions_remove_success_with_notifier(cog, mock_bot):
-    pool, conn = mock_db_pool(execute="UPDATE 1")
-    mock_bot.db_pool = pool
     i = mock_interaction(guild_get_member=mock_user(24, "r"))
     await cog.permissions_group.remove_cmd.callback(
         cog.permissions_group, i, user="24", role="admin"
@@ -403,8 +412,6 @@ async def test_permissions_set_success_clear_notifies(cog, mock_bot):
 @pytest.mark.asyncio
 async def test_permissions_add_success_without_notifier(cog, mock_bot):
     mock_bot.notifier = None
-    pool, conn = mock_db_pool(fetchval=None)
-    mock_bot.db_pool = pool
     i = mock_interaction(guild_get_member=mock_user(31, "n"))
     await cog.permissions_group.add_cmd.callback(cog.permissions_group, i, user="31", role="admin")
     assert i.followup.send.await_args
@@ -413,8 +420,6 @@ async def test_permissions_add_success_without_notifier(cog, mock_bot):
 @pytest.mark.asyncio
 async def test_permissions_remove_success_without_notifier(cog, mock_bot):
     mock_bot.notifier = None
-    pool, conn = mock_db_pool(execute="UPDATE 1")
-    mock_bot.db_pool = pool
     i = mock_interaction(guild_get_member=mock_user(32, "r"))
     await cog.permissions_group.remove_cmd.callback(
         cog.permissions_group, i, user="32", role="admin"
@@ -557,9 +562,7 @@ async def test_permissions_user_autocomplete_matches_name_when_display_differs()
 
 @pytest.mark.asyncio
 async def test_permissions_remove_db_exception_before_execute_result(cog, mock_bot):
-    pool, conn = mock_db_pool(execute="UPDATE 1")
-    conn.execute = AsyncMock(side_effect=RuntimeError("db"))
-    mock_bot.db_pool = pool
+    mock_bot.permission_checker.revoke_role = AsyncMock(side_effect=RuntimeError("db"))
     i = mock_interaction(guild_get_member=mock_user(40, "x"))
     await cog.permissions_group.remove_cmd.callback(
         cog.permissions_group, i, user="40", role="admin"

@@ -4,14 +4,22 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import asyncpg
 import pytest
 
-from bot.auth.permissions import PermissionChecker, PermissionContext
+from bot.auth.permissions import GrantOutcome, PermissionChecker, PermissionContext, RevokeOutcome
 from config.constants import Role
 
 
-def _make_db_pool(fetchval_result=None, fetchval_side_effect=None, execute_side_effect=None):
+def _make_db_pool(
+    fetchval_result=None,
+    fetchval_side_effect=None,
+    execute_side_effect=None,
+    execute_result=None,
+    fetch_result=None,
+    fetch_side_effect=None,
+):
     conn = MagicMock()
     conn.fetchval = AsyncMock(return_value=fetchval_result, side_effect=fetchval_side_effect)
-    conn.execute = AsyncMock(side_effect=execute_side_effect)
+    conn.execute = AsyncMock(return_value=execute_result, side_effect=execute_side_effect)
+    conn.fetch = AsyncMock(return_value=fetch_result or [], side_effect=fetch_side_effect)
 
     @asynccontextmanager
     async def acquire(**kwargs):
@@ -28,8 +36,18 @@ def _checker(
     bot=None,
     execute_side_effect=None,
     fetchval_side_effect=None,
+    execute_result=None,
+    fetch_result=None,
+    fetch_side_effect=None,
 ):
-    db_pool, conn = _make_db_pool(fetchval_result, fetchval_side_effect, execute_side_effect)
+    db_pool, conn = _make_db_pool(
+        fetchval_result,
+        fetchval_side_effect,
+        execute_side_effect,
+        execute_result,
+        fetch_result,
+        fetch_side_effect,
+    )
     cache = MagicMock()
     cache.get.return_value = cache_return
     return PermissionChecker(db_pool, cache, bot), conn, cache
@@ -413,6 +431,112 @@ class TestRoleHierarchy:
             2,
             1,
         )
+
+
+class TestListGrants:
+    @pytest.mark.asyncio
+    async def test_returns_rows(self):
+        checker, conn, _ = _checker(fetch_result=[{"user_id": 9, "role": "admin"}])
+        result = await checker.list_grants(1)
+        assert result == [{"user_id": 9, "role": "admin"}]
+
+    @pytest.mark.asyncio
+    async def test_transient_error_reraises_with_metrics(self):
+        bot = MagicMock()
+        bot.metrics = MagicMock()
+        bot.metrics.db_connection_errors = MagicMock()
+        checker, _, _ = _checker(fetch_side_effect=asyncpg.CannotConnectNowError("down"), bot=bot)
+        with pytest.raises(asyncpg.CannotConnectNowError):
+            await checker.list_grants(1)
+        bot.metrics.db_connection_errors.inc.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_transient_error_no_bot(self):
+        checker, _, _ = _checker(fetch_side_effect=asyncpg.CannotConnectNowError("down"))
+        with pytest.raises(asyncpg.CannotConnectNowError):
+            await checker.list_grants(1)
+
+
+class TestGrantRole:
+    @pytest.mark.asyncio
+    async def test_already_granted(self):
+        checker, conn, cache = _checker(fetchval_result=1)
+        result = await checker.grant_role(1, 2, "admin", 3)
+        assert result is GrantOutcome.ALREADY_GRANTED
+        conn.execute.assert_not_awaited()
+        cache.delete.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_granted(self):
+        checker, conn, cache = _checker(fetchval_result=None)
+        result = await checker.grant_role(1, 2, "admin", 3)
+        assert result is GrantOutcome.GRANTED
+        conn.execute.assert_awaited_once()
+        cache.delete.assert_called_once_with("user_role:1:2")
+
+    @pytest.mark.asyncio
+    async def test_transient_error_on_find_bumps_metrics(self):
+        bot = MagicMock()
+        bot.metrics = MagicMock()
+        bot.metrics.db_connection_errors = MagicMock()
+        checker, _, _ = _checker(
+            fetchval_side_effect=asyncpg.CannotConnectNowError("down"), bot=bot
+        )
+        result = await checker.grant_role(1, 2, "admin", 3)
+        assert result is GrantOutcome.ERROR
+        bot.metrics.db_connection_errors.inc.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_transient_error_on_insert_bumps_metrics(self):
+        bot = MagicMock()
+        bot.metrics = MagicMock()
+        bot.metrics.db_connection_errors = MagicMock()
+        checker, _, _ = _checker(
+            fetchval_result=None,
+            execute_side_effect=asyncpg.CannotConnectNowError("down"),
+            bot=bot,
+        )
+        result = await checker.grant_role(1, 2, "admin", 3)
+        assert result is GrantOutcome.ERROR
+        bot.metrics.db_connection_errors.inc.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_transient_error_no_bot(self):
+        checker, _, _ = _checker(fetchval_side_effect=asyncpg.CannotConnectNowError("down"))
+        result = await checker.grant_role(1, 2, "admin", 3)
+        assert result is GrantOutcome.ERROR
+
+
+class TestRevokeRole:
+    @pytest.mark.asyncio
+    async def test_not_found(self):
+        checker, conn, cache = _checker(execute_result="UPDATE 0")
+        result = await checker.revoke_role(1, 2, "admin")
+        assert result is RevokeOutcome.NOT_FOUND
+        cache.delete.assert_not_called()
+
+    @pytest.mark.asyncio
+    async def test_revoked(self):
+        checker, conn, cache = _checker(execute_result="UPDATE 1")
+        result = await checker.revoke_role(1, 2, "admin")
+        assert result is RevokeOutcome.REVOKED
+        cache.delete.assert_called_once_with("user_role:1:2")
+
+    @pytest.mark.asyncio
+    async def test_transient_error_bumps_metrics(self):
+        bot = MagicMock()
+        bot.metrics = MagicMock()
+        bot.metrics.db_connection_errors = MagicMock()
+        checker, _, _ = _checker(execute_side_effect=asyncpg.CannotConnectNowError("down"), bot=bot)
+        result = await checker.revoke_role(1, 2, "admin")
+        assert result is RevokeOutcome.ERROR
+        bot.metrics.db_connection_errors.inc.assert_called_once()
+
+    @pytest.mark.asyncio
+    async def test_transient_error_no_bot(self):
+        checker, _, _ = _checker(execute_side_effect=asyncpg.CannotConnectNowError("down"))
+        result = await checker.revoke_role(1, 2, "admin")
+        assert result is RevokeOutcome.ERROR
 
 
 class TestEdgeCases:
