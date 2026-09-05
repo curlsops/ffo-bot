@@ -1,5 +1,50 @@
 # Changelog
 
+## [7.1.0](https://github.com/curlsops/ffo-bot/compare/v7.0.0...v7.1.0) (2026-09-05)
+
+
+### Features
+
+* **github-action:** update action actions/labeler ( v6.1.0 ➔ v6.2.0 ) ([#301](https://github.com/curlsops/ffo-bot/issues/301)) ([895552f](https://github.com/curlsops/ffo-bot/commit/895552f57cc0a29e84a438bb7b386bf26ece449b))
+* **github-action:** update action useblacksmith/setup-docker-builder ( v1.10.0 ➔ v1.11.0 ) ([#308](https://github.com/curlsops/ffo-bot/issues/308)) ([3b75ea9](https://github.com/curlsops/ffo-bot/commit/3b75ea92bafe3291c56e5a4cc0669b6324fa8c1c))
+* **github-action:** update action useblacksmith/setup-docker-builder ( v1.11.0 ➔ v1.12.0 ) ([#330](https://github.com/curlsops/ffo-bot/issues/330)) ([5053390](https://github.com/curlsops/ffo-bot/commit/50533902348ca221af04a488801c3ad25e08d77a))
+* **github-action:** update action useblacksmith/setup-docker-builder ( v1.9.0 ➔ v1.10.0 ) ([#302](https://github.com/curlsops/ffo-bot/issues/302)) ([baab5eb](https://github.com/curlsops/ffo-bot/commit/baab5ebe621f17cf7cd319cb53c725d732fc2d69))
+* **python:** update dependency alembic ( 1.18.5 ➔ 1.19.0 ) ([#335](https://github.com/curlsops/ffo-bot/issues/335)) ([7fb7e7e](https://github.com/curlsops/ffo-bot/commit/7fb7e7e1515c4bf055d7bf89e1b19a690b0dd6aa))
+* **python:** update dependency authlib ( 1.7.2 ➔ 1.8.0 ) ([#351](https://github.com/curlsops/ffo-bot/issues/351)) ([78ddcbb](https://github.com/curlsops/ffo-bot/commit/78ddcbb98dc75c5c5bc1b61bf0f869b995c73292))
+* **python:** update dependency filelock ( 3.29.7 ➔ 3.30.3 ) ([#303](https://github.com/curlsops/ffo-bot/issues/303)) ([1e5ca05](https://github.com/curlsops/ffo-bot/commit/1e5ca057f6224a667406765a82dd9a754945271b))
+* **python:** update dependency filelock ( 3.31.0 ➔ 3.32.0 ) ([#310](https://github.com/curlsops/ffo-bot/issues/310)) ([ad9e83c](https://github.com/curlsops/ffo-bot/commit/ad9e83cbd7125825eb51ec2902a1817b9672f778))
+* **python:** update dependency mypy ( 2.1.0 ➔ 2.2.0 ) ([#299](https://github.com/curlsops/ffo-bot/issues/299)) ([ef6befa](https://github.com/curlsops/ffo-bot/commit/ef6befa51853ae38d4382f3fabc74d61f948128e))
+* **python:** update dependency mypy ( 2.2.0 ➔ 2.3.0 ) ([#306](https://github.com/curlsops/ffo-bot/issues/306)) ([1001692](https://github.com/curlsops/ffo-bot/commit/10016925c13c6d7258f91c864aeab9812aa819c3))
+* **python:** update dependency prometheus-client ( 0.25.0 ➔ 0.26.0 ) ([#323](https://github.com/curlsops/ffo-bot/issues/323)) ([04882a2](https://github.com/curlsops/ffo-bot/commit/04882a22e2eb43daafbbd4e2ea8bfb69a895569e))
+* **python:** update dependency pydantic-settings ( 2.14.2 ➔ 2.15.0 ) ([#336](https://github.com/curlsops/ffo-bot/issues/336)) ([923ae1c](https://github.com/curlsops/ffo-bot/commit/923ae1cccae58db06c53447e014b08453940253c))
+* **python:** update dependency python-json-logger ( 4.1.0 ➔ 4.2.0 ) ([#346](https://github.com/curlsops/ffo-bot/issues/346)) ([924cc3a](https://github.com/curlsops/ffo-bot/commit/924cc3aad9cba315a0ef9793da905e2b47e7b710))
+* **python:** update dependency redis ( 8.0.1 ➔ 8.1.0 ) ([#328](https://github.com/curlsops/ffo-bot/issues/328)) ([36df5e2](https://github.com/curlsops/ffo-bot/commit/36df5e2c85234342fe816b60f14fbf7d3c2ad1de))
+* **python:** update dependency testcontainers ( 4.14.2 ➔ 4.15.0 ) ([#324](https://github.com/curlsops/ffo-bot/issues/324)) ([d58f2e7](https://github.com/curlsops/ffo-bot/commit/d58f2e7407922f451f1015d630b44a5f6e01268b))
+
+
+### Bug Fixes
+
+* **github-action:** update action actions/checkout ( v7.0.0 ➔ v7.0.1 ) ([#314](https://github.com/curlsops/ffo-bot/issues/314)) ([4d7581e](https://github.com/curlsops/ffo-bot/commit/4d7581eb4819eaec630a9db4624b1ef4f713f60d))
+* **github-action:** update action dorny/paths-filter ( v4.0.2 ➔ v4.0.3 ) ([#333](https://github.com/curlsops/ffo-bot/issues/333)) ([9508ee1](https://github.com/curlsops/ffo-bot/commit/9508ee12992411c7df4f67016862eb72ecc620cc))
+* **python:** update dependency aiohttp ( 3.14.1 ➔ 3.14.3 ) ([#309](https://github.com/curlsops/ffo-bot/issues/309)) ([20d85bd](https://github.com/curlsops/ffo-bot/commit/20d85bd6926059847ed3d384aac44dc3c1244561))
+* **python:** update dependency alembic ( 1.19.0 ➔ 1.19.1 ) ([#340](https://github.com/curlsops/ffo-bot/issues/340)) ([18bda25](https://github.com/curlsops/ffo-bot/commit/18bda25e0eb063104de19c24606549026cb1b101))
+* **python:** update dependency filelock ( 3.29.5 ➔ 3.29.7 ) ([#296](https://github.com/curlsops/ffo-bot/issues/296)) ([13c175e](https://github.com/curlsops/ffo-bot/commit/13c175e7f9318bc985fdcea939ed1cb271fb9d0d))
+* **python:** update dependency filelock ( 3.32.0 ➔ 3.32.2 ) ([#321](https://github.com/curlsops/ffo-bot/issues/321)) ([711f3c6](https://github.com/curlsops/ffo-bot/commit/711f3c65a52d846510297eb3c156b02013dfd5c8))
+* **python:** update dependency filelock ( 3.32.2 ➔ 3.32.3 ) ([#339](https://github.com/curlsops/ffo-bot/issues/339)) ([789104d](https://github.com/curlsops/ffo-bot/commit/789104dd89582404346e9a78966a9797d3f31deb))
+* **python:** update dependency filelock ( 3.32.3 ➔ 3.32.4 ) ([#347](https://github.com/curlsops/ffo-bot/issues/347)) ([0415663](https://github.com/curlsops/ffo-bot/commit/041566316149d3ecd2c38bd2613fb8c467d09290))
+* **python:** update dependency filelock ( 3.32.4 ➔ 3.32.5 ) ([#352](https://github.com/curlsops/ffo-bot/issues/352)) ([f1481ae](https://github.com/curlsops/ffo-bot/commit/f1481ae4ff2696fb0ff4cbe9d1145e5301f4ba3c))
+* **python:** update dependency marshmallow ( 4.3.0 ➔ 4.3.1 ) ([#337](https://github.com/curlsops/ffo-bot/issues/337)) ([3d42753](https://github.com/curlsops/ffo-bot/commit/3d42753ab2ce9a18178008050d674ba6e8c5fe61))
+* **python:** update dependency mkdocs-material ( 9.7.6 ➔ 9.7.7 ) ([#315](https://github.com/curlsops/ffo-bot/issues/315)) ([16fe05e](https://github.com/curlsops/ffo-bot/commit/16fe05e15f82f64d5475a549508742dff33ace57))
+* **python:** update dependency mypy ( 2.3.0 ➔ 2.3.1 ) ([#344](https://github.com/curlsops/ffo-bot/issues/344)) ([08f52fd](https://github.com/curlsops/ffo-bot/commit/08f52fdac78bd464ab035e3a9af6278f5d18908c))
+* **python:** update dependency pre-commit ( 4.6.0 ➔ 4.6.1 ) ([#316](https://github.com/curlsops/ffo-bot/issues/316)) ([9c2e2e6](https://github.com/curlsops/ffo-bot/commit/9c2e2e66d616a6608967433ae590fa36d87087f2))
+* **python:** update dependency pre-commit ( 4.6.1 ➔ 4.6.2 ) ([#341](https://github.com/curlsops/ffo-bot/issues/341)) ([fa0ec36](https://github.com/curlsops/ffo-bot/commit/fa0ec368ce03e13a2601362ba748f577f764e06d))
+* **python:** update dependency pydantic ( 2.13.4 ➔ 2.13.5 ) ([#353](https://github.com/curlsops/ffo-bot/issues/353)) ([6852caf](https://github.com/curlsops/ffo-bot/commit/6852caf44a6d413bfa6074e75d6702eed8dd0ec7))
+* **python:** update dependency python-dotenv ( 1.2.2 ➔ 1.2.3 ) ([#345](https://github.com/curlsops/ffo-bot/issues/345)) ([28d609e](https://github.com/curlsops/ffo-bot/commit/28d609e597efae6b0eb745d1f926d52f1edc5441))
+* **python:** update dependency sqlalchemy ( 2.0.51 ➔ 2.0.52 ) ([#342](https://github.com/curlsops/ffo-bot/issues/342)) ([8573115](https://github.com/curlsops/ffo-bot/commit/857311584086f566ad593a276242d75f8efff482))
+* **python:** update dependency types-python-dateutil ( 2.9.0.20260518 ➔ 2.9.0.20260716 ) ([#307](https://github.com/curlsops/ffo-bot/issues/307)) ([1979140](https://github.com/curlsops/ffo-bot/commit/1979140b102338835c027f7a4c9f8c50c5985587))
+* **python:** update dependency types-python-dateutil ( 2.9.0.20260716 ➔ 2.9.0.20260807 ) ([#334](https://github.com/curlsops/ffo-bot/issues/334)) ([e5d53ad](https://github.com/curlsops/ffo-bot/commit/e5d53ada3f5697c82acf0ff0f454a9faa20b8e6a))
+* **python:** update dependency websockets ( 16.1 ➔ 16.1.1 ) ([#317](https://github.com/curlsops/ffo-bot/issues/317)) ([c676f38](https://github.com/curlsops/ffo-bot/commit/c676f38b3e86cf2447c098266ccc2f7a611c96a6))
+
 ## [7.0.0](https://github.com/curlsops/ffo-bot/compare/v6.0.0...v7.0.0) (2026-07-10)
 
 
