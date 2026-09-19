@@ -7,7 +7,7 @@ aiofiles==25.1.0
 # Database
 alembic==1.19.2
 psycopg2-binary==2.9.13
-sqlalchemy==2.0.52
+sqlalchemy==2.0.54
 
 # Security
 pynacl==1.6.2
