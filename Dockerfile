@@ -1,4 +1,4 @@
-FROM python:3.14-slim-bookworm AS builder
+FROM python:3.15-slim-bookworm AS builder
 
 WORKDIR /build
 
@@ -12,7 +12,7 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 COPY requirements.txt ./
 RUN pip install --user --no-cache-dir --no-warn-script-location -r requirements.txt
 
-FROM python:3.14-slim-bookworm
+FROM python:3.15-slim-bookworm
 
 ARG FFO_BOT_VERSION=unknown
 ARG IMAGE_SOURCE="https://github.com/MrCurlsTTV/ffo-bot"
