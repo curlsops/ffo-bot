@@ -34,7 +34,7 @@ mcrcon==0.7.0
 mafic @ git+https://github.com/ArtiArtem8/mafic.git@b1079d54597240e3e7984914df58500f74f62e9f
 
 # Spotify
-spotapi==1.2.8
+spotapi==2.1.0
 pymongo==4.19.0
 redis==8.1.0
 websockets==16.1.1
